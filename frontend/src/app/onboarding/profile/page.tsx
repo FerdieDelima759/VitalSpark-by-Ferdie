@@ -91,23 +91,27 @@ export default function ProfileOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          full_name: fullName.trim(),
-          nickname: nickname.trim(),
-          age_range: selectedAgeRange || undefined,
-          gender: selectedGender || undefined,
-          current_step: Math.max(userProfile?.current_step || 3, 4),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to save profile:", result.error);
-          setError("Failed to save your profile. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        full_name: fullName.trim(),
+        nickname: nickname.trim(),
+        age_range: selectedAgeRange || undefined,
+        gender: selectedGender || undefined,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 3, 4),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save profile:", result.error);
+        setError("Failed to save your profile. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });
@@ -313,4 +317,3 @@ export default function ProfileOnboarding() {
     </div>
   );
 }
-

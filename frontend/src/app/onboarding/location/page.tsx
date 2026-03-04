@@ -135,21 +135,25 @@ export default function LocationOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          country: selectedCountry || undefined,
-          region_province: selectedState || undefined,
-          current_step: Math.max(userProfile?.current_step || 4, 5),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to save location:", result.error);
-          setError("Failed to save your location. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        country: selectedCountry || undefined,
+        region_province: selectedState || undefined,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 4, 5),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save location:", result.error);
+        setError("Failed to save your location. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });

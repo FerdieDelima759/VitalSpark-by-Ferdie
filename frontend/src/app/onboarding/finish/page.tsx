@@ -46,19 +46,23 @@ export default function FinishOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          is_onboarding_complete: true,
-          current_step: 10,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to complete onboarding:", result.error);
-          setError("Failed to complete onboarding. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        is_onboarding_complete: true,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: 10,
+      });
+
+      if (!result.success) {
+        console.error("Failed to complete onboarding:", result.error);
+        setError("Failed to complete onboarding. Please try again.");
+        setBusy(false);
+        return;
       }
 
       router.replace("/");

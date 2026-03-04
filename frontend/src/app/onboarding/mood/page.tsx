@@ -108,20 +108,24 @@ export default function MoodOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user && selectedMood) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          current_mood: selectedMood,
-          current_step: Math.max(userProfile?.current_step || 2, 3),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to save mood:", result.error);
-          setError("Failed to save your mood. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        current_mood: selectedMood,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 2, 3),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save mood:", result.error);
+        setError("Failed to save your mood. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });

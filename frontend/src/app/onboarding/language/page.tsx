@@ -69,28 +69,34 @@ export default function LanguageOnboarding() {
     try {
       // Save to user profile if user is authenticated
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user && languageCode) {
-        // Save user profile
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          preferred_language: languageCode,
-          current_step: Math.max(userProfile?.current_step || 1, 2),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user || !languageCode) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to save language preference:", result.error);
-        }
+      // Save user profile
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        preferred_language: languageCode,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 1, 2),
+        is_onboarding_complete: false,
+      });
 
-        // Save user role as member (no UI for this)
-        const roleResult = await upsertUserRole({
-          user_id: currentUser.user.id,
-          role: "member",
-        });
+      if (!result.success) {
+        console.error("Failed to save language preference:", result.error);
+        setError("Failed to save language preference. Please try again.");
+        return;
+      }
 
-        if (!roleResult.success) {
-          console.error("Failed to save user role:", roleResult.error);
-        }
+      // Save user role as member (no UI for this)
+      const roleResult = await upsertUserRole({
+        user_id: currentUser.user.id,
+        role: "member",
+      });
+
+      if (!roleResult.success) {
+        console.error("Failed to save user role:", roleResult.error);
       }
 
       setHeader({ animation: "slide_from_right" });
@@ -258,4 +264,3 @@ export default function LanguageOnboarding() {
     </div>
   );
 }
-

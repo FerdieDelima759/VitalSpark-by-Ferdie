@@ -90,20 +90,24 @@ export default function TargetMuscleGroupOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          target_muscle_groups: selectedMuscles,
-          current_step: Math.max(userProfile?.current_step || 8, 9),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          console.error("Failed to save target muscles:", result.error);
-          setError("Failed to save your target muscles. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        target_muscle_groups: selectedMuscles,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 8, 9),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save target muscles:", result.error);
+        setError("Failed to save your target muscles. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });

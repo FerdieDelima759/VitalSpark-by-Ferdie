@@ -168,39 +168,41 @@ export default function DietaryOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const healthConditionsList = [
-          ...selectedHealthConditions.filter((c) => c !== "other"),
-          ...(selectedHealthConditions.includes("other")
-            ? otherHealthConditions
-            : []),
-        ];
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        // Default to 50 if no budget is entered
-        const budgetValue =
-          weeklyBudget.trim() === ""
-            ? 50
-            : parseInt(weeklyBudget.replace(/[^0-9]/g, ""), 10) || 50;
+      const healthConditionsList = [
+        ...selectedHealthConditions.filter((c) => c !== "other"),
+        ...(selectedHealthConditions.includes("other")
+          ? otherHealthConditions
+          : []),
+      ];
 
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          dietary_preference: selectedDietaryPreference || undefined,
-          weekly_budget: budgetValue,
-          weekly_budget_currency: currency.currency,
-          meal_plan_duration: selectedMealPlanDays,
-          health_conditions: healthConditionsList,
-          current_step: Math.max(userProfile?.current_step || 9, 10),
-          is_onboarding_complete: false,
-        });
+      // Default to 50 if no budget is entered
+      const budgetValue =
+        weeklyBudget.trim() === ""
+          ? 50
+          : parseInt(weeklyBudget.replace(/[^0-9]/g, ""), 10) || 50;
 
-        if (!result.success) {
-          console.error("Failed to save dietary data:", result.error);
-          setError(
-            "Failed to save your dietary preferences. Please try again."
-          );
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        dietary_preference: selectedDietaryPreference || undefined,
+        weekly_budget: budgetValue,
+        weekly_budget_currency: currency.currency,
+        meal_plan_duration: selectedMealPlanDays,
+        health_conditions: healthConditionsList,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 9, 10),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save dietary data:", result.error);
+        setError("Failed to save your dietary preferences. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });

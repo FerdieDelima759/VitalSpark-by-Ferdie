@@ -69,20 +69,24 @@ export default function WeightOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          weight: weightNum,
-          weight_unit: unit,
-          current_step: Math.max(userProfile?.current_step || 6, 7),
-          is_onboarding_complete: false,
-        });
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        if (!result.success) {
-          setError("Failed to save weight. Please try again.");
-          setBusy(false);
-          return;
-        }
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        weight: weightNum,
+        weight_unit: unit,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 6, 7),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        setError("Failed to save weight. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });

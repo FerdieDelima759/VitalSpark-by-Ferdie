@@ -277,39 +277,41 @@ export default function FitnessOnboarding() {
     setError(null);
     try {
       const { data: currentUser } = await auth.getCurrentUser();
-      if (currentUser?.user) {
-        const equipmentList = [
-          ...selectedEquipments.filter((eq) => eq !== "other"),
-          ...(selectedEquipments.includes("other") ? otherEquipments : []),
-        ];
+      if (!currentUser?.user) {
+        setError("Please sign in again to continue onboarding.");
+        return;
+      }
 
-        const selectedDays = weeklyFrequency
-          .filter((d) => d.selected)
-          .map((d) => d.code);
+      const equipmentList = [
+        ...selectedEquipments.filter((eq) => eq !== "other"),
+        ...(selectedEquipments.includes("other") ? otherEquipments : []),
+      ];
 
-        const fitnessGoalLabel = selectedFitnessGoal
-          ? getFitnessGoalLabel(selectedFitnessGoal)
-          : null;
-        const result = await upsertUserProfile({
-          user_id: currentUser.user.id,
-          fitness_goal: fitnessGoalLabel || undefined,
-          fitness_level: selectedLevel || undefined,
-          workout_location: selectedLocation || undefined,
-          equipment_list: equipmentList,
-          workout_duration_minutes: workoutDuration,
-          weekly_frequency: selectedDays,
-          current_step: Math.max(userProfile?.current_step || 7, 8),
-          is_onboarding_complete: false,
-        });
+      const selectedDays = weeklyFrequency
+        .filter((d) => d.selected)
+        .map((d) => d.code);
 
-        if (!result.success) {
-          console.error("Failed to save fitness data:", result.error);
-          setError(
-            "Failed to save your fitness preferences. Please try again.",
-          );
-          setBusy(false);
-          return;
-        }
+      const fitnessGoalLabel = selectedFitnessGoal
+        ? getFitnessGoalLabel(selectedFitnessGoal)
+        : null;
+      const result = await upsertUserProfile({
+        user_id: currentUser.user.id,
+        fitness_goal: fitnessGoalLabel || undefined,
+        fitness_level: selectedLevel || undefined,
+        workout_location: selectedLocation || undefined,
+        equipment_list: equipmentList,
+        workout_duration_minutes: workoutDuration,
+        weekly_frequency: selectedDays,
+        plan_code: userProfile?.plan_code ?? "premium",
+        current_step: Math.max(userProfile?.current_step || 7, 8),
+        is_onboarding_complete: false,
+      });
+
+      if (!result.success) {
+        console.error("Failed to save fitness data:", result.error);
+        setError("Failed to save your fitness preferences. Please try again.");
+        setBusy(false);
+        return;
       }
 
       setHeader({ animation: "slide_from_right" });
