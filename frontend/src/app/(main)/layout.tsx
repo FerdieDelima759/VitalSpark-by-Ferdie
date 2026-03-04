@@ -63,24 +63,26 @@ export default function MainLayout({
       // User is authenticated - check onboarding status
       try {
         const { supabase } = await import("@/lib/api/supabase");
-        const { data, error } = await supabase
+        const { data: profileRows, error } = await supabase
           .from("user_profile")
           .select("is_onboarding_complete, current_step")
           .eq("user_id", user.id)
-          .maybeSingle(); // Use maybeSingle to avoid error if no profile
+          .limit(1);
+
+        const profile = profileRows?.[0] ?? null;
 
         // No profile or error - start onboarding
         if (error) {
           await enterMaintenanceMode();
           return;
         }
-        if (!data) {
+        if (!profile) {
           router.push("/onboarding/language");
           return;
         }
 
         // Profile exists - check completion
-        if (!data.is_onboarding_complete) {
+        if (!profile.is_onboarding_complete) {
           // Route to current step
           const routes = [
             "/onboarding/language",
@@ -94,7 +96,7 @@ export default function MainLayout({
             "/onboarding/dietary",
             "/onboarding/finish",
           ];
-          const step = data.current_step || 1;
+          const step = profile.current_step || 1;
           // If step is 9 or higher, go to finish
           if (step >= 9) {
             router.push("/onboarding/finish");

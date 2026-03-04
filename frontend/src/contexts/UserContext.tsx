@@ -87,13 +87,15 @@ export function UserProvider({
       }
 
       // Fetch user profile
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileRows, error: profileError } = await supabase
         .from("user_profile")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .limit(1);
 
-      if (profileError && profileError.code !== "PGRST116") {
+      const profileData = profileRows?.[0] ?? null;
+
+      if (profileError) {
         console.error("Error fetching user profile:", profileError);
         setLoadingState((prev) => ({
           ...prev,
@@ -104,13 +106,15 @@ export function UserProvider({
       }
 
       // Fetch user role
-      const { data: roleData, error: roleError } = await supabase
+      const { data: roleRows, error: roleError } = await supabase
         .from("user_role")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .limit(1);
 
-      if (roleError && roleError.code !== "PGRST116") {
+      const roleData = roleRows?.[0] ?? null;
+
+      if (roleError) {
         console.error("Error fetching user role:", roleError);
       }
 
@@ -138,13 +142,15 @@ export function UserProvider({
         isSaving: false,
         error: null,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
       console.error("Unexpected error fetching user data:", error);
       setLoadingState({
         isLoading: false,
         isUpdating: false,
         isSaving: false,
-        error: error.message || "An unexpected error occurred",
+        error: errorMessage,
       });
     }
   };

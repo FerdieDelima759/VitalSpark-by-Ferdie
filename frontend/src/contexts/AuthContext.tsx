@@ -118,18 +118,29 @@ export function AuthProvider({
               await import("../utils/sessionStorage");
 
             // Fetch user profile
-            const { data: profileData } = await supabase
+            const { data: profileRows, error: profileError } = await supabase
               .from("user_profile")
               .select("*")
               .eq("user_id", currentSession.user.id)
-              .maybeSingle();
+              .limit(1);
+
+            const profileData = profileRows?.[0] ?? null;
 
             // Fetch user role
-            const { data: roleData } = await supabase
+            const { data: roleRows, error: roleError } = await supabase
               .from("user_role")
               .select("*")
               .eq("user_id", currentSession.user.id)
-              .maybeSingle();
+              .limit(1);
+
+            const roleData = roleRows?.[0] ?? null;
+
+            if (profileError) {
+              console.error("Error fetching user profile during auth sync:", profileError);
+            }
+            if (roleError) {
+              console.error("Error fetching user role during auth sync:", roleError);
+            }
 
             // Store in session storage
             const isAdmin = roleData?.role?.toLowerCase() === "admin";

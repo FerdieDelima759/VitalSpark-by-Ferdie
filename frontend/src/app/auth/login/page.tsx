@@ -54,6 +54,10 @@ export default function LoginPage() {
   };
 
   const onSignIn = async () => {
+    if (loading) {
+      return;
+    }
+
     if (!email.trim() || !password.trim()) {
       showToast(
         "error",
@@ -91,18 +95,29 @@ export default function LoginPage() {
           
           if (user) {
             // Fetch user profile
-            const { data: profileData, error: profileError } = await supabase
+            const { data: profileRows, error: profileError } = await supabase
               .from("user_profile")
               .select("*")
               .eq("user_id", user.id)
-              .maybeSingle();
+              .limit(1);
+
+            const profileData = profileRows?.[0] ?? null;
 
             // Fetch user role
-            const { data: roleData, error: roleError } = await supabase
+            const { data: roleRows, error: roleError } = await supabase
               .from("user_role")
               .select("*")
               .eq("user_id", user.id)
-              .maybeSingle();
+              .limit(1);
+
+            const roleData = roleRows?.[0] ?? null;
+
+            if (profileError) {
+              console.error("Error fetching user profile after login:", profileError);
+            }
+            if (roleError) {
+              console.error("Error fetching user role after login:", roleError);
+            }
 
             // Store user data in session storage
             const isAdmin = roleData?.role?.toLowerCase() === "admin";
@@ -152,11 +167,13 @@ export default function LoginPage() {
           router.push("/");
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unexpected error occurred.";
       showToast(
         "error",
         "Error",
-        error?.message || "Unexpected error occurred."
+        errorMessage
       );
       setLoading(false);
     }
