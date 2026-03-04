@@ -1,0 +1,1 @@
+export const ONBOARDING_HEADER_HEIGHT = 72; // controls the static onboarding header size
