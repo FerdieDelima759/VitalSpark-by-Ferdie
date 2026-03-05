@@ -8,6 +8,7 @@ import {
   HiLockOpen,
   HiArrowRight,
   HiArrowPath,
+  HiArrowLeft,
 } from "react-icons/hi2";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserData } from "@/hooks/useUserData";
@@ -3283,7 +3284,7 @@ export default function PersonalPage() {
             </div>
           ) : coachWorkoutPlans.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
-              <div className="text-5xl mb-4">Ã°Å¸â€™Âª</div>
+              <div className="text-5xl mb-4">Fitness</div>
               <p className="text-base font-medium text-slate-500 text-center">
                 No workout plans available from coaches yet
               </p>
@@ -3388,7 +3389,7 @@ export default function PersonalPage() {
                   </div>
                   <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-teal-500 flex items-center justify-center transition-all">
                     <span className="text-gray-400 group-hover:text-white text-lg">
-                      Ã¢â€ â€™
+                      <HiArrowLeft className="h-5 w-5 -scale-x-100 font-bold" />
                     </span>
                   </div>
                 </button>
