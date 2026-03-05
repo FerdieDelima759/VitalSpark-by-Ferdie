@@ -57,7 +57,7 @@ export default function LocationOnboarding() {
                 ];
               if (countrySubdivisions) {
                 const stateNames = countrySubdivisions.map(
-                  (subdivision: any) => subdivision.name
+                  (subdivision: any) => subdivision.name,
                 );
                 setStates(stateNames);
               }
@@ -112,7 +112,7 @@ export default function LocationOnboarding() {
         subdivisionsData[country as keyof typeof subdivisionsData];
       if (countrySubdivisions) {
         const stateNames = countrySubdivisions.map(
-          (subdivision: any) => subdivision.name
+          (subdivision: any) => subdivision.name,
         );
         setStates(stateNames);
       } else {
@@ -188,188 +188,196 @@ export default function LocationOnboarding() {
   }, [setHeader, busy, isValid]);
 
   const filteredCountries = countries.filter((country) =>
-    country.toLowerCase().includes(countrySearch.toLowerCase())
+    country.toLowerCase().includes(countrySearch.toLowerCase()),
   );
 
   const filteredStates = states.filter((state) =>
-    state.toLowerCase().includes(stateSearch.toLowerCase())
+    state.toLowerCase().includes(stateSearch.toLowerCase()),
   );
 
   return (
-    <div 
-      className="bg-[#101A2C] flex justify-center pt-12"
+    <div
+      className="bg-[#101A2C] w-full"
       style={{
-        minHeight: showCountryDropdown || showStateDropdown ? 'calc(100vh + 500px)' : '100vh',
-        paddingBottom: showCountryDropdown || showStateDropdown ? '500px' : '3rem'
+        minHeight:
+          showCountryDropdown || showStateDropdown
+            ? "calc(100vh + 500px)"
+            : "100vh",
+        paddingBottom:
+          showCountryDropdown || showStateDropdown ? "500px" : "3rem",
       }}
     >
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 relative">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            Where are you located?
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            Help us provide location-specific recommendations
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Country
-            </label>
-            <div className="relative" ref={countryDropdownRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCountryDropdown(!showCountryDropdown);
-                  if (!showCountryDropdown) setCountrySearch("");
-                }}
-                disabled={busy || loading}
-                className={`w-full bg-[#18223A] text-left py-4 px-5 rounded-xl border-2 transition-all ${
-                  selectedCountry
-                    ? "border-amber-500 text-gray-100"
-                    : "border-gray-600 text-gray-400"
-                } ${busy || loading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
-              >
-                <span>
-                  {selectedCountry ||
-                    (loading ? "Loading..." : "Select Country")}
-                </span>
-                <span
-                  className={`transform transition-transform ${
-                    showCountryDropdown ? "rotate-180" : ""
-                  }`}
-                >
-                  ▼
-                </span>
-              </button>
-
-              {showCountryDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-hidden">
-                  <input
-                    type="text"
-                    placeholder="Search country..."
-                    value={countrySearch}
-                    onChange={(e) => setCountrySearch(e.target.value)}
-                    className="w-full bg-[#101A2C] text-gray-100 px-4 py-2.5 border-b border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 rounded-t-xl"
-                    autoFocus
-                  />
-                  <div className="max-h-64 overflow-y-auto">
-                    {filteredCountries.map((country) => (
-                      <button
-                        key={country}
-                        type="button"
-                        onClick={() => handleCountrySelect(country)}
-                        className={`w-full text-left px-5 py-3.5 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
-                          selectedCountry === country
-                            ? "text-amber-500 font-semibold bg-[#101A2C]"
-                            : "text-gray-100"
-                        }`}
-                      >
-                        {country}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Region/Province/State
-            </label>
-            <div className="relative" ref={stateDropdownRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStateDropdown(!showStateDropdown);
-                  if (!showStateDropdown) setStateSearch("");
-                }}
-                disabled={busy || loading || !selectedCountry}
-                className={`w-full bg-[#18223A] text-left py-4 px-5 rounded-xl border-2 transition-all ${
-                  selectedState
-                    ? "border-amber-500 text-gray-100"
-                    : "border-gray-600 text-gray-400"
-                } ${busy || loading || !selectedCountry ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
-              >
-                <span>
-                  {selectedCountry
-                    ? selectedState || "Select Region"
-                    : "Select Country First"}
-                </span>
-                <span
-                  className={`transform transition-transform ${
-                    showStateDropdown ? "rotate-180" : ""
-                  }`}
-                >
-                  ▼
-                </span>
-              </button>
-
-              {showStateDropdown && selectedCountry && (
-                <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-hidden">
-                  {states.length === 0 ? (
-                    <div className="p-4 text-center text-gray-400">
-                      No regions available
-                    </div>
-                  ) : (
-                    <>
-                      <input
-                        type="text"
-                        placeholder="Search region..."
-                        value={stateSearch}
-                        onChange={(e) => setStateSearch(e.target.value)}
-                        className="w-full bg-[#101A2C] text-gray-100 px-4 py-2.5 border-b border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 rounded-t-xl"
-                        autoFocus
-                      />
-                      <div className="max-h-64 overflow-y-auto">
-                        {filteredStates.map((state) => (
-                          <button
-                            key={state}
-                            type="button"
-                            onClick={() => handleStateSelect(state)}
-                            className={`w-full text-left px-5 py-3.5 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
-                              selectedState === state
-                                ? "text-amber-500 font-semibold bg-[#101A2C]"
-                                : "text-gray-100"
-                            }`}
-                          >
-                            {state}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <button
-            disabled={busy || !isValid}
-            onClick={handleContinue}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              isValid && !busy
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-gray-400 text-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {busy ? (
-              <div className="flex items-center justify-center">
-                <Loader size="sm" inline />
-                <span className="ml-2">Loading...</span>
+      <div className="flex min-h-dvh items-start justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-2xl mx-auto relative">
+          <div className="text-center -mt-12 mb-4 sm:mb-6">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              Where are you located?
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              Help us provide location-specific recommendations
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
               </div>
-            ) : (
-              "Continue"
             )}
-          </button>
+          </div>
+
+          <div className="w-full max-w-md mx-auto space-y-4 sm:space-y-5">
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Country
+              </label>
+              <div className="relative" ref={countryDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCountryDropdown(!showCountryDropdown);
+                    if (!showCountryDropdown) setCountrySearch("");
+                  }}
+                  disabled={busy || loading}
+                  className={`w-full bg-[#18223A] text-left py-3 sm:py-3.5 px-4 rounded-lg sm:rounded-xl border-2 transition-all text-sm sm:text-base ${
+                    selectedCountry
+                      ? "border-amber-500 text-gray-100"
+                      : "border-gray-600 text-gray-400"
+                  } ${busy || loading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
+                >
+                  <span>
+                    {selectedCountry ||
+                      (loading ? "Loading..." : "Select Country")}
+                  </span>
+                  <span
+                    className={`transform transition-transform ${
+                      showCountryDropdown ? "rotate-180" : ""
+                    }`}
+                  >
+                    ▼
+                  </span>
+                </button>
+
+                {showCountryDropdown && (
+                  <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-lg sm:rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-hidden">
+                    <input
+                      type="text"
+                      placeholder="Search country..."
+                      value={countrySearch}
+                      onChange={(e) => setCountrySearch(e.target.value)}
+                      className="w-full bg-[#101A2C] text-gray-100 text-sm sm:text-base px-4 py-2.5 border-b border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 rounded-t-lg sm:rounded-t-xl"
+                      autoFocus
+                    />
+                    <div className="max-h-64 overflow-y-auto">
+                      {filteredCountries.map((country) => (
+                        <button
+                          key={country}
+                          type="button"
+                          onClick={() => handleCountrySelect(country)}
+                          className={`w-full text-left text-sm sm:text-base px-4 py-3 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
+                            selectedCountry === country
+                              ? "text-amber-500 font-semibold bg-[#101A2C]"
+                              : "text-gray-100"
+                          }`}
+                        >
+                          {country}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Region/Province/State
+              </label>
+              <div className="relative" ref={stateDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStateDropdown(!showStateDropdown);
+                    if (!showStateDropdown) setStateSearch("");
+                  }}
+                  disabled={busy || loading || !selectedCountry}
+                  className={`w-full bg-[#18223A] text-left py-3 sm:py-3.5 px-4 rounded-lg sm:rounded-xl border-2 transition-all text-sm sm:text-base ${
+                    selectedState
+                      ? "border-amber-500 text-gray-100"
+                      : "border-gray-600 text-gray-400"
+                  } ${busy || loading || !selectedCountry ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
+                >
+                  <span>
+                    {selectedCountry
+                      ? selectedState || "Select Region"
+                      : "Select Country First"}
+                  </span>
+                  <span
+                    className={`transform transition-transform ${
+                      showStateDropdown ? "rotate-180" : ""
+                    }`}
+                  >
+                    ▼
+                  </span>
+                </button>
+
+                {showStateDropdown && selectedCountry && (
+                  <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-lg sm:rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-hidden">
+                    {states.length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm sm:text-base">
+                        No regions available
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Search region..."
+                          value={stateSearch}
+                          onChange={(e) => setStateSearch(e.target.value)}
+                          className="w-full bg-[#101A2C] text-gray-100 text-sm sm:text-base px-4 py-2.5 border-b border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 rounded-t-lg sm:rounded-t-xl"
+                          autoFocus
+                        />
+                        <div className="max-h-64 overflow-y-auto">
+                          {filteredStates.map((state) => (
+                            <button
+                              key={state}
+                              type="button"
+                              onClick={() => handleStateSelect(state)}
+                              className={`w-full text-left text-sm sm:text-base px-4 py-3 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
+                                selectedState === state
+                                  ? "text-amber-500 font-semibold bg-[#101A2C]"
+                                  : "text-gray-100"
+                              }`}
+                            >
+                              {state}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-12"></div>
+
+            <button
+              disabled={busy || !isValid}
+              onClick={handleContinue}
+              className={` w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                isValid && !busy
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+            >
+              {busy ? (
+                <div className="flex items-center justify-center">
+                  <Loader size="sm" inline />
+                  <span className="ml-2">Loading...</span>
+                </div>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

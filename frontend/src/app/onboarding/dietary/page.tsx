@@ -56,13 +56,13 @@ export default function DietaryOnboarding() {
   const [weeklyBudget, setWeeklyBudget] = useState<string>("");
   const [currency] = useState({ currency: "USD", symbol: "$" });
   const [selectedMealPlanDays, setSelectedMealPlanDays] = useState<string[]>(
-    []
+    [],
   );
   const [selectedHealthConditions, setSelectedHealthConditions] = useState<
     string[]
   >([]);
   const [otherHealthConditions, setOtherHealthConditions] = useState<string[]>(
-    []
+    [],
   );
   const [currentOtherCondition, setCurrentOtherCondition] = useState("");
   const [showDietaryPreferenceDropdown, setShowDietaryPreferenceDropdown] =
@@ -96,16 +96,16 @@ export default function DietaryOnboarding() {
             result.data.health_conditions.length > 0
           ) {
             const standardConditions = healthConditionOptions.map(
-              (c) => c.code
+              (c) => c.code,
             );
             const standard = result.data.health_conditions.filter((c: string) =>
-              standardConditions.includes(c)
+              standardConditions.includes(c),
             );
             const custom = result.data.health_conditions.filter(
-              (c: string) => !standardConditions.includes(c)
+              (c: string) => !standardConditions.includes(c),
             );
             setSelectedHealthConditions(
-              custom.length > 0 ? [...standard, "other"] : standard
+              custom.length > 0 ? [...standard, "other"] : standard,
             );
             if (custom.length > 0) {
               setOtherHealthConditions(custom);
@@ -138,7 +138,7 @@ export default function DietaryOnboarding() {
     setSelectedHealthConditions((prev) =>
       prev.includes(conditionCode)
         ? prev.filter((c) => c !== conditionCode)
-        : [...prev, conditionCode]
+        : [...prev, conditionCode],
     );
   };
 
@@ -245,7 +245,7 @@ export default function DietaryOnboarding() {
 
   return (
     <div
-      className="bg-[#101A2C] flex justify-center pt-12"
+      className="bg-[#101A2C] w-full"
       style={{
         minHeight: showDietaryPreferenceDropdown
           ? "calc(100vh + 300px)"
@@ -253,252 +253,260 @@ export default function DietaryOnboarding() {
         paddingBottom: showDietaryPreferenceDropdown ? "300px" : "3rem",
       }}
     >
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            Dietary Preferences
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            Help us personalize your meal planning
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          {/* Dietary Preference */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Dietary Preference
-            </label>
-            <div className="relative" ref={dietaryPreferenceDropdownRef}>
-              <button
-                type="button"
-                onClick={() =>
-                  setShowDietaryPreferenceDropdown(
-                    !showDietaryPreferenceDropdown
-                  )
-                }
-                disabled={busy}
-                className={`w-full bg-[#18223A] text-left py-4 px-5 rounded-xl border-2 transition-all ${
-                  selectedDietaryPreference
-                    ? "border-amber-500 text-gray-100"
-                    : "border-gray-600 text-gray-400"
-                } ${
-                  busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                } flex items-center justify-between`}
-              >
-                <span>
-                  {selectedDietaryPreference
-                    ? dietaryPreferenceOptions.find(
-                        (o) => o.code === selectedDietaryPreference
-                      )?.label
-                    : "Select Dietary Preference"}
-                </span>
-                <span
-                  className={`transform transition-transform ${
-                    showDietaryPreferenceDropdown ? "rotate-180" : ""
-                  }`}
-                >
-                  ▼
-                </span>
-              </button>
-
-              {showDietaryPreferenceDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-y-auto">
-                  {dietaryPreferenceOptions.map((option, index) => (
-                    <button
-                      key={option.code}
-                      type="button"
-                      onClick={() => {
-                        setSelectedDietaryPreference(option.code);
-                        setShowDietaryPreferenceDropdown(false);
-                      }}
-                      className={`w-full text-left px-5 py-3.5 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
-                        selectedDietaryPreference === option.code
-                          ? "text-amber-500 font-semibold bg-[#101A2C]"
-                          : "text-gray-100"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+      <div className="flex min-h-dvh items-start justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="text-center -mt-12 mb-4 sm:mb-6">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              Dietary Preferences
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              Help us personalize your meal planning
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
+              </div>
+            )}
           </div>
 
-          {/* Weekly Budget */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Weekly Budget
-            </label>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-100 text-lg font-semibold">
-                {currency.symbol}
-              </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={weeklyBudget}
-                onChange={(e) => {
-                  const cleaned = e.target.value.replace(/[^0-9]/g, "");
-                  setWeeklyBudget(cleaned);
-                }}
-                placeholder="50"
-                className="flex-1 bg-[#18223A] text-gray-100 px-4 py-3 rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right placeholder:text-gray-500"
-                maxLength={6}
-              />
-              <span className="text-gray-100 text-base">
-                {currency.currency}
-              </span>
-            </div>
-          </div>
-
-          {/* Meal Plan Duration */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Meal Plan Duration
-            </label>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {weekDays.map((day) => (
+          <div className="w-full max-w-md mx-auto space-y-4 sm:space-y-5">
+            {/* Dietary Preference */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Dietary Preference
+              </label>
+              <div className="relative" ref={dietaryPreferenceDropdownRef}>
                 <button
-                  key={day.code}
                   type="button"
                   onClick={() =>
-                    setSelectedMealPlanDays((prev) =>
-                      prev.includes(day.code)
-                        ? prev.filter((d) => d !== day.code)
-                        : [...prev, day.code]
+                    setShowDietaryPreferenceDropdown(
+                      !showDietaryPreferenceDropdown,
                     )
                   }
-                  className={`px-4 py-2 rounded-xl border-2 transition-all ${
-                    selectedMealPlanDays.includes(day.code)
-                      ? "bg-amber-500/20 border-amber-500 text-amber-500"
-                      : "bg-[#18223A] border-gray-600 text-gray-300 hover:border-gray-500"
-                  }`}
+                  disabled={busy}
+                  className={`w-full bg-[#18223A] text-left text-sm sm:text-base py-3 sm:py-3.5 px-4 rounded-lg sm:rounded-xl border-2 transition-all ${
+                    selectedDietaryPreference
+                      ? "border-amber-500 text-gray-100"
+                      : "border-gray-600 text-gray-400"
+                  } ${
+                    busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                  } flex items-center justify-between`}
                 >
-                  <span className="font-semibold text-sm">{day.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Health Conditions */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Health Conditions
-            </label>
-            <p className="text-gray-400 text-sm mb-4">
-              Select any health conditions that may affect your dietary needs
-              (optional)
-            </p>
-            <div className="space-y-2">
-              {healthConditionOptions.map((option) => (
-                <button
-                  key={option.code}
-                  type="button"
-                  onClick={() => handleHealthConditionSelection(option.code)}
-                  className="w-full flex items-center p-3 rounded-xl hover:bg-[#18223A] transition-colors"
-                >
-                  <div
-                    className={`w-5 h-5 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0 ${
-                      selectedHealthConditions.includes(option.code)
-                        ? "bg-amber-500 border-amber-500"
-                        : "border-gray-500"
-                    }`}
-                  >
-                    {selectedHealthConditions.includes(option.code) && (
-                      <span className="text-white text-xs font-bold">✓</span>
-                    )}
-                  </div>
+                  <span>
+                    {selectedDietaryPreference
+                      ? dietaryPreferenceOptions.find(
+                          (o) => o.code === selectedDietaryPreference,
+                        )?.label
+                      : "Select Dietary Preference"}
+                  </span>
                   <span
-                    className={`font-medium ${
-                      selectedHealthConditions.includes(option.code)
-                        ? "text-gray-100"
-                        : "text-gray-400"
+                    className={`transform transition-transform ${
+                      showDietaryPreferenceDropdown ? "rotate-180" : ""
                     }`}
                   >
-                    {option.label}
+                    ▼
                   </span>
                 </button>
-              ))}
-            </div>
 
-            {/* Custom health conditions */}
-            {selectedHealthConditions.includes("other") && (
-              <div className="mt-4">
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={currentOtherCondition}
-                    onChange={(e) => setCurrentOtherCondition(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCustomHealthCondition();
-                      }
-                    }}
-                    placeholder="Specify other condition"
-                    className="flex-1 bg-[#18223A] text-gray-100 px-4 py-3 rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={addCustomHealthCondition}
-                    disabled={!currentOtherCondition.trim()}
-                    className={`px-4 py-3 rounded-xl font-semibold ${
-                      currentOtherCondition.trim()
-                        ? "bg-amber-500 text-black"
-                        : "bg-gray-600 text-gray-400 cursor-not-allowed"
-                    }`}
-                  >
-                    +
-                  </button>
-                </div>
-                {otherHealthConditions.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {otherHealthConditions.map((condition, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between bg-[#18223A] px-4 py-3 rounded-xl border border-amber-500"
+                {showDietaryPreferenceDropdown && (
+                  <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-lg sm:rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-y-auto">
+                    {dietaryPreferenceOptions.map((option, index) => (
+                      <button
+                        key={option.code}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDietaryPreference(option.code);
+                          setShowDietaryPreferenceDropdown(false);
+                        }}
+                        className={`w-full text-left text-sm sm:text-base px-4 py-3 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
+                          selectedDietaryPreference === option.code
+                            ? "text-amber-500 font-semibold bg-[#101A2C]"
+                            : "text-gray-100"
+                        }`}
                       >
-                        <span className="text-gray-100">{condition}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeCustomHealthCondition(condition)}
-                          className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center font-bold ml-3"
-                        >
-                          ×
-                        </button>
-                      </div>
+                        {option.label}
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
 
-          <button
-            disabled={busy || !isValid}
-            onClick={handleContinue}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              isValid && !busy
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-gray-400 text-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {busy ? (
-              <div className="flex items-center justify-center">
-                <Loader size="sm" inline />
-                <span className="ml-2">Loading...</span>
+            {/* Weekly Budget */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Weekly Budget
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-100 text-lg font-semibold">
+                  {currency.symbol}
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={weeklyBudget}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/[^0-9]/g, "");
+                    setWeeklyBudget(cleaned);
+                  }}
+                  placeholder="50"
+                  className="flex-1 bg-[#18223A] text-gray-100 text-sm sm:text-base px-4 py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right placeholder:text-gray-500"
+                  maxLength={6}
+                />
+                <span className="text-gray-100 text-base">
+                  {currency.currency}
+                </span>
               </div>
-            ) : (
-              "Continue"
-            )}
-          </button>
+            </div>
+
+            {/* Meal Plan Duration */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Meal Plan Duration
+              </label>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.code}
+                    type="button"
+                    onClick={() =>
+                      setSelectedMealPlanDays((prev) =>
+                        prev.includes(day.code)
+                          ? prev.filter((d) => d !== day.code)
+                          : [...prev, day.code],
+                      )
+                    }
+                    className={`px-4 py-2 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedMealPlanDays.includes(day.code)
+                        ? "bg-amber-500/20 border-amber-500 text-amber-500"
+                        : "bg-[#18223A] border-gray-600 text-gray-300 hover:border-gray-500"
+                    }`}
+                  >
+                    <span className="font-semibold text-xs sm:text-sm">
+                      {day.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Health Conditions */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Health Conditions
+              </label>
+              <p className="text-gray-400 text-xs sm:text-sm mb-3 sm:mb-4">
+                Select any health conditions that may affect your dietary needs
+                (optional)
+              </p>
+              <div className="space-y-2">
+                {healthConditionOptions.map((option) => (
+                  <button
+                    key={option.code}
+                    type="button"
+                    onClick={() => handleHealthConditionSelection(option.code)}
+                    className="w-full flex items-center p-3 rounded-lg sm:rounded-xl hover:bg-[#18223A] transition-colors"
+                  >
+                    <div
+                      className={`w-5 h-5 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0 ${
+                        selectedHealthConditions.includes(option.code)
+                          ? "bg-amber-500 border-amber-500"
+                          : "border-gray-500"
+                      }`}
+                    >
+                      {selectedHealthConditions.includes(option.code) && (
+                        <span className="text-white text-xs font-bold">✓</span>
+                      )}
+                    </div>
+                    <span
+                      className={`font-medium text-sm sm:text-base ${
+                        selectedHealthConditions.includes(option.code)
+                          ? "text-gray-100"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom health conditions */}
+              {selectedHealthConditions.includes("other") && (
+                <div className="mt-4">
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={currentOtherCondition}
+                      onChange={(e) => setCurrentOtherCondition(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomHealthCondition();
+                        }
+                      }}
+                      placeholder="Specify other condition"
+                      className="flex-1 bg-[#18223A] text-gray-100 text-sm sm:text-base px-4 py-3 rounded-lg sm:rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomHealthCondition}
+                      disabled={!currentOtherCondition.trim()}
+                      className={`px-4 py-3 rounded-lg sm:rounded-xl font-semibold ${
+                        currentOtherCondition.trim()
+                          ? "bg-amber-500 text-black"
+                          : "bg-gray-600 text-gray-400 cursor-not-allowed"
+                      }`}
+                    >
+                      +
+                    </button>
+                  </div>
+                  {otherHealthConditions.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {otherHealthConditions.map((condition, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-[#18223A] px-4 py-3 rounded-lg sm:rounded-xl border border-amber-500"
+                        >
+                          <span className="text-gray-100">{condition}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeCustomHealthCondition(condition)
+                            }
+                            className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center font-bold ml-3"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-12"></div>
+
+            <button
+              disabled={busy || !isValid}
+              onClick={handleContinue}
+              className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                isValid && !busy
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+            >
+              {busy ? (
+                <div className="flex items-center justify-center">
+                  <Loader size="sm" inline />
+                  <span className="ml-2">Loading...</span>
+                </div>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

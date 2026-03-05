@@ -117,86 +117,89 @@ export default function HeightOnboarding() {
   }, [setHeader, busy, height]);
 
   return (
-    <div className="min-h-screen bg-[#101A2C] flex items-center justify-center py-12">
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            What's your height?
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            This helps us personalize your fitness plan
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="flex justify-center gap-4 mb-6">
-            <button
-              onClick={() => {
-                previousUnitRef.current = unit;
-                setUnit("cm");
-              }}
-              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
-                unit === "cm"
-                  ? "bg-teal-600 text-white"
-                  : "bg-gray-700 text-gray-300"
-              }`}
-            >
-              Metric (cm)
-            </button>
-            <button
-              onClick={() => {
-                previousUnitRef.current = unit;
-                setUnit("in");
-              }}
-              className={`px-6 py-2 rounded-lg font-semibold transition-all ${
-                unit === "in"
-                  ? "bg-teal-600 text-white"
-                  : "bg-gray-700 text-gray-300"
-              }`}
-            >
-              Imperial (in)
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              Height ({unit})
-            </label>
-            <input
-              type="number"
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              placeholder={`Enter your height in ${unit}`}
-              className="w-full bg-gray-800 text-white py-4 px-4 rounded-xl border-2 border-gray-600 focus:border-amber-500 outline-none placeholder:text-gray-500"
-            />
-          </div>
-
-          <button
-            disabled={busy || !height || parseFloat(height) <= 0}
-            onClick={handleContinue}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              height && parseFloat(height) > 0 && !busy
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-gray-400 text-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {busy ? (
-              <div className="flex items-center justify-center">
-                <Loader size="sm" inline />
-                <span className="ml-2">Loading...</span>
+    <div className="flex min-h-dvh bg-[#101A2C] items-start justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+      <div className="w-full max-w-2xl mx-auto relative">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="text-center -mt-12 mb-4 sm:mb-6">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              What's your height?
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              This helps us personalize your fitness plan
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
               </div>
-            ) : (
-              "Continue"
             )}
-          </button>
+          </div>
+
+          <div className="w-full max-w-md mx-auto space-y-4 sm:space-y-5">
+            <div className="flex justify-center gap-3 sm:gap-4">
+              <button
+                onClick={() => {
+                  previousUnitRef.current = unit;
+                  setUnit("cm");
+                }}
+                className={`px-5 sm:px-6 py-2 rounded-lg font-semibold text-sm sm:text-base transition-all ${
+                  unit === "cm"
+                    ? "bg-teal-600 text-white"
+                    : "bg-gray-700 text-gray-300"
+                }`}
+              >
+                Metric (cm)
+              </button>
+              <button
+                onClick={() => {
+                  previousUnitRef.current = unit;
+                  setUnit("in");
+                }}
+                className={`px-5 sm:px-6 py-2 rounded-lg font-semibold text-sm sm:text-base transition-all ${
+                  unit === "in"
+                    ? "bg-teal-600 text-white"
+                    : "bg-gray-700 text-gray-300"
+                }`}
+              >
+                Imperial (in)
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Height ({unit})
+              </label>
+              <input
+                type="number"
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+                placeholder={`Enter your height in ${unit}`}
+                className="w-full bg-gray-800 text-white text-sm sm:text-base py-3 sm:py-3.5 px-4 rounded-lg sm:rounded-xl border-2 border-gray-600 focus:border-amber-500 outline-none placeholder:text-gray-500"
+              />
+            </div>
+
+            <div className="mt-12"></div>
+
+            <button
+              disabled={busy || !height || parseFloat(height) <= 0}
+              onClick={handleContinue}
+              className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                height && parseFloat(height) > 0 && !busy
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+            >
+              {busy ? (
+                <div className="flex items-center justify-center">
+                  <Loader size="sm" inline />
+                  <span className="ml-2">Loading...</span>
+                </div>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

@@ -128,7 +128,7 @@ export default function LanguageOnboarding() {
   }, [setHeader, busy, selectedLanguage]);
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden">
+    <div className="relative min-h-dvh w-full overflow-hidden">
       {/* Background Image */}
       <div className="fixed inset-0 z-0">
         <Image
@@ -145,17 +145,19 @@ export default function LanguageOnboarding() {
       <div className="fixed inset-0 z-10 bg-black/80" />
 
       {/* Content */}
-      <div className="relative z-20 flex min-h-[calc(100vh-120px)] items-center justify-center px-4 sm:px-6 py-8">
-        <div className="w-full max-w-4xl">
-          <div className="flex flex-col justify-between min-h-[calc(100vh-200px)]">
+      <div className="relative z-20 flex min-h-dvh items-center justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-3xl">
+          <div className="flex flex-col justify-center gap-5 sm:gap-7">
             {/* Top Section - Welcome */}
-            <div className="text-center mb-8 sm:mb-12">
-              <h1 className="text-3xl sm:text-4xl font-bold mb-2 sm:mb-4">
+            <div className="text-center mb-1 sm:mb-2 -mt-12">
+              <h1 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3">
                 <span className="text-white">Welcome to </span>
                 <span className="text-[#48bb78]">VitalSpark</span>
               </h1>
-              <p className="text-[#e5e7eb] text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
-                We're so glad you're here. VitalSpark is a space to care for your energy, comfort, and culture - through mindful coaching, comforting meals, and reflective journaling.
+              <p className="text-[#e5e7eb] text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
+                We're so glad you're here. VitalSpark is a space to care for
+                your energy, comfort, and culture - through mindful coaching,
+                comforting meals, and reflective journaling.
               </p>
             </div>
 
@@ -168,16 +170,16 @@ export default function LanguageOnboarding() {
                   </div>
                 )}
 
-                <div className="text-center mb-6 sm:mb-8">
-                  <h2 className="text-[#f59e0b] text-xl sm:text-2xl font-semibold mb-2">
+                <div className="text-center mb-4 sm:mb-6">
+                  <h2 className="text-[#f59e0b] text-lg sm:text-xl font-semibold mb-1.5 sm:mb-2">
                     Choose Your Language
                   </h2>
-                  <p className="text-white text-sm sm:text-base">
+                  <p className="text-white text-xs sm:text-sm md:text-base">
                     Select your preferred language for the best experience.
                   </p>
                 </div>
 
-                <div className="space-y-3 mb-6 sm:mb-8">
+                <div className="space-y-2.5 sm:space-y-3 mb-5 sm:mb-6">
                   {languages.map((lang) => (
                     <button
                       key={lang.code}
@@ -185,7 +187,7 @@ export default function LanguageOnboarding() {
                       onClick={() => {
                         setSelectedLanguage(lang.code);
                       }}
-                      className={`w-full h-14 sm:h-16 px-4 sm:px-6 rounded-xl border-2 transition-all flex items-center justify-between ${
+                      className={`w-full h-12 sm:h-14 px-4 sm:px-5 rounded-xl border-2 transition-all flex items-center justify-between ${
                         selectedLanguage === lang.code
                           ? "bg-[rgba(209,250,229,0.8)] border-[#059669] shadow-lg"
                           : "bg-[rgba(248,250,252,0.8)] border-[#e5e7eb] hover:border-gray-400"
@@ -193,7 +195,7 @@ export default function LanguageOnboarding() {
                     >
                       <div className="text-left">
                         <div
-                          className={`font-semibold text-base sm:text-lg ${
+                          className={`font-semibold text-sm sm:text-base ${
                             selectedLanguage === lang.code
                               ? "text-[#047857]"
                               : "text-[#0f172a]"
@@ -203,7 +205,7 @@ export default function LanguageOnboarding() {
                         </div>
                         {lang.nativeLabel && (
                           <div
-                            className={`text-sm ${
+                            className={`text-xs sm:text-sm ${
                               selectedLanguage === lang.code
                                 ? "text-[#059669]"
                                 : "text-[#64748b]"
@@ -214,8 +216,10 @@ export default function LanguageOnboarding() {
                         )}
                       </div>
                       {selectedLanguage === lang.code && (
-                        <div className="w-6 h-6 bg-[#059669] rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-bold text-sm">✓</span>
+                        <div className="w-5 h-5 bg-[#059669] rounded-full flex items-center justify-center shrink-0">
+                          <span className="text-white font-bold text-xs">
+                            ✓
+                          </span>
                         </div>
                       )}
                     </button>
@@ -223,8 +227,8 @@ export default function LanguageOnboarding() {
                 </div>
 
                 {showAffirmation && affirmation && (
-                  <div className="mb-6 sm:mb-8 bg-[#f59e0b]/20 border border-[#f59e0b]/50 rounded-xl px-4 sm:px-6 py-3 sm:py-4 animate-fade-in">
-                    <p className="text-[#f59e0b] text-sm sm:text-base font-medium text-center">
+                  <div className="mt-12 mb-5 bg-[#f59e0b]/20 border border-[#f59e0b]/50 rounded-xl px-4 sm:px-5 py-2.5 sm:py-3 animate-fade-in">
+                    <p className="text-[#f59e0b] text-xs sm:text-sm md:text-base italic font-medium font-serif text-center">
                       ✨ {affirmation}
                     </p>
                   </div>
@@ -233,8 +237,8 @@ export default function LanguageOnboarding() {
             </div>
 
             {/* Bottom Section - Start Button */}
-            <div className="w-full max-w-md mx-auto mt-6 sm:mt-8">
-              <p className="text-white text-sm text-center mb-3 sm:mb-4 font-medium">
+            <div className="w-full max-w-md mx-auto mt-1 sm:mt-2">
+              <p className="text-white text-xs sm:text-sm text-center mb-2.5 sm:mb-3 font-medium">
                 Let's setup your profile
               </p>
               <button
@@ -242,7 +246,7 @@ export default function LanguageOnboarding() {
                 onClick={() =>
                   selectedLanguage && handleLanguageSelect(selectedLanguage)
                 }
-                className={`w-full py-4 sm:py-5 rounded-xl font-bold text-lg sm:text-xl transition-all ${
+                className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
                   selectedLanguage && !busy
                     ? "bg-[#059669] hover:bg-[#047857] text-white shadow-lg hover:shadow-xl"
                     : "bg-[#9ca3af] text-gray-200 cursor-not-allowed"

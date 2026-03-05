@@ -3,7 +3,7 @@ import OpenAI from "openai";
 
 const DAY_WORKOUT_RPE_PROMPT_ID =
   "pmpt_696e02b6b42481948ee34e01a195d335063de4e3479a8980";
-const DAY_WORKOUT_RPE_PROMPT_VERSION = "3";
+const DAY_WORKOUT_RPE_PROMPT_VERSION = "4";
 
 type DayWorkoutRpePromptVariables = {
   gender?: string;

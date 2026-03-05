@@ -149,169 +149,173 @@ export default function ProfileOnboarding() {
   }, [setHeader, busy, isValid]);
 
   return (
-    <div className="min-h-screen bg-[#101A2C] flex items-center justify-center py-12">
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            Let's get to know you
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            Tell us a bit about yourself
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              What's your full name?
-            </label>
-            <div
-              className={`flex items-center bg-gray-800 rounded-xl px-4 border-2 transition-colors ${
-                isNameFocused ? "border-amber-500" : "border-gray-600"
-              }`}
-            >
-              <HiUser
-                className={`text-xl mr-3 ${
-                  isNameFocused ? "text-amber-500" : "text-gray-500"
-                }`}
-              />
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Enter your full name"
-                onFocus={() => setIsNameFocused(true)}
-                onBlur={() => setIsNameFocused(false)}
-                className="flex-1 bg-transparent text-white py-4 outline-none placeholder:text-gray-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              What should we call you?
-            </label>
-            <div
-              className={`flex items-center bg-gray-800 rounded-xl px-4 border-2 transition-colors ${
-                isNicknameFocused ? "border-amber-500" : "border-gray-600"
-              }`}
-            >
-              <HiSparkles
-                className={`text-xl mr-3 ${
-                  isNicknameFocused ? "text-amber-500" : "text-gray-500"
-                }`}
-              />
-              <input
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                placeholder="Enter your nickname"
-                onFocus={() => setIsNicknameFocused(true)}
-                onBlur={() => setIsNicknameFocused(false)}
-                className="flex-1 bg-transparent text-white py-4 outline-none placeholder:text-gray-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              How old are you?
-            </label>
-            <div className="space-y-2">
-              {ageRangeOptions.map((ageRange) => (
-                <button
-                  key={ageRange.code}
-                  onClick={() => setSelectedAgeRange(ageRange.code)}
-                  className={`w-full flex items-center p-4 rounded-xl border-2 transition-all ${
-                    selectedAgeRange === ageRange.code
-                      ? "bg-amber-500/20 border-amber-500"
-                      : "bg-gray-800 border-gray-600 hover:border-gray-500"
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
-                      selectedAgeRange === ageRange.code
-                        ? "border-amber-500"
-                        : "border-gray-500"
-                    }`}
-                  >
-                    {selectedAgeRange === ageRange.code && (
-                      <div className="w-3 h-3 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <span
-                    className={`font-medium ${
-                      selectedAgeRange === ageRange.code
-                        ? "text-amber-500"
-                        : "text-gray-300"
-                    }`}
-                  >
-                    {ageRange.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              What's your gender?
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {genderOptions.map((gender) => (
-                <button
-                  key={gender.code}
-                  disabled={busy}
-                  onClick={() => setSelectedGender(gender.code)}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    selectedGender === gender.code
-                      ? "bg-green-600 border-green-600"
-                      : "bg-gray-800 border-gray-600 hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  <span
-                    className={`font-semibold text-sm ${
-                      selectedGender === gender.code ? "text-white" : "text-gray-300"
-                    }`}
-                  >
-                    {gender.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {showAffirmation && affirmation && (
-            <div className="bg-amber-500/20 border border-amber-500/50 rounded-xl px-6 py-4 animate-fade-in">
-              <p className="text-amber-200 text-base sm:text-lg font-medium text-center">
-                ✨ {affirmation}
-              </p>
-            </div>
-          )}
-
-          <button
-            disabled={busy || !isValid}
-            onClick={handleContinue}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              isValid && !busy
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-gray-400 text-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {busy ? (
-              <div className="flex items-center justify-center">
-                <Loader size="sm" inline />
-                <span className="ml-2">Loading...</span>
+    <div className="min-h-dvh bg-[#101A2C] w-full">
+      <div className="flex min-h-dvh items-center justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="text-center -mt-12 mb-4 sm:mb-6">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              Let's get to know you
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              Tell us a bit about yourself
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
               </div>
-            ) : (
-              "Continue"
             )}
-          </button>
+          </div>
+
+          <div className="w-full max-w-md mx-auto space-y-4 sm:space-y-5">
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                What's your full name?
+              </label>
+              <div
+                className={`flex items-center bg-gray-800 rounded-xl px-3 sm:px-4 border-2 transition-colors ${
+                  isNameFocused ? "border-amber-500" : "border-gray-600"
+                }`}
+              >
+                <HiUser
+                  className={`text-lg sm:text-xl mr-2.5 sm:mr-3 ${
+                    isNameFocused ? "text-amber-500" : "text-gray-500"
+                  }`}
+                />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  onFocus={() => setIsNameFocused(true)}
+                  onBlur={() => setIsNameFocused(false)}
+                  className="flex-1 bg-transparent text-white py-3 sm:py-3.5 text-sm sm:text-base outline-none placeholder:text-gray-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                What should we call you?
+              </label>
+              <div
+                className={`flex items-center bg-gray-800 rounded-xl px-3 sm:px-4 border-2 transition-colors ${
+                  isNicknameFocused ? "border-amber-500" : "border-gray-600"
+                }`}
+              >
+                <HiSparkles
+                  className={`text-lg sm:text-xl mr-2.5 sm:mr-3 ${
+                    isNicknameFocused ? "text-amber-500" : "text-gray-500"
+                  }`}
+                />
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="Enter your nickname"
+                  onFocus={() => setIsNicknameFocused(true)}
+                  onBlur={() => setIsNicknameFocused(false)}
+                  className="flex-1 bg-transparent text-white py-3 sm:py-3.5 text-sm sm:text-base outline-none placeholder:text-gray-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                How old are you?
+              </label>
+              <div className="space-y-2 sm:space-y-2.5">
+                {ageRangeOptions.map((ageRange) => (
+                  <button
+                    key={ageRange.code}
+                    onClick={() => setSelectedAgeRange(ageRange.code)}
+                    className={`w-full flex items-center p-3 sm:p-3.5 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedAgeRange === ageRange.code
+                        ? "bg-amber-500/20 border-amber-500"
+                        : "bg-gray-800 border-gray-600 hover:border-gray-500"
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
+                        selectedAgeRange === ageRange.code
+                          ? "border-amber-500"
+                          : "border-gray-500"
+                      }`}
+                    >
+                      {selectedAgeRange === ageRange.code && (
+                        <div className="w-3 h-3 rounded-full bg-amber-500" />
+                      )}
+                    </div>
+                    <span
+                      className={`font-medium text-sm sm:text-base ${
+                        selectedAgeRange === ageRange.code
+                          ? "text-amber-500"
+                          : "text-gray-300"
+                      }`}
+                    >
+                      {ageRange.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                What's your gender?
+              </label>
+              <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+                {genderOptions.map((gender) => (
+                  <button
+                    key={gender.code}
+                    disabled={busy}
+                    onClick={() => setSelectedGender(gender.code)}
+                    className={`p-3 sm:p-3.5 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedGender === gender.code
+                        ? "bg-green-600 border-green-600"
+                        : "bg-gray-800 border-gray-600 hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <span
+                      className={`font-semibold text-xs sm:text-sm ${
+                        selectedGender === gender.code
+                          ? "text-white"
+                          : "text-gray-300"
+                      }`}
+                    >
+                      {gender.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {showAffirmation && affirmation && (
+              <div className="mt-12 mb-10 sm:mb-10 bg-amber-500/20 border border-amber-500/50 rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 animate-fade-in">
+                <p className="text-amber-200 text-xs sm:text-sm md:text-base font-medium italic font-serif text-center">
+                  ✨ {affirmation}
+                </p>
+              </div>
+            )}
+
+            <button
+              disabled={busy || !isValid}
+              onClick={handleContinue}
+              className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                isValid && !busy
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+            >
+              {busy ? (
+                <div className="flex items-center justify-center">
+                  <Loader size="sm" inline />
+                  <span className="ml-2">Loading...</span>
+                </div>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -102,8 +102,21 @@ export default function MoodOnboarding() {
     }
   }, [selectedMood, userProfile?.preferred_language]);
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setBusy(false);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   const handleContinue = async () => {
-    if (!selectedMood) return;
+    if (!selectedMood || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -163,121 +176,140 @@ export default function MoodOnboarding() {
   }, [setHeader, busy, selectedMood, isLoadingProfile]);
 
   return (
-    <div className="min-h-screen bg-[#101A2C] flex items-center justify-center py-12">
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            How are you feeling?
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            Pick a mood that best describes you right now
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        {isLoadingProfile ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader size="lg" text="Loading..." textColor="slate" />
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              {moods.slice(0, 3).map((mood) => (
-                <button
-                  key={mood.code}
-                  disabled={busy}
-                  onClick={() => setSelectedMood(mood.code)}
-                  className={`p-6 rounded-2xl border-2 transition-all ${
-                    selectedMood === mood.code
-                      ? `border-[${mood.color}] bg-[${mood.bgColor}]`
-                      : "border-gray-600 bg-gray-800 hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  style={{
-                    borderColor: selectedMood === mood.code ? mood.color : undefined,
-                    backgroundColor: selectedMood === mood.code ? mood.bgColor : undefined,
-                    transform: selectedMood === mood.code ? "scale(1.05)" : undefined,
-                  }}
-                >
-                  <div className="text-4xl mb-2">{mood.emoji}</div>
-                  <div
-                    className={`font-semibold text-sm ${
-                      selectedMood === mood.code ? `text-[${mood.color}]` : "text-gray-300"
-                    }`}
-                    style={{
-                      color: selectedMood === mood.code ? mood.color : undefined,
-                    }}
-                  >
-                    {mood.label}
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {moods.slice(3, 5).map((mood) => (
-                <button
-                  key={mood.code}
-                  disabled={busy}
-                  onClick={() => setSelectedMood(mood.code)}
-                  className={`p-6 rounded-2xl border-2 transition-all ${
-                    selectedMood === mood.code
-                      ? `border-[${mood.color}] bg-[${mood.bgColor}]`
-                      : "border-gray-600 bg-gray-800 hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  style={{
-                    borderColor: selectedMood === mood.code ? mood.color : undefined,
-                    backgroundColor: selectedMood === mood.code ? mood.bgColor : undefined,
-                    transform: selectedMood === mood.code ? "scale(1.05)" : undefined,
-                  }}
-                >
-                  <div className="text-4xl mb-2">{mood.emoji}</div>
-                  <div
-                    className={`font-semibold text-sm ${
-                      selectedMood === mood.code ? `text-[${mood.color}]` : "text-gray-300"
-                    }`}
-                    style={{
-                      color: selectedMood === mood.code ? mood.color : undefined,
-                    }}
-                  >
-                    {mood.label}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {showAffirmation && affirmation && (
-              <div className="mb-8 bg-amber-500/20 border border-amber-500/50 rounded-xl px-6 py-4 animate-fade-in">
-                <p className="text-amber-200 text-base sm:text-lg font-medium text-center">
-                  ✨ {affirmation}
-                </p>
+    <div className="min-h-dvh bg-[#101A2C] w-full">
+      <div className="flex min-h-dvh items-center justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="text-center -mt-12 mb-8 sm:mb-12">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              How are you feeling?
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              Pick a mood that best describes you right now
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
               </div>
             )}
+          </div>
 
-            <button
-              disabled={busy || !selectedMood || isLoadingProfile}
-              onClick={handleContinue}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-                selectedMood && !busy && !isLoadingProfile
-                  ? "bg-green-600 hover:bg-green-700 text-white"
-                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
-              }`}
-            >
-              {busy ? (
-                <div className="flex items-center justify-center">
-                  <Loader size="sm" inline />
-                  <span className="ml-2">Loading...</span>
+          {isLoadingProfile ? (
+            <div className="flex items-center justify-center py-6 sm:py-8">
+              <Loader size="lg" text="Loading..." textColor="slate" />
+            </div>
+          ) : (
+            <>
+              <div className="w-full max-w-md mx-auto grid grid-cols-3 gap-2 sm:gap-2.5 mb-2.5 sm:mb-3">
+                {moods.slice(0, 3).map((mood) => (
+                  <button
+                    key={mood.code}
+                    disabled={busy}
+                    onClick={() => setSelectedMood(mood.code)}
+                    className={`p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedMood === mood.code
+                        ? `border-[${mood.color}] bg-[${mood.bgColor}]`
+                        : "border-gray-600 bg-gray-800 hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    style={{
+                      borderColor:
+                        selectedMood === mood.code ? mood.color : undefined,
+                      backgroundColor:
+                        selectedMood === mood.code ? mood.bgColor : undefined,
+                      transform:
+                        selectedMood === mood.code ? "scale(1.05)" : undefined,
+                    }}
+                  >
+                    <div className="text-lg sm:text-xl md:text-2xl mb-0.5 sm:mb-1">
+                      {mood.emoji}
+                    </div>
+                    <div
+                      className={`font-semibold text-[10px] sm:text-[11px] md:text-xs ${
+                        selectedMood === mood.code
+                          ? `text-[${mood.color}]`
+                          : "text-gray-300"
+                      }`}
+                      style={{
+                        color:
+                          selectedMood === mood.code ? mood.color : undefined,
+                      }}
+                    >
+                      {mood.label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="w-full max-w-md mx-auto grid grid-cols-2 gap-2 sm:gap-2.5 mb-3 sm:mb-4">
+                {moods.slice(3, 5).map((mood) => (
+                  <button
+                    key={mood.code}
+                    disabled={busy}
+                    onClick={() => setSelectedMood(mood.code)}
+                    className={`p-2 sm:p-2.5 md:p-3 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedMood === mood.code
+                        ? `border-[${mood.color}] bg-[${mood.bgColor}]`
+                        : "border-gray-600 bg-gray-800 hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    style={{
+                      borderColor:
+                        selectedMood === mood.code ? mood.color : undefined,
+                      backgroundColor:
+                        selectedMood === mood.code ? mood.bgColor : undefined,
+                      transform:
+                        selectedMood === mood.code ? "scale(1.05)" : undefined,
+                    }}
+                  >
+                    <div className="text-lg sm:text-xl md:text-2xl mb-0.5 sm:mb-1">
+                      {mood.emoji}
+                    </div>
+                    <div
+                      className={`font-semibold text-[10px] sm:text-[11px] md:text-xs ${
+                        selectedMood === mood.code
+                          ? `text-[${mood.color}]`
+                          : "text-gray-300"
+                      }`}
+                      style={{
+                        color:
+                          selectedMood === mood.code ? mood.color : undefined,
+                      }}
+                    >
+                      {mood.label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {showAffirmation && affirmation && (
+                <div className="w-full max-w-md mx-auto mt-10 sm:mb-12 bg-amber-500/20 border border-amber-500/50 rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 animate-fade-in">
+                  <p className="text-amber-200 text-xs sm:text-sm md:text-base font-medium text-center italic font-serif">
+                    ✨ {affirmation}
+                  </p>
                 </div>
-              ) : (
-                "Continue"
               )}
-            </button>
-          </>
-        )}
+
+              <div className="w-full max-w-md mx-auto mt-auto">
+                <button
+                  disabled={busy || !selectedMood || isLoadingProfile}
+                  onClick={handleContinue}
+                  className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                    selectedMood && !busy && !isLoadingProfile
+                      ? "bg-green-600 hover:bg-green-700 text-white"
+                      : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                  }`}
+                >
+                  {busy ? (
+                    <div className="flex items-center justify-center">
+                      <Loader size="sm" inline />
+                      <span className="ml-2">Loading...</span>
+                    </div>
+                  ) : (
+                    "Continue"
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

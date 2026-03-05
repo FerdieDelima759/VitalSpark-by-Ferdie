@@ -57,7 +57,7 @@ export default function TargetMuscleGroupOnboarding() {
     setSelectedMuscles((prev) =>
       prev.includes(muscleCode)
         ? prev.filter((m) => m !== muscleCode)
-        : [...prev, muscleCode]
+        : [...prev, muscleCode],
     );
   };
 
@@ -80,7 +80,8 @@ export default function TargetMuscleGroupOnboarding() {
       fullBody: `${userGender}_full_body_diagram.png`,
     };
 
-    const imageName = imageMap[last] || `${userGender}_muscular_body_diagram.png`;
+    const imageName =
+      imageMap[last] || `${userGender}_muscular_body_diagram.png`;
     return `/images/Muscular/${userGender}/${imageName}`;
   };
 

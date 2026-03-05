@@ -202,10 +202,21 @@ export default function FitnessOnboarding() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     const id = toastIdRef.current++;
-    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setToasts((prev) => {
+      const hasDuplicate = prev.some(
+        (toast) =>
+          toast.type === type &&
+          toast.title === title &&
+          toast.message === message,
+      );
+      if (hasDuplicate) {
+        return prev;
+      }
+      return [...prev, { id, type, title, message }];
+    });
   };
 
   const dismissToast = (id: number) => {
@@ -228,21 +239,28 @@ export default function FitnessOnboarding() {
   };
 
   const handleWeeklyFrequencyToggle = (dayCode: string) => {
-    setWeeklyFrequency((prev) => {
-      const updated = prev.map((d) =>
-        d.code === dayCode ? { ...d, selected: !d.selected } : d
+    const selectedCount = weeklyFrequency.filter((d) => d.selected).length;
+    const currentDay = weeklyFrequency.find((d) => d.code === dayCode);
+
+    if (!currentDay) {
+      return;
+    }
+
+    // Only block when trying to add a 6th selected day.
+    if (!currentDay.selected && selectedCount >= 5) {
+      showToast(
+        "error",
+        "Weekly Preference Limit",
+        "You can select a maximum of 5 days only.",
       );
-      const selectedCount = updated.filter((d) => d.selected).length;
-      if (selectedCount > 5) {
-        showToast(
-          "error",
-          "Too many days",
-          "You can select a maximum of 5 days only."
-        );
-        return prev;
-      }
-      return updated;
-    });
+      return;
+    }
+
+    setWeeklyFrequency((prev) =>
+      prev.map((d) =>
+        d.code === dayCode ? { ...d, selected: !d.selected } : d,
+      ),
+    );
   };
 
   const addCustomEquipment = () => {
@@ -355,367 +373,385 @@ export default function FitnessOnboarding() {
 
   return (
     <div
-      className="bg-[#101A2C] flex justify-center pt-12"
+      className="bg-[#101A2C] w-full"
       style={{
         minHeight: showFitnessGoalDropdown ? "calc(100vh + 500px)" : "100vh",
         paddingBottom: showFitnessGoalDropdown ? "500px" : "3rem",
       }}
     >
-      <div className="w-full max-w-2xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-8">
-          <h2 className="text-amber-500 text-2xl sm:text-3xl font-bold mb-2">
-            Your Fitness Goals
-          </h2>
-          <p className="text-gray-300 text-base sm:text-lg">
-            Tell us about your fitness preferences
-          </p>
-          {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          {/* Fitness Goal */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Fitness Goal
-            </label>
-            <div className="relative" ref={fitnessGoalDropdownRef}>
-              <button
-                type="button"
-                onClick={() =>
-                  setShowFitnessGoalDropdown(!showFitnessGoalDropdown)
-                }
-                disabled={busy}
-                className={`w-full bg-[#18223A] text-left py-4 px-5 rounded-xl border-2 transition-all ${
-                  selectedFitnessGoal
-                    ? "border-amber-500 text-gray-100"
-                    : "border-gray-600 text-gray-400"
-                } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
-              >
-                <span>
-                  {selectedFitnessGoal
-                    ? fitnessGoalOptions.find(
-                        (g) => g.code === selectedFitnessGoal,
-                      )?.label
-                    : "Select Fitness Goal"}
-                </span>
-                <span
-                  className={`transform transition-transform ${
-                    showFitnessGoalDropdown ? "rotate-180" : ""
-                  }`}
-                >
-                  ▼
-                </span>
-              </button>
-
-              {showFitnessGoalDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-y-auto">
-                  {fitnessGoalOptions.map((goal, index) => (
-                    <button
-                      key={goal.code}
-                      type="button"
-                      onClick={() => {
-                        setSelectedFitnessGoal(goal.code);
-                        setShowFitnessGoalDropdown(false);
-                      }}
-                      className={`w-full text-left px-5 py-3.5 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
-                        selectedFitnessGoal === goal.code
-                          ? "text-amber-500 font-semibold bg-[#101A2C]"
-                          : "text-gray-100"
-                      }`}
-                    >
-                      {goal.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Fitness Level */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Level
-            </label>
-            <div className="space-y-2">
-              {fitnessLevelOptions.map((level) => (
-                <button
-                  key={level.code}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setSelectedLevel(level.code)}
-                  className={`w-full flex items-center p-4 rounded-xl border-2 transition-all ${
-                    selectedLevel === level.code
-                      ? "border-amber-500 bg-[#18223A]"
-                      : "border-gray-600 bg-[#18223A] hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
-                      selectedLevel === level.code
-                        ? "border-amber-500"
-                        : "border-gray-600"
-                    }`}
-                  >
-                    {selectedLevel === level.code && (
-                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <span
-                    className={`font-medium ${
-                      selectedLevel === level.code
-                        ? "text-amber-500"
-                        : "text-gray-300"
-                    }`}
-                  >
-                    {level.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Workout Location */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Workout Location
-            </label>
-            <div className="space-y-2">
-              {workoutLocationOptions.map((location) => (
-                <button
-                  key={location.code}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setSelectedLocation(location.code);
-                    setSelectedEquipments([]);
-                    setOtherEquipments([]);
-                    setCurrentOtherEquipment("");
-                  }}
-                  className={`w-full flex items-center p-4 rounded-xl border-2 transition-all ${
-                    selectedLocation === location.code
-                      ? "border-amber-500 bg-[#18223A]"
-                      : "border-gray-600 bg-[#18223A] hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
-                      selectedLocation === location.code
-                        ? "border-amber-500"
-                        : "border-gray-600"
-                    }`}
-                  >
-                    {selectedLocation === location.code && (
-                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    )}
-                  </div>
-                  <span
-                    className={`font-medium ${
-                      selectedLocation === location.code
-                        ? "text-amber-500"
-                        : "text-gray-300"
-                    }`}
-                  >
-                    {location.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Equipment */}
-          {selectedLocation && (
-            <div>
-              <label className="block text-white text-sm font-semibold mb-2">
-                Equipment
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {equipmentOptions.map((equipment) => {
-                  const isNoneSelected = selectedEquipments.includes("none");
-                  const isDisabled =
-                    isNoneSelected && equipment.code !== "none";
-                  const isSelected = selectedEquipments.includes(
-                    equipment.code,
-                  );
-
-                  return (
-                    <button
-                      key={equipment.code}
-                      type="button"
-                      disabled={busy || isDisabled}
-                      onClick={() => handleEquipmentSelection(equipment.code)}
-                      className={`flex items-center p-3 rounded-xl border-2 transition-all ${
-                        isDisabled
-                          ? "border-gray-600 bg-[#18223A] opacity-50"
-                          : isSelected
-                            ? "border-amber-500 bg-[#18223A]"
-                            : "border-gray-600 bg-[#18223A] hover:border-gray-500"
-                      } ${busy || isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
-                    >
-                      <div
-                        className={`w-5 h-5 rounded border-2 mr-2 flex items-center justify-center ${
-                          isSelected
-                            ? "bg-amber-500 border-amber-500"
-                            : "border-gray-600"
-                        }`}
-                      >
-                        {isSelected && (
-                          <span className="text-white text-xs font-bold">
-                            ✓
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`text-sm font-medium flex-1 text-left ${
-                          isSelected
-                            ? "text-amber-500"
-                            : isDisabled
-                              ? "text-gray-500"
-                              : "text-gray-300"
-                        }`}
-                      >
-                        {equipment.label}
-                      </span>
-                    </button>
-                  );
-                })}
+      <div className="flex min-h-dvh items-start justify-center px-4 sm:px-5 md:px-6 pt-20 sm:pt-24 pb-5 sm:pb-7">
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="text-center -mt-12 mb-4 sm:mb-6">
+            <h2 className="text-amber-500 text-lg sm:text-xl md:text-2xl font-bold mb-1 sm:mb-1.5">
+              Your Fitness Goals
+            </h2>
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base">
+              Tell us about your fitness preferences
+            </p>
+            {error && (
+              <div className="mt-3 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2.5 rounded-lg text-sm sm:text-base">
+                {error}
               </div>
+            )}
+          </div>
 
-              {/* Custom equipment when at home */}
-              {selectedLocation === "home" &&
-                selectedEquipments.includes("other") &&
-                !selectedEquipments.includes("none") && (
-                  <div className="mt-4">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={currentOtherEquipment}
-                        onChange={(e) =>
-                          setCurrentOtherEquipment(e.target.value)
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCustomEquipment();
-                          }
-                        }}
-                        placeholder="Specify other equipment"
-                        className="flex-1 bg-[#18223A] text-gray-100 px-4 py-3 rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      />
+          <div className="w-full max-w-md mx-auto space-y-4 sm:space-y-5">
+            {/* Fitness Goal */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Fitness Goal
+              </label>
+              <div className="relative" ref={fitnessGoalDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowFitnessGoalDropdown(!showFitnessGoalDropdown)
+                  }
+                  disabled={busy}
+                  className={`w-full bg-[#18223A] text-left text-sm sm:text-base py-3 sm:py-3.5 px-4 rounded-lg sm:rounded-xl border-2 transition-all ${
+                    selectedFitnessGoal
+                      ? "border-amber-500 text-gray-100"
+                      : "border-gray-600 text-gray-400"
+                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} flex items-center justify-between`}
+                >
+                  <span>
+                    {selectedFitnessGoal
+                      ? fitnessGoalOptions.find(
+                          (g) => g.code === selectedFitnessGoal,
+                        )?.label
+                      : "Select Fitness Goal"}
+                  </span>
+                  <span
+                    className={`transform transition-transform ${
+                      showFitnessGoalDropdown ? "rotate-180" : ""
+                    }`}
+                  >
+                    ▼
+                  </span>
+                </button>
+
+                {showFitnessGoalDropdown && (
+                  <div className="absolute z-50 w-full mt-2 bg-[#18223A] rounded-lg sm:rounded-xl border border-gray-600 shadow-lg max-h-80 overflow-y-auto">
+                    {fitnessGoalOptions.map((goal, index) => (
                       <button
+                        key={goal.code}
                         type="button"
-                        onClick={addCustomEquipment}
-                        disabled={!currentOtherEquipment.trim()}
-                        className={`px-4 py-3 rounded-xl font-semibold ${
-                          currentOtherEquipment.trim()
-                            ? "bg-amber-500 text-black"
-                            : "bg-gray-600 text-gray-400 cursor-not-allowed"
+                        onClick={() => {
+                          setSelectedFitnessGoal(goal.code);
+                          setShowFitnessGoalDropdown(false);
+                        }}
+                        className={`w-full text-left text-sm sm:text-base px-4 py-3 hover:bg-[#101A2C] transition-colors border-b border-gray-700 last:border-b-0 ${
+                          selectedFitnessGoal === goal.code
+                            ? "text-amber-500 font-semibold bg-[#101A2C]"
+                            : "text-gray-100"
                         }`}
                       >
-                        +
+                        {goal.label}
                       </button>
-                    </div>
-                    {otherEquipments.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {otherEquipments.map((equipment, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between bg-[#18223A] px-4 py-3 rounded-xl border border-amber-500"
-                          >
-                            <span className="text-gray-100">{equipment}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeCustomEquipment(equipment)}
-                              className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
-            </div>
-          )}
-
-          {/* Workout Duration */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Workout Duration
-            </label>
-            <div className="text-center">
-              <div className="text-amber-500 text-lg font-semibold mb-4">
-                {workoutDuration} minutes
-              </div>
-              <input
-                type="range"
-                min="15"
-                max="120"
-                step="15"
-                value={workoutDuration}
-                onChange={(e) => setWorkoutDuration(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                style={{
-                  background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${
-                    ((workoutDuration - 15) / (120 - 15)) * 100
-                  }%, #374151 ${((workoutDuration - 15) / (120 - 15)) * 100}%, #374151 100%)`,
-                }}
-              />
-              <div className="flex justify-between mt-2 text-xs text-gray-400">
-                <span>15 min</span>
-                <span>120 min</span>
               </div>
             </div>
-          </div>
 
-          {/* Weekly Frequency */}
-          <div>
-            <label className="block text-white text-sm font-semibold mb-2">
-              Weekly Frequency
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {weeklyFrequency.map((day) => (
-                <button
-                  key={day.code}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleWeeklyFrequencyToggle(day.code)}
-                  className={`px-4 py-2 rounded-xl border-2 transition-all ${
-                    day.selected
-                      ? "bg-amber-500 border-amber-500 text-white"
-                      : "bg-[#18223A] border-gray-600 text-gray-300 hover:border-gray-500"
-                  } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  <span className="font-semibold text-sm">{day.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            disabled={busy || !isValid}
-            onClick={handleContinue}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-              isValid && !busy
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-gray-400 text-gray-200 cursor-not-allowed"
-            }`}
-          >
-            {busy ? (
-              <div className="flex items-center justify-center">
-                <Loader size="sm" inline />
-                <span className="ml-2">Loading...</span>
+            {/* Fitness Level */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Level
+              </label>
+              <div className="space-y-2">
+                {fitnessLevelOptions.map((level) => (
+                  <button
+                    key={level.code}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setSelectedLevel(level.code)}
+                    className={`w-full flex items-center p-3 sm:p-3.5 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedLevel === level.code
+                        ? "border-amber-500 bg-[#18223A]"
+                        : "border-gray-600 bg-[#18223A] hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
+                        selectedLevel === level.code
+                          ? "border-amber-500"
+                          : "border-gray-600"
+                      }`}
+                    >
+                      {selectedLevel === level.code && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      )}
+                    </div>
+                    <span
+                      className={`font-medium text-sm sm:text-base ${
+                        selectedLevel === level.code
+                          ? "text-amber-500"
+                          : "text-gray-300"
+                      }`}
+                    >
+                      {level.label}
+                    </span>
+                  </button>
+                ))}
               </div>
-            ) : (
-              "Continue"
+            </div>
+
+            {/* Workout Location */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Workout Location
+              </label>
+              <div className="space-y-2">
+                {workoutLocationOptions.map((location) => (
+                  <button
+                    key={location.code}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setSelectedLocation(location.code);
+                      setSelectedEquipments([]);
+                      setOtherEquipments([]);
+                      setCurrentOtherEquipment("");
+                    }}
+                    className={`w-full flex items-center p-3 sm:p-3.5 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      selectedLocation === location.code
+                        ? "border-amber-500 bg-[#18223A]"
+                        : "border-gray-600 bg-[#18223A] hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
+                        selectedLocation === location.code
+                          ? "border-amber-500"
+                          : "border-gray-600"
+                      }`}
+                    >
+                      {selectedLocation === location.code && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      )}
+                    </div>
+                    <span
+                      className={`font-medium text-sm sm:text-base ${
+                        selectedLocation === location.code
+                          ? "text-amber-500"
+                          : "text-gray-300"
+                      }`}
+                    >
+                      {location.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Equipment */}
+            {selectedLocation && (
+              <div>
+                <label className="block text-gray-300 text-sm font-semibold mb-2">
+                  Equipment
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {equipmentOptions.map((equipment) => {
+                    const isNoneSelected = selectedEquipments.includes("none");
+                    const isDisabled =
+                      isNoneSelected && equipment.code !== "none";
+                    const isSelected = selectedEquipments.includes(
+                      equipment.code,
+                    );
+
+                    return (
+                      <button
+                        key={equipment.code}
+                        type="button"
+                        disabled={busy || isDisabled}
+                        onClick={() => handleEquipmentSelection(equipment.code)}
+                        className={`flex items-center p-3 rounded-lg sm:rounded-xl border-2 transition-all ${
+                          isDisabled
+                            ? "border-gray-600 bg-[#18223A] opacity-50"
+                            : isSelected
+                              ? "border-amber-500 bg-[#18223A]"
+                              : "border-gray-600 bg-[#18223A] hover:border-gray-500"
+                        } ${busy || isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded border-2 mr-2 flex items-center justify-center ${
+                            isSelected
+                              ? "bg-amber-500 border-amber-500"
+                              : "border-gray-600"
+                          }`}
+                        >
+                          {isSelected && (
+                            <span className="text-white text-xs font-bold">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`text-xs sm:text-sm font-medium flex-1 text-left ${
+                            isSelected
+                              ? "text-amber-500"
+                              : isDisabled
+                                ? "text-gray-500"
+                                : "text-gray-300"
+                          }`}
+                        >
+                          {equipment.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom equipment when at home */}
+                {selectedLocation === "home" &&
+                  selectedEquipments.includes("other") &&
+                  !selectedEquipments.includes("none") && (
+                    <div className="mt-4">
+                      <div className="flex gap-3">
+                        <input
+                          type="text"
+                          value={currentOtherEquipment}
+                          onChange={(e) =>
+                            setCurrentOtherEquipment(e.target.value)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addCustomEquipment();
+                            }
+                          }}
+                          placeholder="Specify other equipment"
+                          className="flex-1 bg-[#18223A] text-gray-100 text-sm sm:text-base px-4 py-3 rounded-lg sm:rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={addCustomEquipment}
+                          disabled={!currentOtherEquipment.trim()}
+                          className={`px-4 py-3 rounded-lg sm:rounded-xl font-semibold ${
+                            currentOtherEquipment.trim()
+                              ? "bg-amber-500 text-black"
+                              : "bg-gray-600 text-gray-400 cursor-not-allowed"
+                          }`}
+                        >
+                          +
+                        </button>
+                      </div>
+                      {otherEquipments.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {otherEquipments.map((equipment, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between bg-[#18223A] px-4 py-3 rounded-lg sm:rounded-xl border border-amber-500"
+                            >
+                              <span className="text-gray-100">{equipment}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeCustomEquipment(equipment)}
+                                className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+              </div>
             )}
-          </button>
+
+            {/* Workout Duration */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Workout Duration
+              </label>
+              <div className="text-center">
+                <div className="text-amber-500 text-base sm:text-lg font-semibold mb-3 sm:mb-4">
+                  {workoutDuration} minutes
+                </div>
+                <input
+                  type="range"
+                  min="15"
+                  max="120"
+                  step="15"
+                  value={workoutDuration}
+                  onChange={(e) => setWorkoutDuration(parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  style={{
+                    background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${
+                      ((workoutDuration - 15) / (120 - 15)) * 100
+                    }%, #374151 ${((workoutDuration - 15) / (120 - 15)) * 100}%, #374151 100%)`,
+                  }}
+                />
+                <div className="flex justify-between mt-2 text-xs text-gray-400">
+                  <span>15 min</span>
+                  <span>120 min</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Weekly Frequency */}
+            <div>
+              <label className="block text-gray-300 text-sm font-semibold mb-2">
+                Weekly Frequency
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {weeklyFrequency.map((day) => (
+                  <button
+                    key={day.code}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleWeeklyFrequencyToggle(day.code)}
+                    className={`px-4 py-2 rounded-lg sm:rounded-xl border-2 transition-all ${
+                      day.selected
+                        ? "bg-amber-500 border-amber-500 text-white"
+                        : "bg-[#18223A] border-gray-600 text-gray-300 hover:border-gray-500"
+                    } ${busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <span className="font-semibold text-xs sm:text-sm">
+                      {day.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-12"></div>
+
+            <button
+              disabled={busy || !isValid}
+              onClick={handleContinue}
+              className={`w-full py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base transition-all ${
+                isValid && !busy
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+            >
+              {busy ? (
+                <div className="flex items-center justify-center">
+                  <Loader size="sm" inline />
+                  <span className="ml-2">Loading...</span>
+                </div>
+              ) : (
+                "Continue"
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Toast Notifications */}
+      {toasts.map((toast, index) => (
+        <Toast
+          key={toast.id}
+          type={toast.type}
+          title={toast.title}
+          message={toast.message}
+          onDismiss={() => dismissToast(toast.id)}
+          index={index}
+        />
+      ))}
     </div>
   );
 }

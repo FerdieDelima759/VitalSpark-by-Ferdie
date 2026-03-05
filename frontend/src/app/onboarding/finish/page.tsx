@@ -32,7 +32,7 @@ export default function FinishOnboarding() {
               result.data.full_name?.split(" ")[0] ||
               "Friend";
             setMotivationalMessage(
-              `${name}, you're all set! Let's achieve your fitness goals together!`
+              `${name}, you're all set! Let's achieve your fitness goals together!`,
             );
           }
         }
@@ -80,26 +80,28 @@ export default function FinishOnboarding() {
     "Friend";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0b1220] via-[#0f1829] to-[#0a0f1a] flex items-center justify-center py-12">
-      <div className="w-full max-w-3xl mx-auto px-4 sm:px-6">
+    <div className="min-h-dvh bg-linear-to-b from-[#0b1220] via-[#0f1829] to-[#0a0f1a] flex items-center justify-center py-5 sm:py-8 md:py-10">
+      <div className="w-full max-w-3xl mx-auto px-4 sm:px-5 md:px-6">
         <div className="text-center">
-          <div className="mb-8">
-            <div className="text-6xl mb-4 animate-pulse">✨</div>
-            <h1 className="text-4xl sm:text-5xl font-extrabold text-amber-400 mb-4">
+          <div className="mb-5 sm:mb-6 md:mb-7">
+            <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 animate-pulse">
+              ✨
+            </div>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-amber-400 mb-2 sm:mb-3 leading-tight">
               Welcome, {displayName}!
             </h1>
-            <p className="text-green-400 text-xl sm:text-2xl font-semibold mb-6">
+            <p className="text-base sm:text-lg md:text-xl text-green-400 font-semibold mb-3 sm:mb-4">
               You're in good hands
             </p>
-            <p className="text-gray-300 text-base sm:text-lg max-w-2xl mx-auto">
+            <p className="text-gray-300 text-xs sm:text-sm md:text-base leading-relaxed max-w-xl sm:max-w-2xl mx-auto">
               We're here to support you on your fitness and nutrition journey
               with personalized plans and guidance.
             </p>
           </div>
 
           {motivationalMessage && (
-            <div className="mb-8 bg-amber-500/20 border border-amber-500/50 rounded-xl px-6 py-4 max-w-2xl mx-auto">
-              <p className="text-amber-200 text-lg sm:text-xl font-semibold text-center">
+            <div className="mb-5 sm:mb-6 bg-amber-500/20 border border-amber-500/50 rounded-xl px-3 sm:px-4 md:px-5 py-3 max-w-xl sm:max-w-2xl mx-auto">
+              <p className="text-amber-200 text-sm sm:text-base md:text-lg font-medium font-serif text-center leading-relaxed italic">
                 {motivationalMessage}
               </p>
             </div>
@@ -111,14 +113,14 @@ export default function FinishOnboarding() {
             </div>
           )}
 
-          <div className="mb-8">
-            <p className="text-gray-400 text-sm mb-4">
+          <div className="mb-5 sm:mb-6">
+            <p className="text-gray-400 text-xs sm:text-sm mb-3">
               Your journey to better health starts now
             </p>
             <button
               onClick={handleCreateProfile}
               disabled={busy}
-              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto bg-linear-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold py-3 px-5 sm:px-6 rounded-xl text-sm sm:text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? (
                 <div className="flex items-center justify-center">
@@ -138,4 +140,3 @@ export default function FinishOnboarding() {
     </div>
   );
 }
-
