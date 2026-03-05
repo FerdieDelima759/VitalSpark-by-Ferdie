@@ -316,7 +316,10 @@ const parsePlanExerciseMetricsForSave = (value: string | undefined) => {
     if (idx < 0) return;
 
     const before = lowerValue.slice(Math.max(0, idx - 8), idx);
-    const after = lowerValue.slice(idx + match[0].length, idx + match[0].length + 8);
+    const after = lowerValue.slice(
+      idx + match[0].length,
+      idx + match[0].length + 8,
+    );
     const isRestValue = /\brest\s*$/.test(before) || /^\s*rest\b/.test(after);
 
     if (!isRestValue) {
@@ -807,7 +810,10 @@ export default function PersonalPage() {
       });
 
       // Step 1: Generate plan metadata first to get plan_name
-      aiLog("Ã°Å¸ÂÂ·Ã¯Â¸Â Step 1: Generating Plan Metadata with duration:", planDuration);
+      aiLog(
+        "Ã°Å¸ÂÂ·Ã¯Â¸Â Step 1: Generating Plan Metadata with duration:",
+        planDuration,
+      );
       const metadataResult = await generatePlanMetadataWithPrompt({
         gender: userData.gender,
         goal: userData.goal,
@@ -930,7 +936,10 @@ export default function PersonalPage() {
             typeof result.response === "string"
               ? result.response
               : JSON.stringify(result.response, null, 2);
-          aiLog("Ã¢Å“â€¦ Workout Plan Text Generated (length):", workoutText.length);
+          aiLog(
+            "Ã¢Å“â€¦ Workout Plan Text Generated (length):",
+            workoutText.length,
+          );
           setGeneratedWorkout(workoutText);
           setWorkoutPlanJSON(null);
 
@@ -988,7 +997,9 @@ export default function PersonalPage() {
     const imageSlug = createImageSlug(section, exerciseName);
 
     aiLog(`Ã°Å¸Å½Â¨ [Regenerate] Starting: ${exerciseName}`);
-    aiLog(`    Ã°Å¸â€œâ€š Section: ${section} Ã¢â€ â€™ ${mapSectionKeyToStorage(section)}`);
+    aiLog(
+      `    Ã°Å¸â€œâ€š Section: ${section} Ã¢â€ â€™ ${mapSectionKeyToStorage(section)}`,
+    );
     aiLog(`    Ã°Å¸ÂÂ·Ã¯Â¸Â Image slug: ${imageSlug}`);
 
     // Note: Individual image regeneration now uses context functions
@@ -1087,15 +1098,21 @@ export default function PersonalPage() {
     aiLog(
       `Ã¢â€¢â€˜  Ã°Å¸Å½Â¨ AUTO-GENERATING IMAGES FOR: ${dayName.toUpperCase().padEnd(28)} Ã¢â€¢â€˜`,
     );
-    aiLog(`Ã¢â€¢Â Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â£`);
-    aiLog(`Ã¢â€¢â€˜  Ã°Å¸â€œÅ  Total exercises: ${String(totalExercises).padEnd(40)} Ã¢â€¢â€˜`);
+    aiLog(
+      `Ã¢â€¢Â Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â£`,
+    );
+    aiLog(
+      `Ã¢â€¢â€˜  Ã°Å¸â€œÅ  Total exercises: ${String(totalExercises).padEnd(40)} Ã¢â€¢â€˜`,
+    );
     aiLog(`Ã¢â€¢â€˜  Ã°Å¸â€˜Â¤ Gender: ${gender.padEnd(49)} Ã¢â€¢â€˜`);
     aiLog(
       `Ã¢â€¢â€˜  Ã°Å¸â€œâ€š Sections: warmup(${sections[0].exercises.length}) Ã¢â€ â€™ main(${sections[1].exercises.length}) Ã¢â€ â€™ cooldown(${sections[2].exercises.length})`.padEnd(
         64,
       ) + ` Ã¢â€¢â€˜`,
     );
-    aiLog(`Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â`);
+    aiLog(
+      `Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â`,
+    );
 
     // Process each section consecutively
     for (const section of sections) {
@@ -1194,7 +1211,9 @@ export default function PersonalPage() {
               // Update with final storage URL
               setExerciseImage(imageKey, uploadResult.url!);
             } else {
-              aiWarn(`${progress} Ã¢Å¡Â Ã¯Â¸Â Upload failed: ${uploadResult.error}`);
+              aiWarn(
+                `${progress} Ã¢Å¡Â Ã¯Â¸Â Upload failed: ${uploadResult.error}`,
+              );
             }
           } else {
             failedCount++;
@@ -1219,16 +1238,28 @@ export default function PersonalPage() {
     aiLog(
       `\nÃ¢â€¢â€Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢â€”`,
     );
-    aiLog(`Ã¢â€¢â€˜  Ã°Å¸Å½Â¨ COMPLETE: ${dayName.toUpperCase().padEnd(47)} Ã¢â€¢â€˜`);
-    aiLog(`Ã¢â€¢Â Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â£`);
-    aiLog(`Ã¢â€¢â€˜  Ã°Å¸â€œÅ  Total processed: ${String(processedCount).padEnd(40)} Ã¢â€¢â€˜`);
+    aiLog(
+      `Ã¢â€¢â€˜  Ã°Å¸Å½Â¨ COMPLETE: ${dayName.toUpperCase().padEnd(47)} Ã¢â€¢â€˜`,
+    );
+    aiLog(
+      `Ã¢â€¢Â Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â£`,
+    );
+    aiLog(
+      `Ã¢â€¢â€˜  Ã°Å¸â€œÅ  Total processed: ${String(processedCount).padEnd(40)} Ã¢â€¢â€˜`,
+    );
     aiLog(
       `Ã¢â€¢â€˜  Ã¢Å“â€¦ Already in storage: ${String(existsInStorageCount).padEnd(37)} Ã¢â€¢â€˜`,
     );
-    aiLog(`Ã¢â€¢â€˜  Ã°Å¸Å½Â¨ Generated: ${String(generatedCount).padEnd(46)} Ã¢â€¢â€˜`);
-    aiLog(`Ã¢â€¢â€˜  Ã°Å¸â€œÂ¤ Uploaded: ${String(uploadedCount).padEnd(47)} Ã¢â€¢â€˜`);
+    aiLog(
+      `Ã¢â€¢â€˜  Ã°Å¸Å½Â¨ Generated: ${String(generatedCount).padEnd(46)} Ã¢â€¢â€˜`,
+    );
+    aiLog(
+      `Ã¢â€¢â€˜  Ã°Å¸â€œÂ¤ Uploaded: ${String(uploadedCount).padEnd(47)} Ã¢â€¢â€˜`,
+    );
     aiLog(`Ã¢â€¢â€˜  Ã¢ÂÅ’ Failed: ${String(failedCount).padEnd(49)} Ã¢â€¢â€˜`);
-    aiLog(`Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â`);
+    aiLog(
+      `Ã¢â€¢Å¡Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â`,
+    );
 
     if (generatedCount > 0) {
       aiLog(
@@ -1618,7 +1649,9 @@ export default function PersonalPage() {
                 existingCount++;
                 aiLog(`Ã¢Å“â€¦ [${checkedCount}] ${exercise.name}: EXISTS`);
               } else {
-                aiLog(`Ã°Å¸Å½Â¨ [${checkedCount}] ${exercise.name}: GENERATING...`);
+                aiLog(
+                  `Ã°Å¸Å½Â¨ [${checkedCount}] ${exercise.name}: GENERATING...`,
+                );
 
                 // Generate and upload the image
                 const genResult = await generateAndUploadExerciseImage(
@@ -1859,7 +1892,10 @@ export default function PersonalPage() {
           console.log("Ã¢Å¡Â Ã¯Â¸Â Using fallback image path:", imagePath);
         }
       } catch (imgError) {
-        console.warn("Ã¢Å¡Â Ã¯Â¸Â Error getting image path, using fallback:", imgError);
+        console.warn(
+          "Ã¢Å¡Â Ã¯Â¸Â Error getting image path, using fallback:",
+          imgError,
+        );
         const randomNum = Math.floor(Math.random() * 50) + 1;
         imagePath = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/plans/${userGender}/${userLocation}/${randomNum}.png`;
       }
@@ -1999,12 +2035,15 @@ export default function PersonalPage() {
           const remainingDays = durationDays - 7;
 
           // Step 1: Create the parent week plan (user_workout_weekly_plan)
-          console.log("Ã°Å¸â€œâ€¦ Creating Week Plan (user_workout_weekly_plan):", {
-            plan_id: planId,
-            week_number: weekNumber,
-            rest_days: restDays,
-            remaining_days: remainingDays,
-          });
+          console.log(
+            "Ã°Å¸â€œâ€¦ Creating Week Plan (user_workout_weekly_plan):",
+            {
+              plan_id: planId,
+              week_number: weekNumber,
+              rest_days: restDays,
+              remaining_days: remainingDays,
+            },
+          );
 
           const weekPlanPromise = createUserWorkoutWeekPlan({
             week_number: weekNumber,
@@ -2031,7 +2070,10 @@ export default function PersonalPage() {
           ]);
 
           if (!weekPlanResult.success || !weekPlanResult.data?.id) {
-            console.error("Ã¢ÂÅ’ Failed to save Week Plan:", weekPlanResult.error);
+            console.error(
+              "Ã¢ÂÅ’ Failed to save Week Plan:",
+              weekPlanResult.error,
+            );
             showToast(
               `Plan saved but week plan failed: ${weekPlanResult.error || "Unknown error"}`,
               "error",
@@ -2245,9 +2287,12 @@ export default function PersonalPage() {
               );
 
               if (exerciseResult.success && exerciseResult.data) {
-                console.log("Ã¢Å“â€¦ Exercise Details Saved/Reused Successfully:", {
-                  records_count: exerciseResult.data?.length,
-                });
+                console.log(
+                  "Ã¢Å“â€¦ Exercise Details Saved/Reused Successfully:",
+                  {
+                    records_count: exerciseResult.data?.length,
+                  },
+                );
 
                 const exerciseById = new Map(
                   exerciseResult.data.map((exercise) => [
@@ -2300,13 +2345,16 @@ export default function PersonalPage() {
                   exerciseIdMap.set(key, exercise.id);
                 });
 
-                console.log("Ã°Å¸â€”â€šÃ¯Â¸Â Exercise ID Map created (name+equipment):", {
-                  total_entries: exerciseIdMap.size,
-                  sample_entries: Array.from(exerciseIdMap.entries()).slice(
-                    0,
-                    5,
-                  ),
-                });
+                console.log(
+                  "Ã°Å¸â€”â€šÃ¯Â¸Â Exercise ID Map created (name+equipment):",
+                  {
+                    total_entries: exerciseIdMap.size,
+                    sample_entries: Array.from(exerciseIdMap.entries()).slice(
+                      0,
+                      5,
+                    ),
+                  },
+                );
 
                 // userGender is already defined at the top of handleSavePlan
 
@@ -2477,11 +2525,15 @@ export default function PersonalPage() {
                         console.log(
                           "Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â",
                         );
-                        console.log(`Ã°Å¸Å½Â¨ BACKGROUND IMAGE PROCESSING STARTED`);
+                        console.log(
+                          `Ã°Å¸Å½Â¨ BACKGROUND IMAGE PROCESSING STARTED`,
+                        );
                         console.log(
                           `Ã°Å¸â€œÅ  Total exercises to check: ${totalExercises}`,
                         );
-                        console.log(`Ã°Å¸â€˜Â¤ Gender for images: ${genderForImages}`);
+                        console.log(
+                          `Ã°Å¸â€˜Â¤ Gender for images: ${genderForImages}`,
+                        );
                         console.log(
                           "Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â",
                         );
@@ -2528,7 +2580,9 @@ export default function PersonalPage() {
                           console.log(
                             `${progress} Ã°Å¸â€Â Checking: ${exercise.name}`,
                           );
-                          console.log(`    Ã°Å¸â€œâ€š Section: ${exercise.section}`);
+                          console.log(
+                            `    Ã°Å¸â€œâ€š Section: ${exercise.section}`,
+                          );
                           console.log(`    Ã°Å¸â€â€” URL: ${publicUrl}`);
 
                           try {
@@ -2663,7 +2717,9 @@ export default function PersonalPage() {
                           `    Ã°Å¸Å½Â¨ Generated & uploaded: ${generatedCount}`,
                         );
                         console.log(`    Ã¢ÂÅ’ Failed: ${failedCount}`);
-                        console.log(`    Ã¢ÂÂ­Ã¯Â¸Â No image slug: ${noSlugCount}`);
+                        console.log(
+                          `    Ã¢ÂÂ­Ã¯Â¸Â No image slug: ${noSlugCount}`,
+                        );
                         console.log(
                           "Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â",
                         );
@@ -2793,7 +2849,6 @@ export default function PersonalPage() {
               <button
                 type="button"
                 onClick={() => router.replace("/auth/logout")}
-
                 className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
               >
                 <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
@@ -3053,7 +3108,7 @@ export default function PersonalPage() {
             </div>
           ) : myWorkoutPlans.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-              <div className="text-4xl mb-3">Ã°Å¸Ââ€¹Ã¯Â¸Â</div>
+              <div className="text-4xl mb-3">Health and Wellness</div>
               <p className="text-base font-medium text-slate-500 text-center mb-1">
                 No saved workout plans yet
               </p>
@@ -3734,7 +3789,8 @@ export default function PersonalPage() {
                                                   {item.safety_cue && (
                                                     <div className="mt-1.5 pt-1.5 border-t border-teal-100">
                                                       <p className="text-[9px] text-amber-700 font-medium">
-                                                        Ã¢Å¡Â Ã¯Â¸Â {item.safety_cue}
+                                                        Ã¢Å¡Â Ã¯Â¸Â{" "}
+                                                        {item.safety_cue}
                                                       </p>
                                                     </div>
                                                   )}
@@ -3780,7 +3836,8 @@ export default function PersonalPage() {
                                                   {item.safety_cue && (
                                                     <div className="mt-1.5 pt-1.5 border-t border-teal-100">
                                                       <p className="text-[9px] text-amber-700 font-medium">
-                                                        Ã¢Å¡Â Ã¯Â¸Â {item.safety_cue}
+                                                        Ã¢Å¡Â Ã¯Â¸Â{" "}
+                                                        {item.safety_cue}
                                                       </p>
                                                     </div>
                                                   )}
@@ -3826,7 +3883,8 @@ export default function PersonalPage() {
                                                   {item.safety_cue && (
                                                     <div className="mt-1.5 pt-1.5 border-t border-teal-100">
                                                       <p className="text-[9px] text-amber-700 font-medium">
-                                                        Ã¢Å¡Â Ã¯Â¸Â {item.safety_cue}
+                                                        Ã¢Å¡Â Ã¯Â¸Â{" "}
+                                                        {item.safety_cue}
                                                       </p>
                                                     </div>
                                                   )}
