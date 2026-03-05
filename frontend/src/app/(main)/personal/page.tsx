@@ -8,6 +8,7 @@ import {
   HiLockOpen,
   HiArrowRight,
   HiArrowPath,
+  HiArrowLeft,
 } from "react-icons/hi2";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserData } from "@/hooks/useUserData";
@@ -3310,7 +3311,9 @@ export default function PersonalPage() {
                     </p>
                   </div>
                   <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-teal-500 flex items-center justify-center transition-all">
-                    <span className="text-gray-400 group-hover:text-white text-lg"></span>
+                    <span className="text-gray-400 group-hover:text-white text-lg">
+                      <HiArrowLeft className="h-5 w-5 -scale-x-100 font-bold" />
+                    </span>
                   </div>
                 </button>
               ))}
