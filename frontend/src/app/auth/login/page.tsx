@@ -13,6 +13,30 @@ interface ToastState extends Omit<ToastProps, "onDismiss"> {
   id: number;
 }
 
+const AUTH_STEP_TIMEOUT_MS = 15000;
+
+const withTimeout = async <T,>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> => {
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((result) => {
+        window.clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const { scale } = useScale();
@@ -78,20 +102,29 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const response = await auth.signIn({
-        email: email.trim(),
-        password: password,
-      });
+      const response = await withTimeout(
+        auth.signIn({
+          email: email.trim(),
+          password: password,
+        }),
+        AUTH_STEP_TIMEOUT_MS,
+        "auth.signIn"
+      );
 
       if (!response.success) {
         showToast("error", "Login Failed", response.message);
-        setLoading(false);
       } else {
         // Fetch and store user data and role after successful login
         try {
           const { supabase } = await import("@/lib/api/supabase");
           const { setUserSessionData } = await import("@/utils/sessionStorage");
-          const { data: { user } } = await supabase.auth.getUser();
+          const {
+            data: { user },
+          } = await withTimeout(
+            supabase.auth.getUser(),
+            AUTH_STEP_TIMEOUT_MS,
+            "supabase.auth.getUser"
+          );
           
           if (user) {
             // Fetch user profile
@@ -175,6 +208,7 @@ export default function LoginPage() {
         "Error",
         errorMessage
       );
+    } finally {
       setLoading(false);
     }
   };

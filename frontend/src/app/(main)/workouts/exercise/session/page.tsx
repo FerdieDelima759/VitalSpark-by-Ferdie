@@ -76,7 +76,11 @@ export default function ExerciseSessionPage() {
     ? `/workouts/details?id=${planId}`
     : "/workouts";
 
-  const { userProfile } = useUserContext();
+  const {
+    userProfile,
+    loadingState: userLoadingState,
+    refreshUserData,
+  } = useUserContext();
 
   // ===========================
   // State Management
@@ -2997,10 +3001,43 @@ export default function ExerciseSessionPage() {
   }
 
   if (!userProfile?.user_id) {
+    if (userLoadingState.isLoading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-white">
+          <div className="text-center">
+            <p className="text-slate-600">Loading workout...</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-center">
-          <p className="text-slate-600">Loading workout...</p>
+        <div className="text-center px-6">
+          <p className="text-red-600 font-semibold mb-2">
+            Unable to load your profile.
+          </p>
+          <p className="text-sm text-slate-600 mb-4">
+            {userLoadingState.error
+              ? "Please retry or go back to workout details."
+              : "Please retry loading your data or go back."}
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => void refreshUserData()}
+              className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(workoutDetailsPath)}
+              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+            >
+              Back
+            </button>
+          </div>
         </div>
       </div>
     );

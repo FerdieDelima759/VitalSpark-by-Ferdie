@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { BackgroundImageGenerationProvider } from "@/contexts/BackgroundImageGenerationContext";
 import { MealsProvider } from "@/contexts/MealsContext";
@@ -23,7 +23,7 @@ export default function MainLayout({
     pathname === "/workouts/exercise/session" ||
     pathname.startsWith("/workouts/exercise/session/");
 
-  const clearClientStorage = () => {
+  const clearClientStorage = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
       clearLocalStoragePreserveTheme();
@@ -38,9 +38,9 @@ export default function MainLayout({
         document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
       });
     } catch {}
-  };
+  }, []);
 
-  const enterMaintenanceMode = async () => {
+  const enterMaintenanceMode = useCallback(async () => {
     setMaintenanceMode(true);
     try {
       await signOut();
@@ -48,7 +48,7 @@ export default function MainLayout({
       // Continue to clear local data even if sign-out fails.
     }
     clearClientStorage();
-  };
+  }, [clearClientStorage, signOut]);
 
   useEffect(() => {
     if (isLoading || maintenanceMode) return;
@@ -111,7 +111,7 @@ export default function MainLayout({
     };
 
     checkOnboarding();
-  }, [isAuthenticated, isLoading, user, router, maintenanceMode, signOut]);
+  }, [isAuthenticated, isLoading, user, router, maintenanceMode, enterMaintenanceMode]);
 
   if (maintenanceMode) {
     return (
