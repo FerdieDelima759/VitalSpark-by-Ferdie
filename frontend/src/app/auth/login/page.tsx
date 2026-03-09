@@ -44,7 +44,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isClearingStaleSession, setIsClearingStaleSession] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const toastIdRef = useRef(0);
   const [isUserInteracting, setIsUserInteracting] = useState(false);
@@ -68,6 +67,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Always clear browser storage on login route entry.
+    try {
+      window.localStorage.clear();
+    } catch {}
+    try {
+      window.sessionStorage.clear();
+    } catch {}
+
     const params = new URLSearchParams(window.location.search);
     setShouldShowRecoveryHint(params.get("reason") === "inactive");
   }, []);
@@ -227,35 +235,6 @@ export default function LoginPage() {
 
   const handleSignUp = () => {
     router.push("/auth/signup");
-  };
-
-  const handleClearStaleSession = async () => {
-    if (isClearingStaleSession) return;
-
-    setIsClearingStaleSession(true);
-    try {
-      const { clearAuthStorage } = await import("@/lib/api/supabase");
-      const { clearUserSessionData } = await import("@/utils/sessionStorage");
-
-      await clearAuthStorage();
-      clearUserSessionData();
-
-      setEmail("");
-      setPassword("");
-      showToast(
-        "success",
-        "Session Cleared",
-        "Stale session data was cleared. Please sign in again."
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not clear stale session data.";
-      showToast("error", "Clear Failed", message);
-    } finally {
-      setIsClearingStaleSession(false);
-    }
   };
 
   return (
@@ -455,19 +434,6 @@ export default function LoginPage() {
             }}
           >
             {loading ? <Loader size="sm" inline /> : "Sign In"}
-          </button>
-
-          <button
-            onClick={handleClearStaleSession}
-            disabled={loading || isClearingStaleSession}
-            className="w-full bg-white border border-slate-200 text-slate-700 font-medium rounded-2xl disabled:opacity-70"
-            style={{
-              height: 46 * scale,
-              fontSize: 14 * scale,
-              marginTop: 8 * scale,
-            }}
-          >
-            {isClearingStaleSession ? "Clearing Session..." : "Clear Stale Session"}
           </button>
 
           {/* Sign Up Link */}
