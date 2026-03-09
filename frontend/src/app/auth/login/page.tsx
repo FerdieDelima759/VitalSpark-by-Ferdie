@@ -44,9 +44,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isClearingStaleSession, setIsClearingStaleSession] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const toastIdRef = useRef(0);
   const [isUserInteracting, setIsUserInteracting] = useState(false);
+  const [shouldShowRecoveryHint, setShouldShowRecoveryHint] = useState(false);
 
   useEffect(() => {
     const handleUserInteraction = () => {
@@ -62,6 +64,12 @@ export default function LoginPage() {
       document.removeEventListener("click", handleUserInteraction);
       document.removeEventListener("keydown", handleUserInteraction);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setShouldShowRecoveryHint(params.get("reason") === "inactive");
   }, []);
 
   const showToast = (
@@ -221,6 +229,35 @@ export default function LoginPage() {
     router.push("/auth/signup");
   };
 
+  const handleClearStaleSession = async () => {
+    if (isClearingStaleSession) return;
+
+    setIsClearingStaleSession(true);
+    try {
+      const { clearAuthStorage } = await import("@/lib/api/supabase");
+      const { clearUserSessionData } = await import("@/utils/sessionStorage");
+
+      await clearAuthStorage();
+      clearUserSessionData();
+
+      setEmail("");
+      setPassword("");
+      showToast(
+        "success",
+        "Session Cleared",
+        "Stale session data was cleared. Please sign in again."
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not clear stale session data.";
+      showToast("error", "Clear Failed", message);
+    } finally {
+      setIsClearingStaleSession(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#00b3b3] via-[#009898] to-[#002f2f]">
       {/* Logo Section */}
@@ -275,6 +312,19 @@ export default function LoginPage() {
           >
             Welcome back. Please enter your details.
           </p>
+
+          {shouldShowRecoveryHint && (
+            <div
+              className="rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-center"
+              style={{
+                fontSize: 13 * scale,
+                padding: `${10 * scale}px ${12 * scale}px`,
+                marginBottom: 16 * scale,
+              }}
+            >
+              You were signed out after inactivity.
+            </div>
+          )}
 
           {/* Email Input */}
           <div style={{ marginBottom: 20 * scale }}>
@@ -405,6 +455,19 @@ export default function LoginPage() {
             }}
           >
             {loading ? <Loader size="sm" inline /> : "Sign In"}
+          </button>
+
+          <button
+            onClick={handleClearStaleSession}
+            disabled={loading || isClearingStaleSession}
+            className="w-full bg-white border border-slate-200 text-slate-700 font-medium rounded-2xl disabled:opacity-70"
+            style={{
+              height: 46 * scale,
+              fontSize: 14 * scale,
+              marginTop: 8 * scale,
+            }}
+          >
+            {isClearingStaleSession ? "Clearing Session..." : "Clear Stale Session"}
           </button>
 
           {/* Sign Up Link */}

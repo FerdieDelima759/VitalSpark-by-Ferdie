@@ -10,7 +10,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/api/supabase";
+import { clearAuthStorage, supabase } from "../lib/api/supabase";
 import { clearLocalStoragePreserveTheme } from "../utils/themeStorage";
 
 // ===========================
@@ -66,6 +66,7 @@ export function AuthProvider({
   const inactivityTimerRef = useRef<number | null>(null);
   const inactivitySignOutInProgressRef = useRef(false);
   const lastActivityWriteRef = useRef(0);
+  const authRecoveryInProgressRef = useRef(false);
 
   const signOut = useCallback(async (): Promise<void> => {
     try {
@@ -181,6 +182,28 @@ export function AuthProvider({
       setIsLoading(nextLoading);
     };
 
+    const recoverAuthStorage = async (reason: string) => {
+      if (authRecoveryInProgressRef.current) return;
+      authRecoveryInProgressRef.current = true;
+
+      try {
+        console.warn(`Attempting auth storage recovery due to ${reason}`);
+        await clearAuthStorage();
+      } catch (recoveryError) {
+        console.error("Auth storage recovery failed:", recoveryError);
+      } finally {
+        try {
+          const { clearUserSessionData } =
+            await import("../utils/sessionStorage");
+          clearUserSessionData();
+        } catch (sessionError) {
+          console.error("Error clearing user session storage:", sessionError);
+        }
+        setAuthState(null, null);
+        authRecoveryInProgressRef.current = false;
+      }
+    };
+
     const withTimeout = async <T,>(
       promise: Promise<T>,
       timeoutMs: number,
@@ -210,7 +233,7 @@ export function AuthProvider({
         console.warn(
           `Auth initialization hard timeout (${AUTH_INIT_HARD_TIMEOUT_MS}ms). Falling back to signed-out state.`
         );
-        setAuthState(null, null);
+        void recoverAuthStorage("auth-init-hard-timeout");
         setLoadingState(false);
       }, AUTH_INIT_HARD_TIMEOUT_MS);
 
@@ -226,13 +249,13 @@ export function AuthProvider({
 
         if (error) {
           console.error("Error fetching session:", error);
-          setAuthState(null, null);
+          await recoverAuthStorage("auth-getSession-error");
         } else {
           setAuthState(currentSession, currentSession?.user ?? null);
         }
       } catch (error) {
         console.error("Unexpected error initializing auth:", error);
-        setAuthState(null, null);
+        await recoverAuthStorage("auth-getSession-timeout-or-exception");
       } finally {
         window.clearTimeout(hardTimeoutId);
         setLoadingState(false);

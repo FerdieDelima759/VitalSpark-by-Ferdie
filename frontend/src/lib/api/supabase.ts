@@ -50,6 +50,54 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
 });
 
+const getProjectRefFromUrl = (): string => {
+    try {
+        const host = supabaseUrl.split('//')[1] || '';
+        return host.split('.')[0] || '';
+    } catch {
+        return '';
+    }
+};
+
+export const clearSupabaseAuthStorageKeys = (): void => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+
+    const projectRef = getProjectRefFromUrl();
+    const explicitKeys = new Set<string>([
+        'supabase.auth.token',
+        'sb-auth-token',
+        projectRef ? `sb-${projectRef}-auth-token` : '',
+    ].filter(Boolean));
+
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (!key) continue;
+
+        const isKnownKey = explicitKeys.has(key);
+        const isSupabaseAuthToken =
+            key.startsWith('sb-') && key.includes('-auth-token');
+        const isSupabaseCodeVerifier =
+            key.startsWith('sb-') && key.includes('-code-verifier');
+        const isLegacyAuthKey = key.includes('supabase.auth.token');
+
+        if (
+            isKnownKey ||
+            isSupabaseAuthToken ||
+            isSupabaseCodeVerifier ||
+            isLegacyAuthKey
+        ) {
+            keysToRemove.push(key);
+        }
+    }
+
+    keysToRemove.forEach((key) => {
+        window.localStorage.removeItem(key);
+    });
+};
+
 // Log configuration in development to help debug CORS issues
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.log('Supabase Configuration:', {
@@ -93,17 +141,18 @@ if (typeof window !== 'undefined') {
 // Utility function to manually clear all auth storage
 export const clearAuthStorage = async (): Promise<void> => {
     try {
-        await supabase.auth.signOut();
-        if (typeof window !== 'undefined' && window.localStorage) {
-            const authKeys = [
-                'supabase.auth.token',
-                'sb-auth-token',
-                `sb-${supabaseUrl.split('//')[1]?.split('.')[0]}-auth-token`,
-            ];
-            authKeys.forEach(key => window.localStorage.removeItem(key));
-        }
+        const signOutWithTimeout = Promise.race([
+            supabase.auth.signOut(),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('supabase.auth.signOut timed out')), 4000)
+            ),
+        ]);
+
+        await signOutWithTimeout;
     } catch (error) {
         console.error('Error clearing auth storage:', error);
+    } finally {
+        clearSupabaseAuthStorageKeys();
     }
 };
 
