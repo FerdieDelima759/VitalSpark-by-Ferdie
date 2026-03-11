@@ -10,7 +10,7 @@ const CALLBACK_TIMEOUT_MS = 15000;
 const withTimeout = async <T,>(
   promise: Promise<T>,
   timeoutMs: number,
-  label: string
+  label: string,
 ): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -46,7 +46,7 @@ export default function AuthCallbackPage() {
         const hashParams = new URLSearchParams(
           window.location.hash.startsWith("#")
             ? window.location.hash.slice(1)
-            : window.location.hash
+            : window.location.hash,
         );
         const searchParams = currentUrl.searchParams;
 
@@ -60,11 +60,11 @@ export default function AuthCallbackPage() {
           const { error } = await withTimeout(
             supabase.auth.exchangeCodeForSession(code),
             CALLBACK_TIMEOUT_MS,
-            "supabase.auth.exchangeCodeForSession"
+            "supabase.auth.exchangeCodeForSession",
           );
           if (error) {
             hardRedirect(
-              "/auth/email-verify?status=error&message=Verification failed. Please try again."
+              "/auth/email-verify?status=error&message=Verification failed. Please try again.",
             );
             return;
           }
@@ -76,12 +76,12 @@ export default function AuthCallbackPage() {
         const { data, error } = await withTimeout(
           supabase.auth.getSession(),
           CALLBACK_TIMEOUT_MS,
-          "supabase.auth.getSession"
+          "supabase.auth.getSession",
         );
 
         if (error) {
           hardRedirect(
-            "/auth/email-verify?status=error&message=Verification failed. Please try again."
+            "/auth/email-verify?status=error&message=Verification failed. Please try again.",
           );
           return;
         }
@@ -93,17 +93,17 @@ export default function AuthCallbackPage() {
           }
 
           hardRedirect(
-            "/auth/email-verify?status=success&message=Email verified successfully. Try logging in with your credentials"
+            "/auth/email-verify?status=success&message=Email verified successfully. Try logging in with your credentials",
           );
           return;
         }
 
         hardRedirect(
-          "/auth/email-verify?status=error&message=Verification failed. No session found. Please try signing up again."
+          "/auth/email-verify?status=error&message=Verification failed. No session found. Please try signing up again.",
         );
       } catch {
         hardRedirect(
-          "/auth/email-verify?status=error&message=An unexpected error occurred. Please try again."
+          "/auth/email-verify?status=error&message=An unexpected error occurred. Please try again.",
         );
       } finally {
         if (isMounted) {
@@ -118,7 +118,7 @@ export default function AuthCallbackPage() {
 
     const watchdog = window.setTimeout(() => {
       hardRedirect(
-        "/auth/email-verify?status=error&message=Verification timed out. Please try again."
+        "/auth/email-verify?status=error&message=Verification timed out. Please try again.",
       );
     }, CALLBACK_TIMEOUT_MS + 1000);
 
@@ -133,7 +133,7 @@ export default function AuthCallbackPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#00b3b3] via-[#009898] to-[#002f2f]">
       <div className="text-white text-center">
         <Image
-          src="/images/Logo_VitalSpark_White.png"
+          src="/images/Logo_VitalSpark_Vertical.png"
           alt="VitalSpark Logo"
           width={120 * scale}
           height={120 * scale}
@@ -153,14 +153,10 @@ export default function AuthCallbackPage() {
             ⏳
           </div>
         )}
-        <p
-          className="font-semibold"
-          style={{ fontSize: 18 * scale }}
-        >
+        <p className="font-semibold" style={{ fontSize: 18 * scale }}>
           Processing verification...
         </p>
       </div>
     </div>
   );
 }
-

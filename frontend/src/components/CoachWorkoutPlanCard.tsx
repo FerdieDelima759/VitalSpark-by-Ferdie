@@ -34,13 +34,13 @@ export default function CoachWorkoutPlanCard({
   return (
     <button
       onClick={onClick}
-      className="group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all transform hover:scale-[1.02] w-full text-left"
+      className="group relative bg-white dark:bg-slate-800 rounded-2xl overflow-hidden shadow-md hover:shadow-xl dark:hover:shadow-black/40 transition-all transform hover:scale-[1.02] w-full text-left border border-transparent dark:border-slate-700"
     >
       {/* Header */}
       {hideImage ? (
-        <div className="p-4 bg-slate-50 border-b border-slate-100">
+        <div className="p-4 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
           <div className="flex items-start justify-between gap-2 mb-2">
-            <h3 className="text-lg font-extrabold text-slate-800 line-clamp-2">
+            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 line-clamp-2">
               {plan.name || "Workout"}
             </h3>
             <span
@@ -52,7 +52,7 @@ export default function CoachWorkoutPlanCard({
             </span>
           </div>
           {days && days > 0 && (
-            <div className="flex items-center gap-2 text-slate-600 text-sm">
+            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 text-sm">
               <span>
                 {days} {days === 1 ? "day" : "days"}
               </span>
@@ -65,14 +65,14 @@ export default function CoachWorkoutPlanCard({
             </div>
           )}
           {isLocked && (
-            <div className="mt-3 inline-flex items-center gap-2 text-amber-600 text-xs font-semibold">
+            <div className="mt-3 inline-flex items-center gap-2 text-amber-600 dark:text-amber-300 text-xs font-semibold">
               <HiLockClosed className="w-4 h-4" />
               Locked
             </div>
           )}
         </div>
       ) : (
-        <div className="relative h-48 bg-gradient-to-br from-gray-200 to-gray-300">
+        <div className="relative h-48 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-slate-700 dark:to-slate-600">
           {plan.image_path ? (
             <Image
               src={plan.image_path}

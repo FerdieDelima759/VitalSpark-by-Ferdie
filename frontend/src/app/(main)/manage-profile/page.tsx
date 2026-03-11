@@ -24,6 +24,7 @@ import {
   HiEye,
   HiEyeSlash,
   HiMoon,
+  HiSun,
   HiArrowRightOnRectangle,
 } from "react-icons/hi2";
 
@@ -120,21 +121,21 @@ const ProfileField = ({
     : String(value ?? "Not set");
   return (
     <div className="flex items-center py-2.5 px-3.5">
-      <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center mr-2.5">
-        <div className="text-amber-700">{icon}</div>
+      <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 flex items-center justify-center mr-2.5">
+        <div className="text-amber-700 dark:text-amber-300">{icon}</div>
       </div>
       <div className="flex-1">
-        <div className="text-slate-500 text-xs uppercase tracking-wide mb-1">
+        <div className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide mb-1">
           {label}
         </div>
-        <div className="text-slate-900 font-semibold text-xs sm:text-sm leading-5">
+        <div className="text-slate-900 dark:text-slate-100 font-semibold text-xs sm:text-sm leading-5">
           {displayValue}
         </div>
       </div>
       {isEditable && onEdit && (
         <button
           onClick={onEdit}
-          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-teal-50 transition-colors"
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
         >
           <HiPencil className="w-4 h-4 text-teal-600" />
         </button>
@@ -147,10 +148,10 @@ const SectionCard: React.FC<{ title: string; children: React.ReactNode }> = ({
   title,
   children,
 }) => (
-  <div className="bg-white rounded-xl border border-slate-200 mb-4 overflow-hidden">
-    <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center">
-      <div className="w-1.5 h-5 rounded-full bg-amber-500 mr-2" />
-      <div className="text-xs tracking-wider font-bold text-slate-700 uppercase">
+  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 mb-4 overflow-hidden">
+    <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center">
+      <div className="w-1.5 h-5 rounded-full bg-amber-500 dark:bg-amber-400 mr-2" />
+      <div className="text-xs tracking-wider font-bold text-slate-700 dark:text-slate-200 uppercase">
         {title}
       </div>
     </div>
@@ -158,7 +159,7 @@ const SectionCard: React.FC<{ title: string; children: React.ReactNode }> = ({
   </div>
 );
 
-const Divider = () => <div className="h-px bg-slate-100 mx-2" />;
+const Divider = () => <div className="h-px bg-slate-100 dark:bg-slate-800 mx-2" />;
 
 // Weekly frequency display component
 const WeeklyFrequencyDisplay = ({
@@ -167,7 +168,7 @@ const WeeklyFrequencyDisplay = ({
   frequency: string[] | undefined;
 }) => {
   if (!frequency || frequency.length === 0) {
-    return <div className="text-slate-500 text-sm">Not set</div>;
+    return <div className="text-slate-500 dark:text-slate-400 text-sm">Not set</div>;
   }
   const dayLabels: Record<string, string> = {
     monday: "Mon",
@@ -187,9 +188,9 @@ const WeeklyFrequencyDisplay = ({
         return (
           <div
             key={day}
-            className="bg-teal-100 border border-teal-200 rounded-full px-3 py-1"
+            className="bg-teal-100 dark:bg-teal-950/45 border border-teal-200 dark:border-teal-700 rounded-full px-3 py-1"
           >
-            <span className="text-teal-700 text-xs font-medium">
+            <span className="text-teal-700 dark:text-teal-200 text-xs font-medium">
               {displayLabel}
             </span>
           </div>
@@ -206,7 +207,7 @@ const TargetMusclesDisplay = ({
   muscles: string[] | undefined;
 }) => {
   if (!muscles || muscles.length === 0) {
-    return <div className="text-slate-500 text-sm">Not set</div>;
+    return <div className="text-slate-500 dark:text-slate-400 text-sm">Not set</div>;
   }
   const getMuscleDisplayName = (muscle: string) => {
     const option = targetMuscleGroupOptions.find(
@@ -219,7 +220,7 @@ const TargetMusclesDisplay = ({
       {muscles.map((muscle) => (
         <div
           key={muscle}
-          className="bg-amber-100 border border-amber-200 rounded-full px-3 py-1"
+          className="bg-amber-100 border border-amber-200 dark:border-amber-800 rounded-full px-3 py-1"
         >
           <span className="text-amber-800 text-xs font-medium">
             {getMuscleDisplayName(muscle)}
@@ -237,7 +238,7 @@ const EquipmentDisplay = ({
   equipment: string[] | undefined;
 }) => {
   if (!equipment || equipment.length === 0) {
-    return <div className="text-slate-500 text-sm">Not set</div>;
+    return <div className="text-slate-500 dark:text-slate-400 text-sm">Not set</div>;
   }
   const getEquipmentDisplayName = (item: string) => {
     const allStandardOptions = [
@@ -258,8 +259,8 @@ const EquipmentDisplay = ({
     <div className="space-y-1">
       {equipment.map((item) => (
         <div key={item} className="flex items-center">
-          <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-2" />
-          <span className="text-slate-900 text-sm flex-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 mr-2" />
+          <span className="text-slate-900 dark:text-slate-100 text-sm flex-1">
             {getEquipmentDisplayName(item)}
           </span>
         </div>
@@ -275,7 +276,7 @@ const MealPlanDurationDisplay = ({
   duration: string[] | undefined;
 }) => {
   if (!duration || duration.length === 0) {
-    return <div className="text-slate-500 text-sm">Not set</div>;
+    return <div className="text-slate-500 dark:text-slate-400 text-sm">Not set</div>;
   }
   const dayLabels: Record<string, string> = {
     monday: "Mon",
@@ -295,9 +296,9 @@ const MealPlanDurationDisplay = ({
         return (
           <div
             key={d}
-            className="bg-teal-100 border border-teal-200 rounded-full px-3 py-1"
+            className="bg-teal-100 border border-teal-200 dark:border-teal-800 rounded-full px-3 py-1"
           >
-            <span className="text-teal-700 text-xs font-medium">
+            <span className="text-teal-700 dark:text-teal-300 text-xs font-medium">
               {displayLabel}
             </span>
           </div>
@@ -314,7 +315,7 @@ const HealthConditionsDisplay = ({
   conditions: string[] | undefined;
 }) => {
   if (!conditions || conditions.length === 0) {
-    return <div className="text-slate-500 text-sm">Not set</div>;
+    return <div className="text-slate-500 dark:text-slate-400 text-sm">Not set</div>;
   }
   const getConditionDisplayName = (condition: string) => {
     const matchingOption = healthConditionOptions.find(
@@ -330,7 +331,7 @@ const HealthConditionsDisplay = ({
       {conditions.map((condition, index) => (
         <div key={`${condition}-${index}`} className="flex items-center">
           <div className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2" />
-          <span className="text-slate-900 text-sm flex-1">
+          <span className="text-slate-900 dark:text-slate-100 text-sm flex-1">
             {getConditionDisplayName(condition)}
           </span>
         </div>
@@ -358,11 +359,11 @@ const CustomProfileField = ({
   return (
     <div className="py-2.5 px-3.5">
       <div className="flex items-start">
-        <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center mr-2.5 mt-1">
-          <div className="text-amber-700">{icon}</div>
+        <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 flex items-center justify-center mr-2.5 mt-1">
+          <div className="text-amber-700 dark:text-amber-300">{icon}</div>
         </div>
         <div className="flex-1">
-          <div className="text-slate-500 text-xs uppercase tracking-wide mb-2">
+          <div className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide mb-2">
             {label}
           </div>
           {customDisplay}
@@ -370,7 +371,7 @@ const CustomProfileField = ({
         {isEditable && onEdit && (
           <button
             onClick={onEdit}
-            className="w-10 h-10 rounded-full flex items-center justify-center ml-2 hover:bg-teal-50 transition-colors"
+            className="w-10 h-10 rounded-full flex items-center justify-center ml-2 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
           >
             <HiPencil className="w-4 h-4 text-teal-600" />
           </button>
@@ -476,6 +477,7 @@ export default function ManageProfile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
 
   // Toast helper function
   const showToast = (
@@ -489,6 +491,31 @@ export default function ManageProfile() {
 
   const dismissToast = (id: number) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  };
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const savedTheme = localStorage.getItem("theme");
+    const resolvedTheme =
+      savedTheme === "light" || savedTheme === "dark"
+        ? savedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
+    root.classList.remove("light", "dark");
+    root.classList.add(resolvedTheme);
+    setIsDarkTheme(resolvedTheme === "dark");
+  }, []);
+
+  const handleThemeToggle = (): void => {
+    const root = document.documentElement;
+    const nextTheme = root.classList.contains("dark") ? "light" : "dark";
+
+    root.classList.remove("light", "dark");
+    root.classList.add(nextTheme);
+    localStorage.setItem("theme", nextTheme);
+    setIsDarkTheme(nextTheme === "dark");
   };
 
   useEffect(() => {
@@ -1686,7 +1713,7 @@ export default function ManageProfile() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
         <Loader size="lg" text="Loading profile..." textColor="slate" />
       </div>
     );
@@ -1694,9 +1721,9 @@ export default function ManageProfile() {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
         {/* App Header */}
-        <div className="bg-white pt-6 pb-2 px-5 border-b border-slate-200">
+        <div className="bg-white dark:bg-slate-900 pt-6 pb-2 px-5 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Image
@@ -1706,21 +1733,28 @@ export default function ManageProfile() {
                 height={28}
                 className="object-contain"
               />
-              <span className="text-xs sm:text-sm font-semibold text-slate-700">
+              <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
                 VitalSpark by Ferdie
               </span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                onClick={handleThemeToggle}
+                aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
               >
-                <HiMoon className="w-4 h-4" />
+                {isDarkTheme ? (
+                  <HiSun className="w-4 h-4" />
+                ) : (
+                  <HiMoon className="w-4 h-4" />
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => router.replace("/auth/logout")}
-                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
               >
                 <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
                 <span>Logout</span>
@@ -1730,24 +1764,24 @@ export default function ManageProfile() {
         </div>
 
         {/* Header with Back Button */}
-        <div className="bg-white pt-4 pb-4 px-5 border-b border-slate-200">
+        <div className="bg-white dark:bg-slate-900 pt-4 pb-4 px-5 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center mb-3">
             <button
               onClick={() => router.push("/my-profile")}
-              className="w-9 h-9 rounded-full flex items-center justify-center mr-2.5 hover:bg-amber-50 transition-colors"
+              className="w-9 h-9 rounded-full flex items-center justify-center mr-2.5 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
             >
-              <HiArrowLeft className="w-5 h-5 text-amber-700" />
+              <HiArrowLeft className="w-5 h-5 text-amber-700 dark:text-amber-300" />
             </button>
             <div className="flex-1">
-              <h1 className="text-slate-900 text-2xl font-extrabold mt-1">
+              <h1 className="text-slate-900 dark:text-slate-100 text-2xl font-extrabold mt-1">
                 Manage Profile
               </h1>
             </div>
           </div>
-          <p className="text-slate-600 text-xs sm:text-sm mt-1 ml-11">
+          <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-1 ml-11">
             View and edit your profile information
           </p>
-          <div className="h-1 w-16 bg-amber-500 rounded-full mt-3 ml-12" />
+          <div className="h-1 w-16 bg-amber-500 dark:bg-amber-400 rounded-full mt-3 ml-12" />
         </div>
 
         <div className="px-5 py-4 max-w-3xl mx-auto">
@@ -2022,22 +2056,22 @@ export default function ManageProfile() {
             <Divider />
             <button
               onClick={() => setChangePasswordModalVisible(true)}
-              className="w-full flex items-center justify-between py-4 px-4 hover:bg-slate-50 transition-colors rounded-lg"
+              className="w-full flex items-center justify-between py-4 px-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg"
             >
               <div className="flex items-center flex-1">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-4">
-                  <HiKey className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center mr-4">
+                  <HiKey className="w-5 h-5 text-blue-600 dark:text-blue-300" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="text-slate-500 text-xs uppercase tracking-wide mb-1">
+                  <div className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide mb-1">
                     Password
                   </div>
-                  <div className="text-blue-600 text-sm font-semibold">
+                  <div className="text-blue-600 dark:text-blue-300 text-sm font-semibold">
                     Change Password
                   </div>
                 </div>
               </div>
-              <HiArrowLeft className="w-5 h-5 text-slate-400 rotate-180" />
+              <HiArrowLeft className="w-5 h-5 text-slate-400 dark:text-slate-500 rotate-180" />
             </button>
           </SectionCard>
         </div>
@@ -2069,7 +2103,7 @@ export default function ManageProfile() {
         maxWidth={500}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-3 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3 text-center tracking-wide">
             Edit{" "}
             {editingField
               ?.replace(/_/g, " ")
@@ -2084,7 +2118,7 @@ export default function ManageProfile() {
                 ? "Enter items separated by commas"
                 : `Enter ${editingField?.replace(/_/g, " ")}`
             }
-            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm mb-4 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm mb-4 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             disabled={saving}
           />
           <div className="flex justify-end gap-3">
@@ -2097,7 +2131,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2133,7 +2167,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Fitness Level
           </h3>
           <div className="mb-5 space-y-2">
@@ -2143,26 +2177,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedRadioValue(level)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedRadioValue === level
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedRadioValue === level
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedRadioValue === level && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedRadioValue === level
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {level.charAt(0).toUpperCase() + level.slice(1)}
@@ -2180,7 +2214,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2216,7 +2250,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Age Range
           </h3>
           <div className="mb-5 space-y-2">
@@ -2232,26 +2266,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedAgeRange(ageRange.value)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedAgeRange === ageRange.value
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedAgeRange === ageRange.value
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedAgeRange === ageRange.value && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedAgeRange === ageRange.value
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {ageRange.label}
@@ -2269,7 +2303,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2305,7 +2339,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Gender
           </h3>
           <div className="mb-5 space-y-2">
@@ -2321,26 +2355,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedGender(gender.value)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedGender === gender.value
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedGender === gender.value
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedGender === gender.value && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedGender === gender.value
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {gender.label}
@@ -2358,7 +2392,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2395,10 +2429,10 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Enter Height
           </h3>
-          <div className="flex gap-2 mb-4 bg-slate-100 p-1 rounded-lg">
+          <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             <button
               onClick={() => {
                 if (heightUnit !== "cm" && heightValue) {
@@ -2416,7 +2450,7 @@ export default function ManageProfile() {
               className={`flex-1 py-1.5 px-3.5 rounded-lg text-sm font-semibold transition-colors ${
                 heightUnit === "cm"
                   ? "bg-teal-600 text-white"
-                  : "bg-transparent text-slate-700"
+                  : "bg-transparent text-slate-700 dark:text-slate-200"
               }`}
             >
               cm
@@ -2437,14 +2471,14 @@ export default function ManageProfile() {
               className={`flex-1 py-1.5 px-3.5 rounded-lg text-sm font-semibold transition-colors ${
                 heightUnit === "ft"
                   ? "bg-teal-600 text-white"
-                  : "bg-transparent text-slate-700"
+                  : "bg-transparent text-slate-700 dark:text-slate-200"
               }`}
             >
               ft
             </button>
           </div>
           <div className="mb-5 text-center">
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2 block">
               Height ({heightUnit.toLowerCase()})
             </label>
             <input
@@ -2466,7 +2500,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2503,10 +2537,10 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Enter Weight
           </h3>
-          <div className="flex gap-2 mb-4 bg-slate-100 p-1 rounded-lg">
+          <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             <button
               onClick={() => {
                 if (weightUnit !== "kg" && weightValue) {
@@ -2521,7 +2555,7 @@ export default function ManageProfile() {
               className={`flex-1 py-1.5 px-3.5 rounded-lg text-sm font-semibold transition-colors ${
                 weightUnit === "kg"
                   ? "bg-teal-600 text-white"
-                  : "bg-transparent text-slate-700"
+                  : "bg-transparent text-slate-700 dark:text-slate-200"
               }`}
             >
               kg
@@ -2540,14 +2574,14 @@ export default function ManageProfile() {
               className={`flex-1 py-1.5 px-3.5 rounded-lg text-sm font-semibold transition-colors ${
                 weightUnit === "lbs"
                   ? "bg-teal-600 text-white"
-                  : "bg-transparent text-slate-700"
+                  : "bg-transparent text-slate-700 dark:text-slate-200"
               }`}
             >
               lbs
             </button>
           </div>
           <div className="mb-5 text-center">
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2 block">
               Weight ({weightUnit.toLowerCase()})
             </label>
             <input
@@ -2569,7 +2603,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2610,8 +2644,8 @@ export default function ManageProfile() {
           className="flex flex-col"
           style={{ height: "calc(70vh - 3rem)", minHeight: "400px" }}
         >
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4 shrink-0">
-            <h3 className="text-base font-semibold text-slate-900">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700 mb-4 shrink-0">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Select Country
             </h3>
             <button
@@ -2622,9 +2656,9 @@ export default function ManageProfile() {
                   setCountrySearch("");
                 }
               }}
-              className="text-slate-500 hover:text-slate-700 text-xl"
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xl"
             >
-              ×
+              &times;
             </button>
           </div>
           <div className="mb-4 shrink-0">
@@ -2633,7 +2667,7 @@ export default function ManageProfile() {
               placeholder="Search country..."
               value={countrySearch}
               onChange={(e) => setCountrySearch(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
           </div>
           <div
@@ -2652,15 +2686,15 @@ export default function ManageProfile() {
                   onClick={() => setSelectedCountry(country.name)}
                   className={`w-full text-left py-2.5 px-3.5 rounded-lg transition-colors ${
                     selectedCountry === country.name
-                      ? "bg-teal-50 text-teal-700 font-medium"
-                      : "hover:bg-slate-50 text-slate-700"
+                      ? "bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-medium"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {country.name}
                 </button>
               ))}
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 mt-4 shrink-0 bg-white sticky bottom-0 z-10">
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700 mt-4 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm sticky bottom-0 z-10">
             <button
               onClick={() => {
                 if (!saving) {
@@ -2670,7 +2704,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-3.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2680,7 +2714,7 @@ export default function ManageProfile() {
               className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 selectedCountry && !saving
                   ? "bg-gradient-to-r from-teal-700 to-teal-500 text-white hover:from-teal-800 hover:to-teal-600"
-                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                  : "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
               }`}
             >
               {saving ? <Loader size="sm" /> : "Save"}
@@ -2708,18 +2742,18 @@ export default function ManageProfile() {
           className="flex flex-col"
           style={{ height: "calc(70vh - 3rem)", minHeight: "400px" }}
         >
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4 shrink-0">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700 mb-4 shrink-0">
             <div className="flex items-center flex-1">
               <button
                 onClick={() => {
                   setStateModalVisible(false);
                   setCountryModalVisible(true);
                 }}
-                className="text-slate-500 hover:text-slate-700 text-xl mr-2"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xl mr-2"
               >
-                ←
+                &larr;
               </button>
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 Select Region/State
               </h3>
             </div>
@@ -2732,14 +2766,14 @@ export default function ManageProfile() {
                   setAvailableStates([]);
                 }
               }}
-              className="text-slate-500 hover:text-slate-700 text-xl"
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xl"
             >
-              ×
+              &times;
             </button>
           </div>
           {availableStates.length === 0 ? (
             <div className="py-10 text-center shrink-0">
-              <p className="text-slate-500 text-sm">
+              <p className="text-slate-500 dark:text-slate-400 text-sm">
                 Please select a country first
               </p>
             </div>
@@ -2751,7 +2785,7 @@ export default function ManageProfile() {
                   placeholder="Search region/state..."
                   value={stateSearch}
                   onChange={(e) => setStateSearch(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
               <div
@@ -2768,8 +2802,8 @@ export default function ManageProfile() {
                       onClick={() => setSelectedState(state)}
                       className={`w-full text-left py-2.5 px-3.5 rounded-lg transition-colors ${
                         selectedState === state
-                          ? "bg-teal-50 text-teal-700 font-medium"
-                          : "hover:bg-slate-50 text-slate-700"
+                          ? "bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-medium"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
                       }`}
                     >
                       {state}
@@ -2778,13 +2812,13 @@ export default function ManageProfile() {
               </div>
             </>
           )}
-          <div className="flex justify-between gap-2 pt-4 border-t border-slate-200 mt-4 shrink-0 bg-white sticky bottom-0 z-10">
+          <div className="flex justify-between gap-2 pt-4 border-t border-slate-200 dark:border-slate-700 mt-4 shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm sticky bottom-0 z-10">
             <button
               onClick={() => {
                 setStateModalVisible(false);
                 setCountryModalVisible(true);
               }}
-              className="px-3.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             >
               Back
             </button>
@@ -2794,7 +2828,7 @@ export default function ManageProfile() {
               className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 selectedState && !saving
                   ? "bg-gradient-to-r from-teal-700 to-teal-500 text-white hover:from-teal-800 hover:to-teal-600"
-                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                  : "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
               }`}
             >
               {saving ? <Loader size="sm" /> : "Save"}
@@ -2817,7 +2851,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Fitness Goal
           </h3>
           <div className="mb-5 space-y-2 max-h-[400px] overflow-y-auto">
@@ -2843,26 +2877,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedFitnessGoal(goal.value)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedFitnessGoal === goal.value
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedFitnessGoal === goal.value
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedFitnessGoal === goal.value && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedFitnessGoal === goal.value
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {goal.label}
@@ -2880,7 +2914,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -2916,7 +2950,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Workout Location
           </h3>
           <div className="mb-5 space-y-2">
@@ -2931,26 +2965,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedWorkoutLocation(location.value)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedWorkoutLocation === location.value
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedWorkoutLocation === location.value
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedWorkoutLocation === location.value && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedWorkoutLocation === location.value
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {location.label}
@@ -2968,7 +3002,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3007,7 +3041,7 @@ export default function ManageProfile() {
         maxHeight="80vh"
       >
         <div className="flex flex-col h-full">
-          <h3 className="text-base font-bold text-slate-900 mb-3 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3 text-center tracking-wide">
             Select Equipment
           </h3>
           <div className="flex-1 overflow-y-auto mb-4 space-y-2">
@@ -3018,8 +3052,8 @@ export default function ManageProfile() {
                   onClick={() => handleEquipmentSelection(option.code)}
                   className={`w-full text-left p-2.5 rounded-lg border-2 transition-colors ${
                     selectedEquipmentList.includes(option.code)
-                      ? "bg-teal-50 border-teal-500"
-                      : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                      ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                      : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                   }`}
                 >
                   <div className="flex items-center">
@@ -3041,8 +3075,8 @@ export default function ManageProfile() {
                     onClick={() => handleEquipmentSelection(option.code)}
                     className={`w-full text-left p-2.5 rounded-lg border-2 transition-colors ${
                       selectedEquipmentList.includes(option.code)
-                        ? "bg-teal-50 border-teal-500"
-                        : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                        ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                        : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                     }`}
                   >
                     <div className="flex items-center">
@@ -3059,7 +3093,7 @@ export default function ManageProfile() {
                   </button>
                 ))}
                 {selectedEquipmentList.includes("other") && (
-                  <div className="mt-4 p-4 bg-slate-50 rounded-lg">
+                  <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg">
                     <div className="flex gap-2 mb-2">
                       <input
                         type="text"
@@ -3068,7 +3102,7 @@ export default function ManageProfile() {
                           setCurrentOtherEquipment(e.target.value)
                         }
                         placeholder="Enter custom equipment"
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                       />
                       <button
                         onClick={addCustomEquipment}
@@ -3081,14 +3115,14 @@ export default function ManageProfile() {
                       {otherEquipmentList.map((eq) => (
                         <div
                           key={eq}
-                          className="flex items-center justify-between p-2 bg-white rounded"
+                          className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded"
                         >
                           <span className="text-sm">{eq}</span>
                           <button
                             onClick={() => removeCustomEquipment(eq)}
                             className="text-red-500 hover:text-red-700"
                           >
-                            ×
+                            &times;
                           </button>
                         </div>
                       ))}
@@ -3098,7 +3132,7 @@ export default function ManageProfile() {
               </>
             )}
           </div>
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
               onClick={() => {
                 if (!saving) {
@@ -3110,7 +3144,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3146,7 +3180,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Workout Duration
           </h3>
           <div className="mb-5 text-center">
@@ -3159,7 +3193,7 @@ export default function ManageProfile() {
               onChange={(e) => setWorkoutDurationValue(Number(e.target.value))}
               className="w-full"
             />
-            <div className="mt-4 text-3xl font-bold text-teal-700">
+            <div className="mt-4 text-3xl font-bold text-teal-700 dark:text-teal-300">
               {formatWorkoutDuration(workoutDurationValue)}
             </div>
           </div>
@@ -3173,7 +3207,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3209,7 +3243,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Weekly Frequency
           </h3>
           <div className="mb-5 space-y-2">
@@ -3227,8 +3261,8 @@ export default function ManageProfile() {
                 onClick={() => handleWeeklyDayToggle(day)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedWeeklyDays.includes(day)
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <input
@@ -3251,7 +3285,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3287,7 +3321,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Meal Plan Duration
           </h3>
           <div className="mb-5 space-y-2">
@@ -3305,8 +3339,8 @@ export default function ManageProfile() {
                 onClick={() => handleMealPlanDayToggle(day)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedMealPlanDays.includes(day)
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <input
@@ -3329,7 +3363,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3365,7 +3399,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Dietary Preference
           </h3>
           <div className="mb-5 space-y-2 max-h-[400px] overflow-y-auto">
@@ -3375,26 +3409,26 @@ export default function ManageProfile() {
                 onClick={() => setSelectedDietaryPreference(option.code)}
                 className={`w-full flex items-center p-2.5 rounded-lg border-2 transition-colors ${
                   selectedDietaryPreference === option.code
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div
                   className={`w-4 h-4 rounded-full border-2 mr-2.5 flex items-center justify-center ${
                     selectedDietaryPreference === option.code
                       ? "border-teal-500"
-                      : "border-slate-300"
+                      : "border-slate-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedDietaryPreference === option.code && (
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
+                    <div className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400" />
                   )}
                 </div>
                 <span
                   className={`text-sm font-medium ${
                     selectedDietaryPreference === option.code
-                      ? "text-teal-700"
-                      : "text-slate-700"
+                      ? "text-teal-700 dark:text-teal-300"
+                      : "text-slate-700 dark:text-slate-200"
                   }`}
                 >
                   {option.label}
@@ -3412,7 +3446,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3451,7 +3485,7 @@ export default function ManageProfile() {
         maxHeight="80vh"
       >
         <div className="flex flex-col h-full">
-          <h3 className="text-base font-bold text-slate-900 mb-3 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3 text-center tracking-wide">
             Select Health Conditions
           </h3>
           <div className="flex-1 overflow-y-auto mb-4 space-y-2">
@@ -3461,8 +3495,8 @@ export default function ManageProfile() {
                 onClick={() => handleHealthConditionSelection(option.code)}
                 className={`w-full text-left p-2.5 rounded-lg border-2 transition-colors ${
                   selectedHealthConditions.includes(option.code)
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div className="flex items-center">
@@ -3477,7 +3511,7 @@ export default function ManageProfile() {
               </button>
             ))}
             {selectedHealthConditions.includes("other") && (
-              <div className="mt-4 p-4 bg-slate-50 rounded-lg">
+              <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg">
                 <div className="flex gap-2 mb-2">
                   <input
                     type="text"
@@ -3486,7 +3520,7 @@ export default function ManageProfile() {
                       setCurrentOtherHealthCondition(e.target.value)
                     }
                     placeholder="Enter custom condition"
-                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                   />
                   <button
                     onClick={addCustomHealthCondition}
@@ -3499,14 +3533,14 @@ export default function ManageProfile() {
                   {otherHealthConditions.map((condition) => (
                     <div
                       key={condition}
-                      className="flex items-center justify-between p-2 bg-white rounded"
+                      className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded"
                     >
                       <span className="text-sm">{condition}</span>
                       <button
                         onClick={() => removeCustomHealthCondition(condition)}
                         className="text-red-500 hover:text-red-700"
                       >
-                        ×
+                        &times;
                       </button>
                     </div>
                   ))}
@@ -3514,7 +3548,7 @@ export default function ManageProfile() {
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
               onClick={() => {
                 if (!saving) {
@@ -3526,7 +3560,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3562,7 +3596,7 @@ export default function ManageProfile() {
         maxWidth={400}
       >
         <div>
-          <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4 text-center tracking-wide">
             Select Target Muscle Groups
           </h3>
           <div className="mb-5 space-y-2 max-h-[400px] overflow-y-auto">
@@ -3572,8 +3606,8 @@ export default function ManageProfile() {
                 onClick={() => handleTargetMuscleGroupToggle(option.code)}
                 className={`w-full text-left p-2.5 rounded-lg border-2 transition-colors ${
                   selectedTargetMuscleGroups.includes(option.code)
-                    ? "bg-teal-50 border-teal-500"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                    ? "bg-teal-50 dark:bg-teal-950/40 border-teal-500"
+                    : "bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500"
                 }`}
               >
                 <div className="flex items-center">
@@ -3598,7 +3632,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={saving}
-              className="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -3641,25 +3675,25 @@ export default function ManageProfile() {
         maxWidth={500}
       >
         <div>
-          <h3 className="text-xl font-bold text-slate-900 mb-2 text-center">
+          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2 text-center tracking-wide">
             Change Password
           </h3>
-          <p className="text-sm text-slate-600 mb-5 text-center">
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-5 text-center">
             Enter your current password to change it
           </p>
 
           {/* Current Password */}
           <div className="mb-4">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
               Current Password
             </label>
             <div
-              className={`flex items-center bg-slate-50 rounded-lg px-4 border ${
+              className={`flex items-center bg-slate-50 dark:bg-slate-800/80 rounded-lg px-4 border ${
                 currentPasswordError
                   ? "border-red-500"
                   : currentPassword
                     ? "border-slate-900"
-                    : "border-slate-300"
+                    : "border-slate-300 dark:border-slate-600"
               }`}
             >
               <HiKey
@@ -3667,8 +3701,8 @@ export default function ManageProfile() {
                   currentPasswordError
                     ? "text-red-500"
                     : currentPassword
-                      ? "text-slate-900"
-                      : "text-slate-500"
+                      ? "text-slate-900 dark:text-slate-100"
+                      : "text-slate-500 dark:text-slate-400"
                 }`}
               />
               <input
@@ -3683,7 +3717,7 @@ export default function ManageProfile() {
               />
               <button
                 onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                className="p-1 text-slate-500 hover:text-slate-700"
+                className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 {showCurrentPassword ? (
                   <HiEyeSlash className="w-5 h-5" />
@@ -3701,16 +3735,16 @@ export default function ManageProfile() {
 
           {/* New Password */}
           <div className="mb-4">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
               New Password
             </label>
             <div
-              className={`flex items-center bg-slate-50 rounded-lg px-4 border ${
+              className={`flex items-center bg-slate-50 dark:bg-slate-800/80 rounded-lg px-4 border ${
                 newPasswordError
                   ? "border-red-500"
                   : newPassword && !newPasswordError
                     ? "border-green-500"
-                    : "border-slate-300"
+                    : "border-slate-300 dark:border-slate-600"
               }`}
             >
               <HiKey
@@ -3719,7 +3753,7 @@ export default function ManageProfile() {
                     ? "text-red-500"
                     : newPassword && !newPasswordError
                       ? "text-green-500"
-                      : "text-slate-500"
+                      : "text-slate-500 dark:text-slate-400"
                 }`}
               />
               <input
@@ -3731,7 +3765,7 @@ export default function ManageProfile() {
               />
               <button
                 onClick={() => setShowNewPassword(!showNewPassword)}
-                className="p-1 text-slate-500 hover:text-slate-700"
+                className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 {showNewPassword ? (
                   <HiEyeSlash className="w-5 h-5" />
@@ -3751,16 +3785,16 @@ export default function ManageProfile() {
 
           {/* Confirm Password */}
           <div className="mb-5">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
               Confirm New Password
             </label>
             <div
-              className={`flex items-center bg-slate-50 rounded-lg px-4 border ${
+              className={`flex items-center bg-slate-50 dark:bg-slate-800/80 rounded-lg px-4 border ${
                 confirmPasswordError
                   ? "border-red-500"
                   : confirmNewPassword && !confirmPasswordError
                     ? "border-green-500"
-                    : "border-slate-300"
+                    : "border-slate-300 dark:border-slate-600"
               }`}
             >
               <HiKey
@@ -3769,7 +3803,7 @@ export default function ManageProfile() {
                     ? "text-red-500"
                     : confirmNewPassword && !confirmPasswordError
                       ? "text-green-500"
-                      : "text-slate-500"
+                      : "text-slate-500 dark:text-slate-400"
                 }`}
               />
               <input
@@ -3781,7 +3815,7 @@ export default function ManageProfile() {
               />
               <button
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="p-1 text-slate-500 hover:text-slate-700"
+                className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 {showConfirmPassword ? (
                   <HiEyeSlash className="w-5 h-5" />
@@ -3800,14 +3834,14 @@ export default function ManageProfile() {
           </div>
 
           {/* Password Requirements */}
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 mb-5">
-            <p className="text-xs text-teal-700 font-medium mb-1">
+          <div className="bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-lg p-3 mb-5">
+            <p className="text-xs text-teal-700 dark:text-teal-300 font-medium mb-1">
               Password Requirements:
             </p>
-            <ul className="text-xs text-teal-700 space-y-0.5">
-              <li>• At least 8 characters long</li>
-              <li>• Contains both uppercase and lowercase letters</li>
-              <li>• Contains at least one number</li>
+            <ul className="text-xs text-teal-700 dark:text-teal-300 space-y-0.5">
+              <li>&bull; At least 8 characters long</li>
+              <li>&bull; Contains both uppercase and lowercase letters</li>
+              <li>&bull; Contains at least one number</li>
             </ul>
           </div>
 
@@ -3829,7 +3863,7 @@ export default function ManageProfile() {
                 }
               }}
               disabled={passwordLoading}
-              className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>

@@ -104,10 +104,13 @@ const formatHoursAway = (minutesAway: number): string => {
 
 const getMealTimeBadgeClass = (mealTime?: string | null): string => {
   const key = (mealTime ?? "").trim().toLowerCase();
-  if (key === "breakfast") return "bg-amber-100 text-amber-700";
-  if (key === "lunch") return "bg-emerald-100 text-emerald-700";
-  if (key === "dinner") return "bg-sky-100 text-sky-700";
-  return "bg-violet-100 text-violet-700";
+  if (key === "breakfast")
+    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
+  if (key === "lunch")
+    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+  if (key === "dinner")
+    return "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300";
+  return "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300";
 };
 
 export default function MealPlanDetailPage() {
@@ -428,10 +431,10 @@ export default function MealPlanDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 rounded-full border-2 border-teal-600 border-t-transparent animate-spin" />
-          <p className="text-sm font-semibold text-slate-700">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
             Loading meal plan...
           </p>
         </div>
@@ -440,7 +443,7 @@ export default function MealPlanDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] pb-6">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] pb-6">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5">
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
@@ -452,21 +455,21 @@ export default function MealPlanDetailPage() {
                 height={28}
                 className="object-contain"
               />
-              <span className="text-xs sm:text-sm font-semibold text-gray-700">
+              <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-slate-200">
                 VitalSpark by Ferdie
               </span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 <HiMoon className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={() => router.replace("/auth/logout")}
-                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
                 <span>Logout</span>
@@ -479,7 +482,7 @@ export default function MealPlanDetailPage() {
           <button
             type="button"
             onClick={() => router.push(backHref)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
           >
             <MdChevronLeft className="w-3.5 h-3.5" />
             Back
@@ -490,7 +493,7 @@ export default function MealPlanDetailPage() {
               void handleRefresh();
             }}
             disabled={isRefreshing}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-60"
           >
             <MdRefresh
               className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`}
@@ -500,14 +503,14 @@ export default function MealPlanDetailPage() {
         </div>
 
         {errorMessage ? (
-          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          <div className="rounded-2xl border border-red-100 dark:border-red-900/60 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
             {errorMessage}
           </div>
         ) : (
           <>
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-5">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 shadow-sm dark:shadow-black/30 overflow-hidden mb-5">
               <div className="grid grid-cols-1 md:grid-cols-[210px_1fr]">
-                <div className="relative h-40 md:h-full min-h-[150px] bg-slate-100">
+                <div className="relative h-40 md:h-full min-h-[150px] bg-slate-100 dark:bg-slate-700">
                   {mealPlan?.image_path ? (
                     <Image
                       src={mealPlan.image_path}
@@ -520,36 +523,36 @@ export default function MealPlanDetailPage() {
                     />
                   ) : (
                     <div className="h-full w-full flex items-center justify-center">
-                      <MdRestaurant className="w-14 h-14 text-slate-400" />
+                      <MdRestaurant className="w-14 h-14 text-slate-400 dark:text-slate-500" />
                     </div>
                   )}
                 </div>
                 <div className="p-4">
-                  <h1 className="text-lg font-extrabold text-slate-900 leading-tight">
+                  <h1 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 leading-tight">
                     {mealPlan?.plan_name || "Meal Plan"}
                   </h1>
                   <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                      <p className="text-[11px] text-slate-500">Duration</p>
-                      <p className="text-xs font-semibold text-slate-800">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/70 px-2.5 py-2">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Duration</p>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {mealPlan?.duration_dayss ?? 0} days
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                      <p className="text-[11px] text-slate-500">Status</p>
-                      <p className="text-xs font-semibold text-slate-800">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/70 px-2.5 py-2">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Status</p>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {mealPlan?.completed ? "Completed" : "In Progress"}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                      <p className="text-[11px] text-slate-500">Days Saved</p>
-                      <p className="text-xs font-semibold text-slate-800">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/70 px-2.5 py-2">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Days Saved</p>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {dayPlans.length}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                      <p className="text-[11px] text-slate-500">Created</p>
-                      <p className="text-xs font-semibold text-slate-800">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/70 px-2.5 py-2">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Created</p>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {formatDateLabel(mealPlan?.created_at)}
                       </p>
                     </div>
@@ -559,7 +562,7 @@ export default function MealPlanDetailPage() {
             </div>
 
             {dayPlans.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-6 text-center text-sm text-slate-500 dark:text-slate-400">
                 No saved day plans found for this meal plan.
               </div>
             ) : (
@@ -575,7 +578,7 @@ export default function MealPlanDetailPage() {
                         className={`shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                           isActive
                             ? "bg-teal-600 border-teal-600 text-white"
-                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                            : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                         }`}
                       >
                         {toDayLabel(dayPlan.day_name)}
@@ -585,8 +588,8 @@ export default function MealPlanDetailPage() {
                 </div>
 
                 {upcomingMeal && (
-                  <div className="mb-3 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-700 to-amber-500 px-3 py-2.5 text-white shadow-sm relative">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                  <div className="mb-3 rounded-xl border border-amber-200 dark:border-amber-700 bg-gradient-to-r from-amber-700 to-amber-500 dark:from-amber-800 dark:to-amber-600 px-3 py-2.5 text-white shadow-sm dark:shadow-black/30 relative">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300 dark:text-amber-200">
                       Upcoming Meal
                     </p>
                     <div className="mt-1 flex items-start justify-between gap-3">
@@ -594,13 +597,13 @@ export default function MealPlanDetailPage() {
                         <p className="text-sm font-bold leading-tight text-white">
                           {upcomingMeal.mealName}
                         </p>
-                        <p className="text-xs text-teal-100 mt-0.5">
+                        <p className="text-xs text-teal-100/90 dark:text-teal-100 mt-0.5">
                           {upcomingMeal.distanceLabel}
                         </p>
                       </div>
                     </div>
                     <div className="absolute top-2 right-2">
-                      <span className="inline-flex items-center rounded-full bg-gradient-to-r from-teal-600 to-teal-600 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-sm">
+                      <span className="inline-flex items-center rounded-full bg-gradient-to-r from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-sm">
                         {upcomingMeal.mealTime}
                       </span>
                     </div>
@@ -609,13 +612,13 @@ export default function MealPlanDetailPage() {
 
                 {activeDayPlan && (
                   <div className="space-y-3">
-                    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 shadow-sm dark:shadow-black/30">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div>
-                          <h2 className="text-base font-extrabold text-slate-900">
+                          <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
                             {toDayLabel(activeDayPlan.day_name)}
                           </h2>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                             {activeDayPlan.day_theme || "No day theme"}
                           </p>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -645,13 +648,13 @@ export default function MealPlanDetailPage() {
                                             | "snack"),
                                     )
                                   }
-                                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
-                                    isActiveFilter
-                                      ? "bg-teal-600 border-teal-600 text-white"
-                                      : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                                  }`}
-                                >
-                                  {option.label}
+                                    className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                                      isActiveFilter
+                                        ? "bg-teal-600 border-teal-600 text-white"
+                                        : "bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                                    }`}
+                                  >
+                                    {option.label}
                                 </button>
                               );
                             })}
@@ -659,32 +662,32 @@ export default function MealPlanDetailPage() {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-[220px]">
                           <div>
-                            <p className="text-[11px] text-slate-500">Budget</p>
-                            <p className="text-xs font-semibold text-slate-800">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">Budget</p>
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                               {activeDayPlan.daily_budget || "-"}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-slate-500">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
                               Calories
                             </p>
-                            <p className="text-xs font-semibold text-slate-800">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                               {activeDayPlan.calorie_target ?? "-"}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-slate-500">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
                               Protein
                             </p>
-                            <p className="text-xs font-semibold text-slate-800">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                               {activeDayPlan.protein ?? "-"}g
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-slate-500">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
                               Carbs/Fats
                             </p>
-                            <p className="text-xs font-semibold text-slate-800">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                               {activeDayPlan.carbs ?? "-"}g /{" "}
                               {activeDayPlan.fats ?? "-"}g
                             </p>
@@ -694,7 +697,7 @@ export default function MealPlanDetailPage() {
                     </div>
 
                     {activeDayPlan.meals.length === 0 ? (
-                      <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-5 text-sm text-slate-500 dark:text-slate-400">
                         No meals saved for this day.
                       </div>
                     ) : (
@@ -713,7 +716,7 @@ export default function MealPlanDetailPage() {
                           .map((meal) => (
                             <div
                               key={meal.id}
-                              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 shadow-sm dark:shadow-black/30"
                             >
                               <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
                                 <div>
@@ -722,33 +725,33 @@ export default function MealPlanDetailPage() {
                                   >
                                     {meal.meal_time || "Meal"}
                                   </p>
-                                  <h3 className="text-sm font-bold text-slate-900 mt-1">
+                                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
                                     {meal.meal_name || "Unnamed Meal"}
                                   </h3>
                                 </div>
                                 <div className="text-right">
-                                  <p className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                  <p className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
                                     <MdSchedule className="w-3.5 h-3.5" />
                                     {meal.best_time_to_eat || "Time not set"}
                                   </p>
-                                  <p className="text-xs font-semibold text-slate-800 mt-1">
+                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mt-1">
                                     Est. Cost: {formatMoney(meal.est_cost)}
                                   </p>
                                 </div>
                               </div>
 
                               <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-3">
-                                <div className="rounded-lg border border-slate-200 p-2.5">
-                                  <p className="text-xs font-semibold text-slate-800 mb-2">
+                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
                                     Ingredients
                                   </p>
                                   {meal.ingredients.length === 0 ? (
-                                    <p className="text-xs text-slate-500">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
                                       No ingredient data.
                                     </p>
                                   ) : (
                                     <div className="space-y-2">
-                                      <div className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-[11px] font-semibold text-slate-500">
+                                      <div className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                                         <span>Qty</span>
                                         <span>Item</span>
                                         <span>Price</span>
@@ -756,7 +759,7 @@ export default function MealPlanDetailPage() {
                                       {meal.ingredients.map((ingredient) => (
                                         <div
                                           key={ingredient.id}
-                                          className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-xs text-slate-700"
+                                          className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-xs text-slate-700 dark:text-slate-200"
                                         >
                                           <span>
                                             {ingredient.measurement || "-"}
@@ -771,13 +774,13 @@ export default function MealPlanDetailPage() {
                                   )}
                                 </div>
 
-                                <div className="rounded-lg border border-slate-200 p-2.5">
-                                  <p className="text-xs font-semibold text-slate-800 mb-2">
+                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
                                     Cooking Instructions
                                   </p>
                                   {Array.isArray(meal.cooking_instructions) &&
                                   meal.cooking_instructions.length > 0 ? (
-                                    <ol className="space-y-1 text-xs text-slate-700 list-decimal list-inside">
+                                    <ol className="space-y-1 text-xs text-slate-700 dark:text-slate-200 list-decimal list-inside">
                                       {meal.cooking_instructions.map(
                                         (instruction, index) => (
                                           <li key={`${meal.id}-step-${index}`}>
@@ -787,7 +790,7 @@ export default function MealPlanDetailPage() {
                                       )}
                                     </ol>
                                   ) : (
-                                    <p className="text-xs text-slate-500">
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
                                       No instruction data.
                                     </p>
                                   )}
@@ -796,11 +799,11 @@ export default function MealPlanDetailPage() {
                             </div>
                           ))}
 
-                        <div className="rounded-lg border border-slate-200 bg-white p-3 text-right">
-                          <p className="text-xs text-slate-500">
+                        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 text-right">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
                             Total Estimated Cost
                           </p>
-                          <p className="text-base font-bold text-slate-900">
+                          <p className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {formatMoney(
                               activeDayPlan.meals.reduce(
                                 (sum, meal) => sum + (meal.est_cost ?? 0),

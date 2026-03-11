@@ -71,7 +71,7 @@ export default function SignUpPage() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     const id = toastIdRef.current++;
     setToasts((prev) => [...prev, { id, type, title, message }]);
@@ -91,7 +91,7 @@ export default function SignUpPage() {
       showToast(
         "error",
         "Invalid Email",
-        "Please enter a valid email address."
+        "Please enter a valid email address.",
       );
       return;
     }
@@ -123,7 +123,7 @@ export default function SignUpPage() {
       showToast(
         "error",
         "Error",
-        error?.message || "Unexpected error occurred."
+        error?.message || "Unexpected error occurred.",
       );
     } finally {
       setLoading(false);
@@ -142,7 +142,7 @@ export default function SignUpPage() {
         style={{ paddingTop: 20 * scale, paddingBottom: 40 * scale }}
       >
         <Image
-          src="/images/Logo_VitalSpark_White.png"
+          src="/images/Logo_VitalSpark_Vertical.png"
           alt="VitalSpark Logo"
           width={160 * scale}
           height={160 * scale}

@@ -12,6 +12,7 @@ import React, {
 import { Session, User } from "@supabase/supabase-js";
 import { clearAuthStorage, supabase } from "../lib/api/supabase";
 import { clearLocalStoragePreserveTheme } from "../utils/themeStorage";
+import Dialog from "@/components/Dialog";
 
 // ===========================
 // Context Type Definition
@@ -41,6 +42,7 @@ interface AuthProviderProps {
 
 const AUTH_INIT_TIMEOUT_MS = 15000;
 const AUTH_INIT_HARD_TIMEOUT_MS = 22000;
+const SIGN_OUT_TIMEOUT_MS = 8000;
 const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const LAST_ACTIVITY_KEY = "vs:last-activity-ts";
 const ACTIVITY_WRITE_THROTTLE_MS = 10000;
@@ -63,29 +65,13 @@ export function AuthProvider({
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [showSessionTimeoutDialog, setShowSessionTimeoutDialog] =
+    useState<boolean>(false);
   const inactivityTimerRef = useRef<number | null>(null);
   const inactivitySignOutInProgressRef = useRef(false);
   const lastActivityWriteRef = useRef(0);
   const authRecoveryInProgressRef = useRef(false);
-
-  const signOut = useCallback(async (): Promise<void> => {
-    try {
-      await supabase.auth.signOut();
-      setSession(null);
-      setUser(null);
-
-      // Clear session storage on logout
-      if (typeof window !== "undefined") {
-        const { clearUserSessionData } =
-          await import("../utils/sessionStorage");
-        clearUserSessionData();
-        clearLocalStoragePreserveTheme();
-      }
-    } catch (error) {
-      console.error("Error signing out:", error);
-      throw error;
-    }
-  }, []);
+  const hasShownSessionTimeoutDialogRef = useRef(false);
 
   const clearInactivityTimer = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -94,6 +80,54 @@ export function AuthProvider({
       inactivityTimerRef.current = null;
     }
   }, []);
+
+  const signOut = useCallback(async (): Promise<void> => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      const signOutPromise = supabase.auth.signOut();
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(
+            new Error(`supabase.auth.signOut timed out after ${SIGN_OUT_TIMEOUT_MS}ms`)
+          );
+        }, SIGN_OUT_TIMEOUT_MS);
+      });
+
+      const { error } = await Promise.race([signOutPromise, timeoutPromise]);
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      // Fall back to a local sign-out so UI state does not get stuck waiting on network.
+      console.warn(
+        "Primary sign-out failed or timed out. Falling back to local sign-out.",
+        error
+      );
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (localError) {
+        console.warn("Local sign-out fallback also failed:", localError);
+      }
+    } finally {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      setSession(null);
+      setUser(null);
+      clearInactivityTimer();
+      inactivitySignOutInProgressRef.current = false;
+      lastActivityWriteRef.current = 0;
+
+      // Clear session storage on logout
+      if (typeof window !== "undefined") {
+        const { clearUserSessionData } =
+          await import("../utils/sessionStorage");
+        clearUserSessionData();
+        clearLocalStoragePreserveTheme();
+      }
+    }
+  }, [clearInactivityTimer]);
 
   const readLastActivity = useCallback((): number | null => {
     if (typeof window === "undefined") return null;
@@ -182,6 +216,12 @@ export function AuthProvider({
       setIsLoading(nextLoading);
     };
 
+    const showTimeoutDialog = () => {
+      if (!isMounted || hasShownSessionTimeoutDialogRef.current) return;
+      hasShownSessionTimeoutDialogRef.current = true;
+      setShowSessionTimeoutDialog(true);
+    };
+
     const recoverAuthStorage = async (reason: string) => {
       if (authRecoveryInProgressRef.current) return;
       authRecoveryInProgressRef.current = true;
@@ -233,6 +273,7 @@ export function AuthProvider({
         console.warn(
           `Auth initialization hard timeout (${AUTH_INIT_HARD_TIMEOUT_MS}ms). Falling back to signed-out state.`
         );
+        showTimeoutDialog();
         void recoverAuthStorage("auth-init-hard-timeout");
         setLoadingState(false);
       }, AUTH_INIT_HARD_TIMEOUT_MS);
@@ -255,6 +296,12 @@ export function AuthProvider({
         }
       } catch (error) {
         console.error("Unexpected error initializing auth:", error);
+        if (
+          error instanceof Error &&
+          error.message.includes("supabase.auth.getSession timed out")
+        ) {
+          showTimeoutDialog();
+        }
         await recoverAuthStorage("auth-getSession-timeout-or-exception");
       } finally {
         window.clearTimeout(hardTimeoutId);
@@ -418,8 +465,41 @@ export function AuthProvider({
     signOut,
   };
 
+  const handleSessionTimeoutDialogAction = () => {
+    setShowSessionTimeoutDialog(false);
+    if (typeof window !== "undefined") {
+      window.location.replace("/auth/login?reason=session-timeout");
+    }
+  };
+
   return (
-    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>
+      {children}
+
+      <Dialog
+        visible={showSessionTimeoutDialog}
+        onDismiss={handleSessionTimeoutDialogAction}
+        dismissible={false}
+        showCloseButton={false}
+        maxWidth={420}
+      >
+        <div className="text-center">
+          <h2 className="text-lg font-extrabold text-slate-900 mb-2">
+            Session Timeout
+          </h2>
+          <p className="text-sm text-slate-600 mb-5">
+            Session timed out, you have been logged out
+          </p>
+          <button
+            type="button"
+            onClick={handleSessionTimeoutDialogAction}
+            className="w-full rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors"
+          >
+            OK
+          </button>
+        </div>
+      </Dialog>
+    </AuthContext.Provider>
   );
 }
 

@@ -116,13 +116,13 @@ export default function SignUpScreen() {
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-      }
+      },
     );
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => {
         setKeyboardHeight(0);
-      }
+      },
     );
 
     return () => {
@@ -177,7 +177,7 @@ export default function SignUpScreen() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     if (Platform.OS === "web") {
       const id = toastIdRef.current++;
@@ -201,7 +201,7 @@ export default function SignUpScreen() {
       showToast(
         "error",
         "Invalid Email",
-        "Please enter a valid email address."
+        "Please enter a valid email address.",
       );
       return;
     }
@@ -230,7 +230,7 @@ export default function SignUpScreen() {
         } else {
           showAlert(
             "Success! Check Your Email",
-            "We've sent a verification link to your email address. Please check your inbox and verify your email to complete the registration."
+            "We've sent a verification link to your email address. Please check your inbox and verify your email to complete the registration.",
           );
           setTimeout(() => {
             router.push("/(auth)/login");
@@ -243,7 +243,7 @@ export default function SignUpScreen() {
       showToast(
         "error",
         "Error",
-        error?.message || "Unexpected error occurred."
+        error?.message || "Unexpected error occurred.",
       );
     } finally {
       setLoading(false);
@@ -267,7 +267,7 @@ export default function SignUpScreen() {
               animated: true,
             });
           },
-          () => {}
+          () => {},
         );
       }
     }, 100);
@@ -294,7 +294,7 @@ export default function SignUpScreen() {
         }}
       >
         <Image
-          source={require("../../assets/images/Logo_VitalSpark_White.png")}
+          source={require("../../assets/images/Logo_VitalSpark_Vertical.png")}
           resizeMode="contain"
           style={{ width: 160 * scale, height: 160 * scale }}
           accessibilityIgnoresInvertColors

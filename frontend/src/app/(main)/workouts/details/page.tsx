@@ -398,10 +398,10 @@ export default function WorkoutDetailsPage() {
 
   if (isLoading || loadingState.isLoading) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600" />
-          <p className="text-sm font-bold text-teal-700">
+          <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
             Loading workout details...
           </p>
         </div>
@@ -411,9 +411,9 @@ export default function WorkoutDetailsPage() {
 
   if (!workoutPlan) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-sm font-semibold text-red-600 mb-4">
+          <p className="text-sm font-semibold text-red-600 dark:text-red-300 mb-4">
             Workout plan not found
           </p>
           <button
@@ -428,7 +428,7 @@ export default function WorkoutDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-40">
         {/* Hero Image */}
         <div className="relative h-64 md:h-80 rounded-2xl overflow-hidden mb-6">
@@ -461,7 +461,7 @@ export default function WorkoutDetailsPage() {
             <button
               onClick={handleRefreshPage}
               disabled={isRefreshingPage}
-              className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors disabled:opacity-60"
+              className="bg-white/20 hover:bg-white/30 dark:bg-slate-900/50 dark:hover:bg-slate-900/70 p-2 rounded-full transition-colors disabled:opacity-60"
               aria-label="Refresh page"
             >
               <HiArrowPath
@@ -483,7 +483,7 @@ export default function WorkoutDetailsPage() {
         </div>
 
         {/* Content */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 -mt-4 relative z-10">
+        <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-6 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700 -mt-4 relative z-10">
           <h1 className="text-lg md:text-xl font-extrabold text-teal-700 mb-3">
             {workoutPlan.name}
           </h1>
@@ -511,7 +511,7 @@ export default function WorkoutDetailsPage() {
 
           {/* Stats */}
           {(workoutPlan.total_minutes || workoutPlan.total_calories) && (
-            <div className="flex flex-wrap gap-4 mb-6 p-4 bg-teal-50/50 border border-teal-100 rounded-xl">
+            <div className="flex flex-wrap gap-4 mb-6 p-4 bg-teal-50/50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-xl">
               {workoutPlan.total_minutes && workoutPlan.total_minutes > 0 && (
                 <div className="flex items-center gap-2">
                   <HiClock className="w-5 h-5 text-teal-600" />
@@ -533,15 +533,15 @@ export default function WorkoutDetailsPage() {
 
           {/* Description */}
           {workoutPlan.description && workoutPlan.description.trim() !== "" && (
-            <p className="text-sm text-slate-700 mb-5 leading-relaxed">
+            <p className="text-sm text-slate-700 dark:text-slate-300 mb-5 leading-relaxed">
               {workoutPlan.description}
             </p>
           )}
 
           {/* Motivation */}
           {workoutPlan.motivation && workoutPlan.motivation.trim() !== "" && (
-            <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-200">
-              <p className="text-xs text-teal-700 italic text-center font-medium">
+            <div className="bg-slate-50 dark:bg-slate-700/60 rounded-xl p-4 mb-6 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs text-teal-700 dark:text-teal-300 italic text-center font-medium">
                 &quot;{workoutPlan.motivation}&quot;
               </p>
             </div>
@@ -552,14 +552,14 @@ export default function WorkoutDetailsPage() {
             <h2 className="text-base font-extrabold text-teal-700 mb-3">
               Program
             </h2>
-            <div className="flex border-b border-slate-200 mb-4">
+            <div className="flex border-b border-slate-200 dark:border-slate-700 mb-4">
               <button
                 type="button"
                 onClick={() => setActiveTab("calendar")}
                 className={`px-3 py-2 text-xs font-semibold transition-colors border-b-2 -mb-px ${
                   activeTab === "calendar"
                     ? "border-teal-600 text-teal-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
+                    : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                 }`}
               >
                 Calendar
@@ -570,7 +570,7 @@ export default function WorkoutDetailsPage() {
                 className={`px-3 py-2 text-xs font-semibold transition-colors border-b-2 -mb-px ${
                   activeTab === "exercises"
                     ? "border-teal-600 text-teal-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
+                    : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                 }`}
               >
                 View Exercises
@@ -585,13 +585,13 @@ export default function WorkoutDetailsPage() {
                       return (
                         <div
                           key={cell.key}
-                          className="relative aspect-square min-w-0 rounded-xl border border-slate-200 bg-slate-100/80"
+                          className="relative aspect-square min-w-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-800/80"
                           aria-label={`Previous date ${cell.dateLabel}`}
                         >
-                          <span className="absolute top-2 left-2 text-xs font-bold text-slate-400">
+                          <span className="absolute top-2 left-2 text-xs font-bold text-slate-400 dark:text-slate-500">
                             {cell.dayOfMonth}
                           </span>
-                          <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[8px] font-medium text-gray-300">
+                          <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[8px] font-medium text-gray-300 dark:text-slate-600">
                             {cell.dateLabel}
                           </span>
                         </div>
@@ -606,42 +606,42 @@ export default function WorkoutDetailsPage() {
                         key={cell.key}
                         className={`relative aspect-square min-w-0 rounded-lg flex flex-col items-center justify-center ${
                           isRestDay
-                            ? "border border-teal-200 bg-slate-100/30"
+                            ? "border border-teal-200 dark:border-teal-800 bg-slate-100/30 dark:bg-slate-800/60"
                             : isCompleted
-                              ? "border border-teal-300 bg-teal-50 shadow-sm"
-                              : "rounded-lg border border-slate-200 bg-white shadow-xs"
+                              ? "border border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/25 shadow-sm dark:shadow-black/20"
+                              : "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xs"
                         }`}
                         aria-label={`${cell.dateLabel}${isRestDay ? ", rest day" : isCompleted ? ", completed" : ", not started"}`}
                       >
-                        <div className="absolute top-0 left-0 right-0 rounded-t-lg border-b border-red-200 bg-red-50 px-1.5 py-1 flex items-center justify-between">
+                        <div className="absolute top-0 left-0 right-0 rounded-t-lg border-b border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-900/25 px-1.5 py-1 flex items-center justify-between">
                           <span className="text-[10px] font-bold text-teal-600 ml-0.5
                           ">
                             {cell.dayOfMonth}
                           </span>
-                          <span className="text-[9px] font-bold text-red-500 mt-0.5">
-                            {cell.dayAbbrev}
-                          </span>
+                            <span className="text-[9px] font-bold text-red-500 dark:text-red-300 mt-0.5">
+                              {cell.dayAbbrev}
+                            </span>
                         </div>
                         {isRestDay ? (
                           <div className="flex flex-col items-center gap-0.5 mt-3">
-                            <HiMoon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
-                            <span className="text-[10px] sm:text-xs font-medium text-amber-600">
+                            <HiMoon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 dark:text-amber-300" />
+                            <span className="text-[10px] sm:text-xs font-medium text-amber-600 dark:text-amber-300">
                               Rest
                             </span>
                           </div>
                         ) : isCompleted ? (
                           <div className="flex flex-col items-center gap-0.5 mt-2">
-                            <FaDumbbell className="w-5 h-5 sm:w-6 sm:h-6 text-teal-500" />
-                            <span className="text-[10px] sm:text-xs font-semibold text-teal-700">
-                              Done
-                            </span>
+                              <FaDumbbell className="w-5 h-5 sm:w-6 sm:h-6 text-teal-500 dark:text-teal-300" />
+                              <span className="text-[10px] sm:text-xs font-semibold text-teal-700 dark:text-teal-300">
+                                Done
+                              </span>
                           </div>
                         ) : (
-                          <span className="text-[9px] sm:text-xs font-medium text-center leading-tight mt-3 break-words line-clamp-2 text-slate-400">
-                            Not started
-                          </span>
+                            <span className="text-[9px] sm:text-xs font-medium text-center leading-tight mt-3 break-words line-clamp-2 text-slate-400 dark:text-slate-500">
+                              Not started
+                            </span>
                         )}
-                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-medium text-teal-700">
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-medium text-teal-700 dark:text-teal-300">
                           Day {day}
                         </span>
                       </div>
@@ -712,7 +712,7 @@ export default function WorkoutDetailsPage() {
                 )}
                 {(!workoutPlan.exercises ||
                   workoutPlan.exercises.length === 0) && (
-                  <div className="text-center py-8 text-slate-500">
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400">
                     <p>No exercises available for this workout plan.</p>
                   </div>
                 )}
@@ -724,13 +724,13 @@ export default function WorkoutDetailsPage() {
 
       {/* Sticky Start Exercise Button - Above Bottom Nav Bar */}
       {workoutPlan.exercises && workoutPlan.exercises.length > 0 && (
-        <div className="fixed bottom-[70px] left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-40">
+        <div className="fixed bottom-[70px] left-0 right-0 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-700 shadow-lg dark:shadow-black/40 backdrop-blur z-40">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
             <button
               type="button"
               onClick={handleStartWorkout}
               disabled={!resolvedStartDay}
-              className="w-full bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl py-3.5 px-6 font-bold text-base shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-r from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 text-white rounded-xl py-3.5 px-6 font-bold text-base shadow-md hover:shadow-lg dark:shadow-black/40 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <HiPlayCircle className="w-5 h-5" />
               <span>{startWorkoutLabel}</span>
@@ -757,7 +757,7 @@ function ExerciseRow({
   formatDuration: (seconds: number) => string;
 }) {
   return (
-    <div className="flex items-start gap-4 bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+    <div className="flex items-start gap-4 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 hover:shadow-md dark:hover:shadow-black/30 transition-shadow">
       {/* Exercise Image */}
       {exercise.exercise_details?.image_slug &&
       exercise.exercise_details.image_slug.trim() !== "" ? (
@@ -770,25 +770,25 @@ function ExerciseRow({
             alt={exercise.exercise_details.name || "Exercise"}
             width={80}
             height={80}
-            className="rounded-lg object-contain bg-slate-50"
+            className="rounded-lg object-contain bg-slate-50 dark:bg-slate-700"
             unoptimized
           />
         </div>
       ) : (
-        <div className="shrink-0 w-20 h-20 rounded-lg bg-slate-100 flex items-center justify-center">
-          <HiBolt className="w-8 h-8 text-slate-400" />
+        <div className="shrink-0 w-20 h-20 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+          <HiBolt className="w-8 h-8 text-slate-400 dark:text-slate-500" />
         </div>
       )}
 
       {/* Exercise Details */}
       <div className="flex-1 min-w-0">
-        <h3 className="font-bold text-slate-900 mb-1 text-sm">
+        <h3 className="font-bold text-slate-900 dark:text-slate-100 mb-1 text-sm">
           {exercise.exercise_details?.name || "Exercise"}
         </h3>
 
         {exercise.exercise_details?.primary_muscle &&
           exercise.exercise_details.primary_muscle.trim() !== "" && (
-            <p className="text-xs text-slate-600 mb-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-2">
               Target: {exercise.exercise_details.primary_muscle}
             </p>
           )}
@@ -800,22 +800,22 @@ function ExerciseRow({
           exercise.per_side) && (
           <div className="flex flex-wrap gap-2 mt-2">
             {exercise.sets && exercise.sets > 0 && (
-              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
                 {formatSets(exercise.sets)}
               </span>
             )}
             {exercise.reps && exercise.reps > 0 && (
-              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
                 {formatReps(exercise.reps)}
               </span>
             )}
             {exercise.duration_seconds && exercise.duration_seconds > 0 && (
-              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
                 {formatDuration(exercise.duration_seconds)}
               </span>
             )}
             {exercise.per_side && (
-              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
                 Each side
               </span>
             )}

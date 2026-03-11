@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { HiMoon, HiArrowRightOnRectangle } from "react-icons/hi2";
-import MealsPageClient from "./MealsPageClient";
+import { HiMoon, HiSun, HiArrowRightOnRectangle } from "react-icons/hi2";
+import WorkoutMealPlanPage from "./workout/plan/[id]/page";
 
 export default function MealsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workoutPlanId = searchParams.get("workoutPlanId");
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark") return true;
+    if (savedTheme === "light") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
 
   useEffect(() => {
     if (!workoutPlanId) return;
@@ -37,6 +44,7 @@ export default function MealsPage() {
     root.classList.remove("light", "dark");
     root.classList.add(nextTheme);
     localStorage.setItem("theme", nextTheme);
+    setIsDarkTheme(nextTheme === "dark");
   };
 
   if (workoutPlanId) {
@@ -64,11 +72,15 @@ export default function MealsPage() {
               <button
                 type="button"
                 onClick={handleThemeToggle}
-                aria-label="Toggle theme"
-                title="Toggle theme"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
-                <HiMoon className="w-4 h-4" />
+                {isDarkTheme ? (
+                  <HiSun className="w-4 h-4" />
+                ) : (
+                  <HiMoon className="w-4 h-4" />
+                )}
               </button>
               <button
                 type="button"
@@ -82,7 +94,7 @@ export default function MealsPage() {
             </div>
           </div>
         </div>
-        <MealsPageClient showRefreshButton />
+        <WorkoutMealPlanPage showRefreshButton />
       </div>
     </div>
   );

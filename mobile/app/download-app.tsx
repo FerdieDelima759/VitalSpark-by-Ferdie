@@ -70,7 +70,7 @@ export default function DownloadAppScreen() {
         >
           <View style={{ alignItems: "center", marginBottom: 32 }}>
             <Image
-              source={require("../assets/images/Logo_VitalSpark_White.png")}
+              source={require("../assets/images/Logo_VitalSpark_Vertical.png")}
               resizeMode="contain"
               style={{ width: 100, height: 100, marginBottom: 20 }}
               accessibilityIgnoresInvertColors

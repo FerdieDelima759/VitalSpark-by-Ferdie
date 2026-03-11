@@ -87,13 +87,13 @@ export default function LoginScreen() {
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-      }
+      },
     );
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => {
         setKeyboardHeight(0);
-      }
+      },
     );
 
     return () => {
@@ -148,7 +148,7 @@ export default function LoginScreen() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     if (Platform.OS === "web") {
       const id = toastIdRef.current++;
@@ -167,7 +167,7 @@ export default function LoginScreen() {
       showToast(
         "error",
         "Missing info",
-        "Please enter both email and password."
+        "Please enter both email and password.",
       );
       return;
     }
@@ -176,7 +176,7 @@ export default function LoginScreen() {
       showToast(
         "error",
         "Invalid Email",
-        "Please enter a valid email address."
+        "Please enter a valid email address.",
       );
       return;
     }
@@ -196,7 +196,7 @@ export default function LoginScreen() {
       showToast(
         "error",
         "Error",
-        error?.message || "Unexpected error occurred."
+        error?.message || "Unexpected error occurred.",
       );
       setLoading(false);
     }
@@ -223,7 +223,7 @@ export default function LoginScreen() {
               animated: true,
             });
           },
-          () => {}
+          () => {},
         );
       }
     }, 100);
@@ -250,7 +250,7 @@ export default function LoginScreen() {
         }}
       >
         <Image
-          source={require("../../assets/images/Logo_VitalSpark_White.png")}
+          source={require("../../assets/images/Logo_VitalSpark_Vertical.png")}
           resizeMode="contain"
           style={{ width: 160 * scale, height: 160 * scale }}
           accessibilityIgnoresInvertColors

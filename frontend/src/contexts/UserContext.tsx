@@ -5,6 +5,8 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import {
@@ -12,7 +14,11 @@ import {
   UserRole,
 } from "../types/UserProfile";
 import { supabase } from "../lib/api/supabase";
-import { setUserSessionData } from "../utils/sessionStorage";
+import {
+  clearUserSessionData,
+  setUserSessionData,
+} from "../utils/sessionStorage";
+import { useAuth } from "./AuthContext";
 
 // ===========================
 // Context Type Definition
@@ -49,6 +55,29 @@ interface UserProviderProps {
   children: ReactNode;
 }
 
+const REQUEST_TIMEOUT_MS = 15000;
+
+const withTimeout = async <T,>(
+  promise: PromiseLike<T>,
+  label: string,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+
 // ===========================
 // Provider Component
 // ===========================
@@ -56,6 +85,8 @@ interface UserProviderProps {
 export function UserProvider({
   children,
 }: UserProviderProps): React.ReactElement {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const requestSequenceRef = useRef(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loadingState, setLoadingState] = useState<ProfileLoadingState>({
@@ -65,68 +96,66 @@ export function UserProvider({
     error: null,
   });
 
-  const fetchUserData = async (): Promise<void> => {
+  const clearUserData = useCallback((): void => {
+    requestSequenceRef.current += 1;
+    setUserProfile(null);
+    setUserRole(null);
+    setLoadingState({
+      isLoading: false,
+      isUpdating: false,
+      isSaving: false,
+      error: null,
+    });
+    if (typeof window !== "undefined") {
+      clearUserSessionData();
+    }
+  }, []);
+
+  const fetchUserData = useCallback(async (userId: string): Promise<void> => {
+    const requestId = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestId;
+
     try {
       setLoadingState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      const [profileResult, roleResult] = await Promise.all([
+        withTimeout(
+          supabase.from("user_profile").select("*").eq("user_id", userId).limit(1),
+          "fetch user_profile",
+        ),
+        withTimeout(
+          supabase.from("user_role").select("*").eq("user_id", userId).limit(1),
+          "fetch user_role",
+        ),
+      ]);
 
-      if (authError || !user) {
-        setUserProfile(null);
-        setUserRole(null);
-        setLoadingState({
-          isLoading: false,
-          isUpdating: false,
-          isSaving: false,
-          error: authError?.message || "No authenticated user",
-        });
-        return;
-      }
-
-      // Fetch user profile
-      const { data: profileRows, error: profileError } = await supabase
-        .from("user_profile")
-        .select("*")
-        .eq("user_id", user.id)
-        .limit(1);
+      const { data: profileRows, error: profileError } = profileResult;
+      const { data: roleRows, error: roleError } = roleResult;
 
       const profileData = profileRows?.[0] ?? null;
+      const roleData = roleRows?.[0] ?? null;
 
       if (profileError) {
         console.error("Error fetching user profile:", profileError);
-        setLoadingState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: profileError.message,
-        }));
-        return;
       }
-
-      // Fetch user role
-      const { data: roleRows, error: roleError } = await supabase
-        .from("user_role")
-        .select("*")
-        .eq("user_id", user.id)
-        .limit(1);
-
-      const roleData = roleRows?.[0] ?? null;
 
       if (roleError) {
         console.error("Error fetching user role:", roleError);
       }
 
+      if (requestSequenceRef.current !== requestId) {
+        return;
+      }
+
       setUserProfile(profileData || null);
       setUserRole(roleData || null);
-      
+
       // Store in session storage
-      if (user && typeof window !== "undefined") {
+      if (typeof window !== "undefined") {
         try {
           const isAdmin = roleData?.role?.toLowerCase() === "admin";
           setUserSessionData({
-            userId: user.id,
+            userId,
             userRole: roleData?.role || null,
             isAdmin,
             userProfile: profileData || null,
@@ -135,14 +164,18 @@ export function UserProvider({
           console.error("Error storing user data in session storage:", error);
         }
       }
-      
+
       setLoadingState({
         isLoading: false,
         isUpdating: false,
         isSaving: false,
-        error: null,
+        error: profileError?.message || roleError?.message || null,
       });
     } catch (error: unknown) {
+      if (requestSequenceRef.current !== requestId) {
+        return;
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       console.error("Unexpected error fetching user data:", error);
@@ -153,40 +186,31 @@ export function UserProvider({
         error: errorMessage,
       });
     }
-  };
+  }, []);
 
-  const refreshUserData = async (): Promise<void> => {
-    await fetchUserData();
-  };
-
-  const clearUserData = (): void => {
-    setUserProfile(null);
-    setUserRole(null);
-    setLoadingState({
-      isLoading: false,
-      isUpdating: false,
-      isSaving: false,
-      error: null,
-    });
-  };
+  const refreshUserData = useCallback(async (): Promise<void> => {
+    if (!user?.id) {
+      clearUserData();
+      return;
+    }
+    await fetchUserData(user.id);
+  }, [clearUserData, fetchUserData, user]);
 
   useEffect(() => {
-    fetchUserData();
+    if (isAuthLoading) {
+      return;
+    }
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "SIGNED_IN" && session?.user) {
-          await fetchUserData();
-        } else if (event === "SIGNED_OUT") {
-          clearUserData();
-        }
+    const syncUserState = async () => {
+      if (!user?.id) {
+        clearUserData();
+        return;
       }
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
+      await fetchUserData(user.id);
     };
-  }, []);
+
+    void syncUserState();
+  }, [clearUserData, fetchUserData, isAuthLoading, user]);
 
   const contextValue: UserContextType = {
     userProfile,

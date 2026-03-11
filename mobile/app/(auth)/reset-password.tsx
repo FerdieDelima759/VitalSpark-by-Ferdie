@@ -131,13 +131,13 @@ export default function ResetPasswordScreen() {
     const checkAndSetSession = async () => {
       if (params.error || params.error_code) {
         const errorDesc = decodeURIComponent(
-          (params.error_description as string) || ""
+          (params.error_description as string) || "",
         );
         showToast(
           "error",
           "Link Expired",
           errorDesc ||
-            "This password reset link has expired. Please request a new one."
+            "This password reset link has expired. Please request a new one.",
         );
         setTimeout(() => router.replace("/(auth)/forgot-password"), 2000);
         return;
@@ -147,14 +147,14 @@ export default function ResetPasswordScreen() {
         const hashPart = url.split("#")[1] || "";
         const urlParams = new URLSearchParams(hashPart);
         const errorDesc = decodeURIComponent(
-          urlParams.get("error_description") || ""
+          urlParams.get("error_description") || "",
         );
 
         showToast(
           "error",
           "Link Expired",
           errorDesc ||
-            "This password reset link has expired. Please request a new one."
+            "This password reset link has expired. Please request a new one.",
         );
         setTimeout(() => router.replace("/(auth)/forgot-password"), 2000);
         return;
@@ -170,7 +170,7 @@ export default function ResetPasswordScreen() {
           showToast(
             "error",
             "Session Error",
-            "Failed to establish session. Please try again."
+            "Failed to establish session. Please try again.",
           );
         } else if (data.session) {
           setHasValidSession(true);
@@ -198,7 +198,7 @@ export default function ResetPasswordScreen() {
         showToast(
           "error",
           "Invalid Link",
-          "Please click the password reset link from your email."
+          "Please click the password reset link from your email.",
         );
         setTimeout(() => {
           router.replace("/(auth)/login");
@@ -255,13 +255,13 @@ export default function ResetPasswordScreen() {
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-      }
+      },
     );
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => {
         setKeyboardHeight(0);
-      }
+      },
     );
 
     return () => {
@@ -316,7 +316,7 @@ export default function ResetPasswordScreen() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     if (Platform.OS === "web") {
       const id = toastIdRef.current++;
@@ -351,7 +351,7 @@ export default function ResetPasswordScreen() {
       showToast(
         "error",
         "Invalid Session",
-        "Your session has expired. Please request a new reset link."
+        "Your session has expired. Please request a new reset link.",
       );
       setTimeout(() => {
         router.replace("/(auth)/login");
@@ -367,7 +367,7 @@ export default function ResetPasswordScreen() {
         showToast(
           "success",
           "Password Reset",
-          "Your password has been reset successfully! Please login with your new password."
+          "Your password has been reset successfully! Please login with your new password.",
         );
 
         await auth.signOut();
@@ -382,7 +382,7 @@ export default function ResetPasswordScreen() {
       showToast(
         "error",
         "Error",
-        error?.message || "Failed to reset password."
+        error?.message || "Failed to reset password.",
       );
     } finally {
       setLoading(false);
@@ -402,7 +402,7 @@ export default function ResetPasswordScreen() {
               animated: true,
             });
           },
-          () => {}
+          () => {},
         );
       }
     }, 100);
@@ -429,7 +429,7 @@ export default function ResetPasswordScreen() {
         }}
       >
         <Image
-          source={require("../../assets/images/Logo_VitalSpark_White.png")}
+          source={require("../../assets/images/Logo_VitalSpark_Vertical.png")}
           resizeMode="contain"
           style={{ width: 160 * scale, height: 160 * scale }}
           accessibilityIgnoresInvertColors

@@ -62,6 +62,7 @@ interface WorkoutProviderProps {
 export function WorkoutProvider({
   children,
 }: WorkoutProviderProps): React.ReactElement {
+  const REQUEST_TIMEOUT_MS = 15000;
   const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
   const [workoutTags, setWorkoutTags] = useState<WorkoutTag[]>([]);
   const [exerciseDetails, setExerciseDetails] = useState<
@@ -72,49 +73,65 @@ export function WorkoutProvider({
     error: null,
   });
 
+  const withTimeout = async <T,>(
+    promise: PromiseLike<T>,
+    label: string,
+    timeoutMs: number = REQUEST_TIMEOUT_MS,
+  ): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      Promise.resolve(promise)
+        .then((value) => {
+          clearTimeout(timeoutId);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
+
   const fetchWorkoutData = async (): Promise<void> => {
     try {
       setLoadingState({ isLoading: true, error: null });
 
-      // Fetch all workout plans
-      const { data: plansData, error: plansError } = await supabase
-        .from("workout_plans")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const [{ data: plansData, error: plansError }, { data: tagsData, error: tagsError }, { data: exercisesData, error: exercisesError }] =
+        await withTimeout(
+          Promise.all([
+            supabase
+              .from("workout_plans")
+              .select("*")
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("workout_tags")
+              .select("*")
+              .order("name", { ascending: true }),
+            supabase
+              .from("workout_plan_exercises_details")
+              .select("*")
+              .order("name", { ascending: true }),
+          ]),
+          "fetchWorkoutData",
+        );
 
-      if (plansError) {
-        throw plansError;
-      }
-
-      // Fetch all workout tags
-      const { data: tagsData, error: tagsError } = await supabase
-        .from("workout_tags")
-        .select("*")
-        .order("name", { ascending: true });
-
-      if (tagsError) {
-        throw tagsError;
-      }
-
-      // Fetch all exercise details
-      const { data: exercisesData, error: exercisesError } = await supabase
-        .from("workout_plan_exercises_details")
-        .select("*")
-        .order("name", { ascending: true });
-
-      if (exercisesError) {
-        throw exercisesError;
-      }
+      if (plansError) throw plansError;
+      if (tagsError) throw tagsError;
+      if (exercisesError) throw exercisesError;
 
       setWorkoutPlans(plansData || []);
       setWorkoutTags(tagsData || []);
       setExerciseDetails(exercisesData || []);
       setLoadingState({ isLoading: false, error: null });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch workout data";
       console.error("Error fetching workout data:", error);
       setLoadingState({
         isLoading: false,
-        error: error.message || "Failed to fetch workout data",
+        error: message,
       });
     }
   };
@@ -135,10 +152,13 @@ export function WorkoutProvider({
       if (!plan) return null;
 
       // Fetch tags for this plan
-      const { data: planTagsData, error: planTagsError } = await supabase
-        .from("workout_plan_tags")
-        .select("tag_id")
-        .eq("plan_id", planId);
+      const { data: planTagsData, error: planTagsError } = await withTimeout(
+        supabase
+          .from("workout_plan_tags")
+          .select("tag_id")
+          .eq("plan_id", planId),
+        "getWorkoutPlanWithTags",
+      );
 
       if (planTagsError) {
         console.error("Error fetching plan tags:", planTagsError);
@@ -164,11 +184,14 @@ export function WorkoutProvider({
 
       // Fetch exercises for this plan
       const { data: planExercisesData, error: planExercisesError } =
-        await supabase
+        await withTimeout(
+          supabase
           .from("workout_plan_exercises")
           .select("*")
           .eq("plan_id", planId)
-          .order("position", { ascending: true });
+          .order("position", { ascending: true }),
+          "getWorkoutPlanFull",
+        );
 
       if (planExercisesError) {
         console.error("Error fetching plan exercises:", planExercisesError);
@@ -220,10 +243,13 @@ export function WorkoutProvider({
       if (!tag) return [];
 
       // Fetch plan IDs with this tag
-      const { data: planTagsData, error: planTagsError } = await supabase
-        .from("workout_plan_tags")
-        .select("plan_id")
-        .eq("tag_id", tag.id);
+      const { data: planTagsData, error: planTagsError } = await withTimeout(
+        supabase
+          .from("workout_plan_tags")
+          .select("plan_id")
+          .eq("tag_id", tag.id),
+        "filterPlansByTag",
+      );
 
       if (planTagsError) {
         console.error("Error filtering plans by tag:", planTagsError);

@@ -276,7 +276,7 @@ export default function MyProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
+      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <Loader size="lg" text="Loading..." textColor="slate" />
       </div>
     );
@@ -286,7 +286,7 @@ export default function MyProfilePage() {
   const bmiClassification = getBMIClassification(bmiValue);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
       {/* Hero Band */}
       <div className="bg-gradient-to-br from-[#0d9488] via-[#0f766e] to-[#134e4a] rounded-b-[22px] px-6 pt-8 pb-32">
         <div className="max-w-4xl mx-auto">
@@ -305,7 +305,7 @@ export default function MyProfilePage() {
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 -mt-24 pb-20">
         {/* Profile Card */}
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-lg p-6 mb-6">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-700 shadow-lg p-6 mb-6">
           {/* Profile Icon */}
           <div className="flex justify-center mb-4">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-[#f59e0b] via-[#d97706] to-[#b45309] flex items-center justify-center">
@@ -315,7 +315,7 @@ export default function MyProfilePage() {
 
           {/* Email and Member Badge */}
           <div className="text-center mb-6">
-            <p className="text-base font-bold text-gray-900 mb-2">
+            <p className="text-base font-bold text-gray-900 dark:text-slate-100 mb-2">
               {user?.email || "User"}
             </p>
             <span
@@ -330,28 +330,28 @@ export default function MyProfilePage() {
           </div>
 
           {/* Height, Weight, BMI - 3 Columns */}
-          <div className="flex justify-between items-center mb-6 pb-6 border-b border-gray-200">
+          <div className="flex justify-between items-center mb-6 pb-6 border-b border-gray-200 dark:border-slate-700">
             <div className="flex-1 text-center">
-              <p className="text-[11px] text-gray-500 uppercase tracking-[1px] mb-1">
+              <p className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-[1px] mb-1">
                 Height
               </p>
-              <p className="text-base font-bold text-gray-900">
+              <p className="text-base font-bold text-gray-900 dark:text-slate-100">
                 {formatHeight()}
               </p>
             </div>
-            <div className="w-px h-12 bg-gray-200 mx-2" />
+            <div className="w-px h-12 bg-gray-200 dark:bg-slate-700 mx-2" />
             <div className="flex-1 text-center">
-              <p className="text-[11px] text-gray-500 uppercase tracking-[1px] mb-1">
+              <p className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-[1px] mb-1">
                 Weight
               </p>
-              <p className="text-base font-bold text-gray-900">
+              <p className="text-base font-bold text-gray-900 dark:text-slate-100">
                 {formatWeight()}
               </p>
             </div>
-            <div className="w-px h-12 bg-gray-200 mx-2" />
+            <div className="w-px h-12 bg-gray-200 dark:bg-slate-700 mx-2" />
             <div className="flex-1 text-center">
               <div className="flex items-center justify-center mb-1">
-                <p className="text-[11px] text-gray-500 uppercase tracking-[1px]">
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-[1px]">
                   BMI
                 </p>
                 {bmiValue && (
@@ -371,7 +371,7 @@ export default function MyProfilePage() {
                   </button>
                 )}
               </div>
-              <p className="text-base font-bold text-gray-900">
+              <p className="text-base font-bold text-gray-900 dark:text-slate-100">
                 {bmiValue || "N/A"}
               </p>
             </div>
@@ -399,23 +399,23 @@ export default function MyProfilePage() {
         </div>
 
         {/* Preferences Section */}
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
-          <div className="bg-slate-50 border-b border-gray-200 px-4 py-3">
-            <p className="text-xs tracking-[2px] font-bold text-gray-500 uppercase">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6 overflow-hidden">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 px-4 py-3">
+            <p className="text-xs tracking-[2px] font-bold text-gray-500 dark:text-slate-400 uppercase">
               Preferences
             </p>
           </div>
           <div className="p-2">
             {/* Notifications Toggle */}
-            <div className="flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+            <div className="flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiBell className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Push Notifications
                 </p>
-                <p className="text-[13px] text-gray-500">
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">
                   Receive workout reminders
                 </p>
               </div>
@@ -426,22 +426,22 @@ export default function MyProfilePage() {
                   onChange={(e) => setNotificationsEnabled(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0f766e] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a7f3d0]" />
+                <div className="w-11 h-6 bg-gray-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0f766e] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:dark:bg-slate-100 after:border-gray-300 after:dark:border-slate-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a7f3d0] dark:peer-checked:bg-emerald-500/70" />
               </label>
             </div>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             {/* Dark Mode Toggle */}
-            <div className="flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+            <div className="flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiMoon className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Dark Mode
                 </p>
-                <p className="text-[13px] text-gray-500">Use dark theme</p>
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">Use dark theme</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input
@@ -450,37 +450,37 @@ export default function MyProfilePage() {
                   onChange={(e) => handleDarkModeToggle(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0f766e] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a7f3d0]" />
+                <div className="w-11 h-6 bg-gray-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#0f766e] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:dark:bg-slate-100 after:border-gray-300 after:dark:border-slate-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a7f3d0] dark:peer-checked:bg-emerald-500/70" />
               </label>
             </div>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             {/* Language Setting */}
             <button
               onClick={handleLanguageEdit}
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiLanguage className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Language
                 </p>
-                <p className="text-[13px] text-gray-500">
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">
                   {getLanguageDisplay(userProfile?.preferred_language)}
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
           </div>
         </div>
 
         {/* Support Section */}
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
-          <div className="bg-slate-50 border-b border-gray-200 px-4 py-3">
-            <p className="text-xs tracking-[2px] font-bold text-gray-500 uppercase">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6 overflow-hidden">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 px-4 py-3">
+            <p className="text-xs tracking-[2px] font-bold text-gray-500 dark:text-slate-400 uppercase">
               Support
             </p>
           </div>
@@ -489,23 +489,23 @@ export default function MyProfilePage() {
               onClick={() =>
                 showToast("success", "Coming Soon", "Help Center is coming soon!")
               }
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiQuestionMarkCircle className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Help Center
                 </p>
-                <p className="text-[13px] text-gray-500">
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">
                   Get answers to your questions
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             <button
               onClick={() =>
@@ -515,102 +515,102 @@ export default function MyProfilePage() {
                   "Contact Support is coming soon!"
                 )
               }
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiChatBubbleLeftRight className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Contact Support
                 </p>
-                <p className="text-[13px] text-gray-500">
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">
                   Get help from our team
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             <button
               onClick={() =>
                 showToast("success", "Thank You", "We appreciate your feedback!")
               }
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiStar className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   Rate VitalSpark
                 </p>
-                <p className="text-[13px] text-gray-500">
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">
                   Share your feedback
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
           </div>
         </div>
 
         {/* About Section */}
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
-          <div className="bg-slate-50 border-b border-gray-200 px-4 py-3">
-            <p className="text-xs tracking-[2px] font-bold text-gray-500 uppercase">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6 overflow-hidden">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 px-4 py-3">
+            <p className="text-xs tracking-[2px] font-bold text-gray-500 dark:text-slate-400 uppercase">
               About
             </p>
           </div>
           <div className="p-2">
             <div className="flex items-center rounded-xl p-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiInformationCircle className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3">
-                <p className="text-[15px] font-semibold text-gray-900 mb-0.5">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-0.5">
                   App Version
                 </p>
-                <p className="text-[13px] text-gray-500">1.0.0</p>
+                <p className="text-[13px] text-gray-500 dark:text-slate-400">1.0.0</p>
               </div>
             </div>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             <button
               onClick={() =>
                 showToast("success", "Coming Soon", "Terms of Service coming soon!")
               }
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiDocumentText className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100">
                   Terms of Service
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
 
-            <div className="h-px bg-gray-200 mx-3 my-0" />
+            <div className="h-px bg-gray-200 dark:bg-slate-700 mx-3 my-0" />
 
             <button
               onClick={() =>
                 showToast("success", "Coming Soon", "Privacy Policy coming soon!")
               }
-              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center rounded-xl p-3 hover:bg-gray-50 dark:bg-slate-800/60 dark:hover:bg-slate-800/70 transition-colors"
             >
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mr-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mr-3 shrink-0">
                 <HiShieldCheck className="w-5 h-5 text-[#0f766e]" />
               </div>
               <div className="flex-1 pr-3 text-left">
-                <p className="text-[15px] font-semibold text-gray-900">
+                <p className="text-[15px] font-semibold text-gray-900 dark:text-slate-100">
                   Privacy Policy
                 </p>
               </div>
-              <HiChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+              <HiChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500 shrink-0" />
             </button>
           </div>
         </div>
@@ -626,7 +626,7 @@ export default function MyProfilePage() {
       >
         <div>
           {/* Header */}
-          <div className="flex items-center pb-4 mb-4 border-b border-gray-200">
+          <div className="flex items-center pb-4 mb-4 border-b border-gray-200 dark:border-slate-700">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center mr-3"
               style={{ backgroundColor: bmiClassification?.bgColor || "#f3f4f6" }}
@@ -637,10 +637,10 @@ export default function MyProfilePage() {
               />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg sm:text-xl font-extrabold text-slate-900">
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100">
                 BMI Result
               </h3>
-              <p className="text-sm sm:text-base text-gray-600 mt-0.5">
+              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 mt-0.5">
                 Body Mass Index
               </p>
             </div>
@@ -649,21 +649,21 @@ export default function MyProfilePage() {
           {/* Content */}
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             {/* BMI Score */}
-            <div className="bg-gray-50 rounded-xl p-6 text-center">
+            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-6 text-center">
               <p
                 className="text-5xl sm:text-6xl font-black mb-1"
                 style={{ color: bmiClassification?.color || "#6b7280" }}
               >
                 {bmiValue}
               </p>
-              <p className="text-sm sm:text-base text-gray-600 font-semibold">
+              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
                 BMI Score
               </p>
             </div>
 
             {/* Classification */}
-            <div className="bg-gray-50 rounded-xl p-6 text-center">
-              <p className="text-sm sm:text-base text-gray-600 mb-2">
+            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-6 text-center">
+              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 mb-2">
                 Classification
               </p>
               <div
@@ -680,17 +680,17 @@ export default function MyProfilePage() {
             </div>
 
             {/* Health Recommendation */}
-            <div className="bg-gray-50 rounded-xl p-4 sm:p-6">
+            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 sm:p-6">
               <div className="flex items-center mb-2">
                 <HiInformationCircle
                   className="w-5 h-5 mr-2"
                   style={{ color: bmiClassification?.color || "#6b7280" }}
                 />
-                <p className="text-sm sm:text-base font-bold text-slate-900">
+                <p className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
                   Health Tip
                 </p>
               </div>
-              <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 leading-relaxed">
                 BMI is a screening tool. Consult with a healthcare professional
                 for personalized health advice.
               </p>
@@ -698,43 +698,43 @@ export default function MyProfilePage() {
 
             {/* BMI Ranges */}
             <div>
-              <p className="text-sm sm:text-base font-extrabold text-slate-900 mb-3">
+              <p className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 mb-3">
                 BMI Ranges
               </p>
               <div className="space-y-2">
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#3b82f6] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 flex-1">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
                     Underweight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 font-semibold">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
                     &lt; 18.5
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#10b981] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 flex-1">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
                     Healthy Weight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 font-semibold">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
                     18.5 - 24.9
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#f59e0b] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 flex-1">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
                     Overweight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 font-semibold">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
                     25.0 - 29.9
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#ef4444] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 flex-1">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
                     Obesity
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 font-semibold">
+                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
                     ≥ 30.0
                   </span>
                 </div>
@@ -743,7 +743,7 @@ export default function MyProfilePage() {
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end pt-4 mt-4 border-t border-gray-200">
+          <div className="flex justify-end pt-4 mt-4 border-t border-gray-200 dark:border-slate-700">
             <button
               onClick={() => setBmiModalOpen(false)}
               className="px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0f766e] hover:bg-[#0d6b63] text-white rounded-xl font-bold text-sm sm:text-base transition-colors"
@@ -763,7 +763,7 @@ export default function MyProfilePage() {
         showCloseButton={!savingLanguage}
       >
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-5 text-center">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-5 text-center">
             Select Language
           </h3>
           <div className="space-y-2 mb-5">
@@ -777,15 +777,15 @@ export default function MyProfilePage() {
                 onClick={() => setSelectedLanguage(language.value)}
                 className={`w-full flex items-center p-3 rounded-xl border-2 transition-all ${
                   selectedLanguage === language.value
-                    ? "border-[#14b8a6] bg-[#f0fdfa]"
-                    : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+                    ? "border-[#14b8a6] bg-[#f0fdfa] dark:bg-teal-950/40"
+                    : "border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60 hover:bg-gray-100 dark:hover:bg-slate-800"
                 }`}
               >
                 <div
                   className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center ${
                     selectedLanguage === language.value
                       ? "border-[#14b8a6]"
-                      : "border-gray-300"
+                      : "border-gray-300 dark:border-slate-600"
                   }`}
                 >
                   {selectedLanguage === language.value && (
@@ -795,8 +795,8 @@ export default function MyProfilePage() {
                 <span
                   className={`font-medium ${
                     selectedLanguage === language.value
-                      ? "text-[#0f766e]"
-                      : "text-gray-700"
+                      ? "text-[#0f766e] dark:text-teal-300"
+                      : "text-gray-700 dark:text-slate-200"
                   }`}
                 >
                   {language.label}
@@ -808,7 +808,7 @@ export default function MyProfilePage() {
             <button
               onClick={() => setLanguageModalVisible(false)}
               disabled={savingLanguage}
-              className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
+              className="px-5 py-2.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -839,16 +839,16 @@ export default function MyProfilePage() {
         showCloseButton={!busy}
       >
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-2">Sign Out</h3>
-          <p className="text-gray-600 mb-5">
-            Are you sure you want to sign out? You'll need to sign in again to
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Sign Out</h3>
+          <p className="text-gray-600 dark:text-slate-300 mb-5">
+            Are you sure you want to sign out? You&apos;ll need to sign in again to
             access your account.
           </p>
           <div className="flex gap-3 justify-end">
             <button
               onClick={() => setConfirmOpen(false)}
               disabled={busy}
-              className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
+              className="px-5 py-2.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
             >
               Cancel
             </button>

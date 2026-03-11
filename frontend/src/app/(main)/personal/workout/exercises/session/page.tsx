@@ -165,11 +165,15 @@ export default function ExerciseSessionPage() {
   const [resolvedDayPlanId, setResolvedDayPlanId] = useState<string | null>(
     dayPlanId,
   );
+  const [resolvedWeeklyPlanId, setResolvedWeeklyPlanId] = useState<
+    string | null
+  >(null);
   const [showWorkoutCompleteSheet, setShowWorkoutCompleteSheet] =
     useState<boolean>(false);
   const [workoutRpe, setWorkoutRpe] = useState<number>(5);
   const [isSavingWorkoutRpe, setIsSavingWorkoutRpe] = useState<boolean>(false);
   const resolvedDayPlanIdRef = useRef<string | null>(dayPlanId);
+  const resolvedWeeklyPlanIdRef = useRef<string | null>(null);
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionExercises, setSessionExercises] = useState<
@@ -1057,7 +1061,10 @@ export default function ExerciseSessionPage() {
    * Starts a new workout session
    */
   const startWorkoutSession = useCallback(
-    async (dayPlanIdOverride?: string | null) => {
+    async (
+      dayPlanIdOverride?: string | null,
+      weeklyPlanIdOverride?: string | null,
+    ) => {
       if (!userProfile?.user_id || !planId) {
         return null;
       }
@@ -1096,6 +1103,11 @@ export default function ExerciseSessionPage() {
               resolvedDayPlanIdRef.current ??
               resolvedDayPlanId ??
               null;
+            const resolvedWeeklyPlanForSession =
+              weeklyPlanIdOverride ??
+              resolvedWeeklyPlanIdRef.current ??
+              resolvedWeeklyPlanId ??
+              null;
 
             const baseSessionPayload = {
               user_id: userProfile.user_id,
@@ -1106,10 +1118,16 @@ export default function ExerciseSessionPage() {
             };
 
             const sessionPayload =
-              resolvedDayPlanForSession !== null
+              resolvedDayPlanForSession !== null ||
+              resolvedWeeklyPlanForSession !== null
                 ? {
                     ...baseSessionPayload,
-                    day_plan_id: resolvedDayPlanForSession,
+                    ...(resolvedDayPlanForSession !== null
+                      ? { day_plan_id: resolvedDayPlanForSession }
+                      : {}),
+                    ...(resolvedWeeklyPlanForSession !== null
+                      ? { weekly_plan_id: resolvedWeeklyPlanForSession }
+                      : {}),
                   }
                 : baseSessionPayload;
 
@@ -1119,19 +1137,38 @@ export default function ExerciseSessionPage() {
               .select()
               .single();
 
-            // Backward compatibility: if DB schema has not added day_plan_id yet, retry without it.
-            if (error && resolvedDayPlanForSession !== null) {
+            // Backward compatibility: if DB schema has not added day_plan_id/weekly_plan_id yet, retry without missing columns.
+            if (
+              error &&
+              (resolvedDayPlanForSession !== null ||
+                resolvedWeeklyPlanForSession !== null)
+            ) {
               const errorMessage =
                 typeof error.message === "string" ? error.message : "";
               const missingDayPlanColumn =
                 errorMessage.toLowerCase().includes("day_plan_id") &&
                 (errorMessage.toLowerCase().includes("column") ||
                   errorMessage.toLowerCase().includes("could not find"));
+              const missingWeeklyPlanColumn =
+                errorMessage.toLowerCase().includes("weekly_plan_id") &&
+                (errorMessage.toLowerCase().includes("column") ||
+                  errorMessage.toLowerCase().includes("could not find"));
 
-              if (missingDayPlanColumn) {
+              if (missingDayPlanColumn || missingWeeklyPlanColumn) {
+                const fallbackPayload = {
+                  ...baseSessionPayload,
+                  ...(resolvedDayPlanForSession !== null && !missingDayPlanColumn
+                    ? { day_plan_id: resolvedDayPlanForSession }
+                    : {}),
+                  ...(resolvedWeeklyPlanForSession !== null &&
+                  !missingWeeklyPlanColumn
+                    ? { weekly_plan_id: resolvedWeeklyPlanForSession }
+                    : {}),
+                };
+
                 const fallbackResponse = await supabase
                   .from("user_workout_sessions")
-                  .insert(baseSessionPayload)
+                  .insert(fallbackPayload)
                   .select()
                   .single();
 
@@ -1175,6 +1212,7 @@ export default function ExerciseSessionPage() {
       userProfile?.user_id,
       planId,
       resolvedDayPlanId,
+      resolvedWeeklyPlanId,
       cleanupAllSessionsAndExercises,
       retryDatabaseOperation,
       resetWorkoutState,
@@ -3236,7 +3274,6 @@ export default function ExerciseSessionPage() {
     deleteSession,
     addExerciseToSession,
     // showStartCountdown is a stable callback (empty deps), safe to omit
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   ]);
 
   const fetchWorkoutData = useCallback(async () => {
@@ -3268,8 +3305,29 @@ export default function ExerciseSessionPage() {
         setUserGender(normalizeStoredGender(userProfile.gender));
       }
 
-      const resolveDayPlanId = async (): Promise<string | null> => {
-        if (dayPlanId) return dayPlanId;
+      const resolveSessionPlanContext = async (): Promise<{
+        dayPlanId: string | null;
+        weeklyPlanId: string | null;
+      }> => {
+        if (dayPlanId) {
+          const { data: directDayPlan, error: directDayPlanError } =
+            await supabase
+              .from("user_workout_weekly_day_plan")
+              .select("id, week_plan_id")
+              .eq("id", dayPlanId)
+              .maybeSingle();
+
+          if (
+            !directDayPlanError &&
+            directDayPlan?.id &&
+            directDayPlan.week_plan_id
+          ) {
+            return {
+              dayPlanId: directDayPlan.id,
+              weeklyPlanId: directDayPlan.week_plan_id,
+            };
+          }
+        }
 
         const parsedWeek = weekParam ? Number(weekParam) : null;
 
@@ -3287,8 +3345,10 @@ export default function ExerciseSessionPage() {
           .limit(1);
 
         if (weekError || !weekPlans || weekPlans.length === 0) {
-          return null;
+          return { dayPlanId: null, weeklyPlanId: null };
         }
+
+        const resolvedWeekPlanIdValue = weekPlans[0].id;
 
         let dayPlanQuery = supabase
           .from("user_workout_weekly_day_plan")
@@ -3304,19 +3364,27 @@ export default function ExerciseSessionPage() {
           .limit(1);
 
         if (dayError || !dayPlans || dayPlans.length === 0) {
-          return null;
+          return { dayPlanId: null, weeklyPlanId: resolvedWeekPlanIdValue };
         }
 
-        return dayPlans[0].id;
+        return {
+          dayPlanId: dayPlans[0].id,
+          weeklyPlanId: resolvedWeekPlanIdValue,
+        };
       };
 
-      const resolvedDayPlanIdValue = await resolveDayPlanId();
+      const {
+        dayPlanId: resolvedDayPlanIdValue,
+        weeklyPlanId: resolvedWeeklyPlanIdValue,
+      } = await resolveSessionPlanContext();
       if (!resolvedDayPlanIdValue) {
         setIsLoading(false);
         return;
       }
       resolvedDayPlanIdRef.current = resolvedDayPlanIdValue;
       setResolvedDayPlanId(resolvedDayPlanIdValue);
+      resolvedWeeklyPlanIdRef.current = resolvedWeeklyPlanIdValue;
+      setResolvedWeeklyPlanId(resolvedWeeklyPlanIdValue);
 
       // Fetch plan and exercises in parallel
       const [planDataResult, exercisesResult] = await Promise.all([
@@ -3406,7 +3474,10 @@ export default function ExerciseSessionPage() {
         // OPTIMIZATION: Create session FIRST, then show countdown
         // During countdown, save first exercise to database (non-blocking background operation)
         // After countdown, load the workout flow and set isLoading to false
-        const newSessionId = await startWorkoutSession(resolvedDayPlanIdValue);
+        const newSessionId = await startWorkoutSession(
+          resolvedDayPlanIdValue,
+          resolvedWeeklyPlanIdValue,
+        );
         if (!newSessionId) {
           setIsLoading(false);
           return;
@@ -3533,6 +3604,10 @@ export default function ExerciseSessionPage() {
   useEffect(() => {
     resolvedDayPlanIdRef.current = resolvedDayPlanId;
   }, [resolvedDayPlanId]);
+
+  useEffect(() => {
+    resolvedWeeklyPlanIdRef.current = resolvedWeeklyPlanId;
+  }, [resolvedWeeklyPlanId]);
 
   useEffect(() => {
     if (!shouldEnforceFullscreen || !isFullscreenGuardActive) return;
@@ -3687,6 +3762,8 @@ export default function ExerciseSessionPage() {
       setOldSessionId(null);
       resolvedDayPlanIdRef.current = dayPlanId;
       setResolvedDayPlanId(dayPlanId);
+      resolvedWeeklyPlanIdRef.current = null;
+      setResolvedWeeklyPlanId(null);
       setShowWorkoutCompleteSheet(false);
       setWorkoutRpe(5);
       setIsSavingWorkoutRpe(false);
@@ -3830,9 +3907,9 @@ export default function ExerciseSessionPage() {
 
   if (!planId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-slate-600">Redirecting...</p>
+          <p className="text-slate-600 dark:text-slate-300">Redirecting...</p>
         </div>
       </div>
     );
@@ -3841,21 +3918,21 @@ export default function ExerciseSessionPage() {
   if (!userProfile?.user_id) {
     if (userLoadingState.isLoading) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
           <div className="text-center">
-            <p className="text-slate-600">Loading workout...</p>
+            <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center px-6">
-          <p className="text-red-600 font-semibold mb-2">
+          <p className="text-red-600 dark:text-red-300 font-semibold mb-2">
             Unable to load your profile.
           </p>
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
             {userLoadingState.error
               ? "Please retry or go back to workout details."
               : "Please retry loading your data or go back."}
@@ -3871,7 +3948,7 @@ export default function ExerciseSessionPage() {
             <button
               type="button"
               onClick={() => router.push(workoutDetailsPath)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               Back
             </button>
@@ -3884,9 +3961,9 @@ export default function ExerciseSessionPage() {
   // Show loading screen only if not starting workout (countdown screen will show instead)
   if (isLoading && !isStartingWorkout && !showRestartDialog) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-slate-600">Loading workout...</p>
+          <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
         </div>
       </div>
     );
@@ -3894,9 +3971,9 @@ export default function ExerciseSessionPage() {
 
   if (isQuitting) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-red-600 font-semibold">Ending workout...</p>
+          <p className="text-red-600 dark:text-red-300 font-semibold">Ending workout...</p>
         </div>
       </div>
     );
@@ -3906,15 +3983,15 @@ export default function ExerciseSessionPage() {
   if (showRestartDialog) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl dark:shadow-black/50 p-8 max-w-md w-full mx-4 border border-slate-200/80 dark:border-slate-700/80">
           <div className="text-center mb-6">
             <div className="mb-4">
               <HiArrowPath className="w-16 h-16 mx-auto text-teal-600" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
               Resume Workout?
             </h2>
-            <p className="text-slate-600 mb-4">
+            <p className="text-slate-600 dark:text-slate-300 mb-4">
               You have an active workout session. Would you like to restart it?
             </p>
             {isRestartingFromReload && (
@@ -3937,7 +4014,7 @@ export default function ExerciseSessionPage() {
                 router.push(workoutDetailsPath);
               }}
               disabled={isRestartingFromReload}
-              className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -3985,7 +4062,7 @@ export default function ExerciseSessionPage() {
 
   return (
     <div
-      className={`min-h-screen bg-white ${
+      className={`min-h-screen bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] text-slate-900 dark:text-slate-100 ${
         hasSessionStarted ? "pb-[120px]" : "pb-[140px]"
       }`}
     >
@@ -4015,12 +4092,12 @@ export default function ExerciseSessionPage() {
       {!isStartingWorkout && workoutFlow.length > 0 && (
         <>
           {/* Header with Progress */}
-          <div className="sticky top-0 z-40 bg-white border-b border-slate-200">
+          <div className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
               <div className="flex items-center justify-between mb-2">
                 <button
                   onClick={handleBackPress}
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                   aria-label="Exit workout"
                 >
                   <HiXMark className="w-6 h-6 text-teal-700" />
@@ -4029,7 +4106,7 @@ export default function ExerciseSessionPage() {
                   <h1 className="text-lg font-bold text-teal-700">
                     {workoutPlan?.name || "Workout"}
                   </h1>
-                  <p className="text-xs text-slate-600 mt-1">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                     Set {currentFlowIndex + 1}/{workoutFlow.length} •{" "}
                     {getSectionLabel(currentExercise?.section || "")}
                   </p>
@@ -4037,7 +4114,7 @@ export default function ExerciseSessionPage() {
                 <div className="w-10" /> {/* Spacer for centering */}
               </div>
               {/* Progress Bar */}
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-teal-600 to-teal-500 transition-all duration-300"
                   style={{ width: `${progress}%` }}
@@ -4056,7 +4133,7 @@ export default function ExerciseSessionPage() {
                     Rest Time
                   </h2>
                   {currentFlowIndex < workoutFlow.length - 1 && (
-                    <p className="text-slate-600">
+                    <p className="text-slate-600 dark:text-slate-300">
                       Next:{" "}
                       {workoutFlow[currentFlowIndex + 1]?.exercise?.details
                         ?.name || "Exercise"}{" "}
@@ -4078,8 +4155,9 @@ export default function ExerciseSessionPage() {
                       cy="128"
                       r="120"
                       fill="none"
-                      stroke="#e5e7eb"
+                      stroke="currentColor"
                       strokeWidth="8"
+                      className="text-slate-200 dark:text-slate-700"
                     />
                     <circle
                       cx="128"
@@ -4105,7 +4183,7 @@ export default function ExerciseSessionPage() {
                     <p className="text-5xl font-black text-amber-500 mb-1">
                       {formatTime(timer)}
                     </p>
-                    <p className="text-slate-600 font-semibold">remaining</p>
+                    <p className="text-slate-600 dark:text-slate-300 font-semibold">remaining</p>
                   </div>
                 </div>
 
@@ -4126,26 +4204,26 @@ export default function ExerciseSessionPage() {
                     {currentExercise?.per_side &&
                       currentSide !== "both" &&
                       getSideLabel(currentSide) !== "" && (
-                        <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                        <span className="px-3 py-1 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs font-semibold rounded-full flex items-center gap-1">
                           <HiArrowRight className="w-3 h-3" />
                           {getSideLabel(currentSide)}
                         </span>
                       )}
                     {totalSets > 1 && (
-                      <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                      <span className="px-3 py-1 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs font-semibold rounded-full flex items-center gap-1">
                         <HiBolt className="w-3 h-3" />
                         Set {currentSet} of {totalSets}
                       </span>
                     )}
                     {currentExercise?.reps && currentExercise.reps > 0 && (
-                      <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-full">
+                      <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-semibold rounded-full">
                         {currentExercise.reps === 1 ? "Rep" : "Reps"}:{" "}
                         {currentExercise.reps}
                       </span>
                     )}
                     {currentExercise?.rest_seconds &&
                       currentExercise.rest_seconds > 0 && (
-                        <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                        <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-full flex items-center gap-1">
                           <HiClock className="w-3 h-3" />
                           Rest: {currentExercise.rest_seconds}s
                         </span>
@@ -4153,7 +4231,7 @@ export default function ExerciseSessionPage() {
                   </div>
 
                   {/* Exercise Image */}
-                  <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100">
+                  <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                     {currentExerciseImageUrl ? (
                       <Image
                         src={currentExerciseImageUrl}
@@ -4167,7 +4245,7 @@ export default function ExerciseSessionPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <HiBolt className="w-16 h-16 text-slate-400" />
+                          <HiBolt className="w-16 h-16 text-slate-400 dark:text-slate-500" />
                       </div>
                     )}
                   </div>
@@ -4177,7 +4255,7 @@ export default function ExerciseSessionPage() {
                     <button
                       onClick={handleSkip}
                       disabled={isSkipping}
-                      className="w-full py-3 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-xl border-2 border-red-200 transition-colors"
+                      className="w-full py-3 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-xl border-2 border-red-200 dark:border-red-900/50 transition-colors"
                     >
                       {isSkipping ? "Skipping..." : "Skip Exercise"}
                     </button>
@@ -4199,8 +4277,9 @@ export default function ExerciseSessionPage() {
                           cy="128"
                           r="120"
                           fill="none"
-                          stroke="#e5e7eb"
+                          stroke="currentColor"
                           strokeWidth="8"
+                          className="text-slate-200 dark:text-slate-700"
                         />
                         <circle
                           cx="128"
@@ -4232,7 +4311,7 @@ export default function ExerciseSessionPage() {
                     <button
                       onClick={handleSkip}
                       disabled={isSkipping}
-                      className="px-6 py-2 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-lg transition-colors"
+                      className="px-6 py-2 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-lg transition-colors"
                     >
                       {isSkipping ? "Skipping..." : "Skip Exercise"}
                     </button>
@@ -4244,7 +4323,7 @@ export default function ExerciseSessionPage() {
 
           {/* Control Buttons */}
           <div
-            className={`fixed left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-40 ${
+            className={`fixed left-0 right-0 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-700 shadow-lg dark:shadow-black/40 backdrop-blur z-40 ${
               hasSessionStarted ? "bottom-0" : "bottom-[70px]"
             }`}
           >
@@ -4261,7 +4340,7 @@ export default function ExerciseSessionPage() {
                       </span>
                     )}
                   {totalSets > 1 && (
-                    <span className="text-base font-semibold text-slate-600 ml-2">
+                    <span className="text-base font-semibold text-slate-600 dark:text-slate-300 ml-2">
                       - Set {currentSet}/{totalSets}
                     </span>
                   )}
@@ -4273,11 +4352,11 @@ export default function ExerciseSessionPage() {
                 <button
                   onClick={handlePrevious}
                   disabled={currentFlowIndex === 0 || isGoingPrevious}
-                  className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                  className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                   aria-label="Previous exercise"
                 >
                   {isGoingPrevious ? (
-                    <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <HiArrowLeft className="w-7 h-7" />
                   )}
@@ -4285,7 +4364,7 @@ export default function ExerciseSessionPage() {
 
                 <button
                   onClick={handlePauseToggle}
-                  className="p-4 bg-gradient-to-br from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all"
+                  className="p-4 bg-gradient-to-br from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 text-white rounded-full shadow-lg hover:shadow-xl dark:shadow-black/40 transition-all"
                   aria-label={isPaused ? "Resume workout" : "Pause workout"}
                 >
                   {isPaused ? (
@@ -4299,11 +4378,11 @@ export default function ExerciseSessionPage() {
                   <button
                     onClick={handleFinish}
                     disabled={isGoingNext || isQuitting}
-                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                     aria-label="Finish workout"
                   >
                     {isGoingNext || isQuitting ? (
-                      <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <HiCheckCircle className="w-7 h-7" />
                     )}
@@ -4312,13 +4391,13 @@ export default function ExerciseSessionPage() {
                   <button
                     onClick={() => handleNext(false)}
                     disabled={isGoingNext}
-                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                     aria-label={
                       isResting ? "Skip rest and continue" : "Next set"
                     }
                   >
                     {isGoingNext ? (
-                      <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <HiArrowRight className="w-7 h-7" />
                     )}
@@ -4330,24 +4409,24 @@ export default function ExerciseSessionPage() {
 
           {showWorkoutCompleteSheet && (
             <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40">
-              <div className="w-full max-w-2xl rounded-t-3xl bg-white p-6 shadow-2xl sm:mb-4 sm:rounded-3xl sm:p-8">
-                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-slate-300 sm:hidden" />
+              <div className="w-full max-w-2xl rounded-t-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl dark:shadow-black/50 sm:mb-4 sm:rounded-3xl sm:p-8 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700 sm:hidden" />
                 <div className="text-center">
-                  <h3 className="text-3xl font-black text-slate-900">
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100">
                     Workout Complete 🎉
                   </h3>
-                  <p className="mt-2 text-lg font-semibold text-slate-700">
+                  <p className="mt-2 text-lg font-semibold text-slate-700 dark:text-slate-200">
                     Great job today!
                   </p>
-                  <p className="mt-4 text-base font-semibold text-slate-800">
+                  <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">
                     How challenging was this workout?
                   </p>
                 </div>
 
                 <div className="mt-6">
-                  <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-600">
+                  <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-600 dark:text-slate-300">
                     <span>1</span>
-                    <span className="text-base font-black text-teal-700">
+                    <span className="text-base font-black text-teal-700 dark:text-teal-300">
                       {workoutRpe}/10
                     </span>
                     <span>10</span>
@@ -4362,10 +4441,10 @@ export default function ExerciseSessionPage() {
                       setWorkoutRpe(Number(event.target.value))
                     }
                     disabled={isSavingWorkoutRpe}
-                    className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 accent-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 dark:bg-slate-700 accent-teal-600 dark:accent-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
                     aria-label="Workout challenge rating from 1 to 10"
                   />
-                  <div className="mt-4 flex justify-between gap-3 text-xs font-semibold text-slate-600 sm:text-sm">
+                  <div className="mt-4 flex justify-between gap-3 text-xs font-semibold text-slate-600 dark:text-slate-300 sm:text-sm">
                     <div className="text-left">
                       <p>😌 So Easy</p>
                     </div>
@@ -4381,7 +4460,7 @@ export default function ExerciseSessionPage() {
                 <button
                   onClick={handleSaveWorkoutRpe}
                   disabled={isSavingWorkoutRpe}
-                  className="mt-8 w-full rounded-2xl bg-gradient-to-r from-teal-600 to-teal-500 py-3 font-bold text-white transition-colors hover:from-teal-700 hover:to-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-8 w-full rounded-2xl bg-gradient-to-r from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 py-3 font-bold text-white transition-colors hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSavingWorkoutRpe ? "Saving..." : "Save Rating & Finish"}
                 </button>
@@ -4392,7 +4471,7 @@ export default function ExerciseSessionPage() {
           {/* Exit Confirmation Modal */}
           {showExitConfirmation && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl dark:shadow-black/50 border border-slate-200/80 dark:border-slate-700/80">
                 {/* Motivational Header */}
                 <div className="text-center mb-6">
                   <div className="flex items-center justify-center gap-2 mb-4">
@@ -4400,13 +4479,13 @@ export default function ExerciseSessionPage() {
                     <HiBolt className="w-12 h-12 text-amber-500" />
                     <span className="text-5xl">💪</span>
                   </div>
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-2">
                     Don&apos;t give up now.
                   </h3>
-                  <p className="text-xl font-bold text-slate-700 mb-4">
+                  <p className="text-xl font-bold text-slate-700 dark:text-slate-200 mb-4">
                     You can do this!
                   </p>
-                  <p className="text-slate-600">
+                  <p className="text-slate-600 dark:text-slate-300">
                     Only{" "}
                     <span className="font-black text-amber-500 text-xl">
                       {Math.max(
@@ -4448,11 +4527,11 @@ export default function ExerciseSessionPage() {
                       isSkipping ||
                       isGoingPrevious
                     }
-                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-teal-600 font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-teal-600 dark:text-teal-300 font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
                   >
                     {isRestarting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-teal-600 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                         Restarting workout, please wait...
                       </>
                     ) : (
@@ -4472,7 +4551,7 @@ export default function ExerciseSessionPage() {
                       isSkipping ||
                       isGoingPrevious
                     }
-                    className="w-full py-3 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-bold rounded-xl transition-colors"
+                    className="w-full py-3 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-bold rounded-xl transition-colors"
                   >
                     {isQuitting ? "Ending..." : "Quit"}
                   </button>
@@ -4483,15 +4562,15 @@ export default function ExerciseSessionPage() {
 
           {showSessionRiskDialog && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                <h3 className="text-lg font-black text-slate-900 mb-2">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl dark:shadow-black/50 border border-slate-200/80 dark:border-slate-700/80">
+                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-2">
                   This session might end...
                 </h3>
-                <p className="text-sm text-slate-600 mb-2">
+                <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
                   Keep this workout in fullscreen and stay on this tab to avoid
                   interruptions.
                 </p>
-                <p className="text-xs text-slate-500 mb-5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
                   {sessionRiskReason === "tab"
                     ? "A tab switch was detected."
                     : "Fullscreen was closed."}
@@ -4501,7 +4580,7 @@ export default function ExerciseSessionPage() {
                     onClick={() => {
                       void handleCancelSessionRisk();
                     }}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>

@@ -105,7 +105,7 @@ export default function ForgotPasswordPage() {
       {/* Logo Section */}
       <div className="w-full flex justify-center items-center pt-4 pb-6 sm:pt-5 sm:pb-7">
         <Image
-          src="/images/Logo_VitalSpark_White.png"
+          src="/images/Logo_VitalSpark_Vertical.png"
           alt="VitalSpark Logo"
           width={140}
           height={140}

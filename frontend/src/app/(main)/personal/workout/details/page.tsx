@@ -2218,10 +2218,10 @@ export default function MyWorkoutDetailsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600" />
-          <p className="text-sm font-bold text-teal-700">
+          <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
             Loading workout details...
           </p>
         </div>
@@ -2231,9 +2231,9 @@ export default function MyWorkoutDetailsPage() {
 
   if (!workoutPlan) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-sm font-semibold text-red-600 mb-4">
+          <p className="text-sm font-semibold text-red-600 dark:text-red-300 mb-4">
             Workout plan not found
           </p>
           <button
@@ -2257,16 +2257,16 @@ export default function MyWorkoutDetailsPage() {
   };
 
   const nextWeekPreviewContent = nextWeekPreview ? (
-    <div className="mt-3 w-full rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3 mb-4 mt-1 pb-3 border-b border-slate-200">
+    <div className="mt-3 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+      <div className="flex items-start justify-between gap-3 mb-4 mt-1 pb-3 border-b border-slate-200 dark:border-slate-700">
         <div>
-          <h3 className="text-base font-extrabold text-slate-800">
+          <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
             Week {nextWeekPreview.weekNumber} Preview
           </h3>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
             {nextWeekPreview.planName}
           </p>
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             Rest days:{" "}
             {nextWeekPreview.restDays.length > 0
               ? nextWeekPreview.restDays.join(", ")
@@ -2284,8 +2284,8 @@ export default function MyWorkoutDetailsPage() {
             disabled={isSavingGeneratedPlan}
             className={`rounded-lg px-3 py-2 text-xs font-bold border transition-colors ${
               isSavingGeneratedPlan
-                ? "border-slate-200 text-slate-400 cursor-not-allowed"
-                : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                ? "border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
+                : "border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
             }`}
           >
             Discard
@@ -2298,8 +2298,8 @@ export default function MyWorkoutDetailsPage() {
             disabled={isSavingGeneratedPlan || !pendingNextWeekGeneration}
             className={`rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
               isSavingGeneratedPlan || !pendingNextWeekGeneration
-                ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                : "bg-teal-600 text-white hover:bg-teal-700"
+                ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
             }`}
           >
             {isSavingGeneratedPlan ? "Saving..." : "Save Plan"}
@@ -2323,58 +2323,58 @@ export default function MyWorkoutDetailsPage() {
               onClick={() => setSelectedPreviewDayKey(day.day.toLowerCase())}
               className={`rounded-xl overflow-hidden transition-all flex flex-col outline-none focus:outline-none active:outline-none w-full h-full ${
                 isSelectedPreviewDay
-                  ? "ring-2 ring-teal-400 ring-offset-2 shadow-lg scale-[1.02]"
-                  : "hover:shadow-md hover:scale-[1.01] border border-slate-200"
+                  ? "ring-2 ring-teal-400 ring-offset-2 dark:ring-offset-slate-900 shadow-lg scale-[1.02]"
+                  : "hover:shadow-md hover:scale-[1.01] border border-slate-200 dark:border-slate-700"
               }`}
             >
               {day.isRestDay ? (
-                <div className="flex flex-col h-full bg-slate-100">
-                  <div className="bg-slate-200/70 py-2 px-3">
-                    <span className="text-[11px] font-bold text-slate-500 text-center block">
+                <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-800">
+                  <div className="bg-slate-200/70 dark:bg-slate-700 py-2 px-3">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-300 text-center block">
                       {day.day}
                     </span>
                   </div>
 
                   <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
                     <div className="absolute inset-0 flex items-center justify-center opacity-5">
-                      <HiMoon className="w-16 h-16 text-slate-500" />
+                      <HiMoon className="w-16 h-16 text-slate-500 dark:text-slate-300" />
                     </div>
-                    <span className="text-2xl font-black text-slate-400 relative z-10">
+                    <span className="text-2xl font-black text-slate-400 dark:text-slate-500 relative z-10">
                       {previewDayNumber}
                     </span>
                   </div>
 
-                  <div className="bg-slate-200/50 py-2.5 px-2">
+                  <div className="bg-slate-200/50 dark:bg-slate-700 py-2.5 px-2">
                     <div className="flex items-center justify-center gap-1.5">
-                      <HiMoon className="w-4 h-4 text-slate-500" />
-                      <span className="text-[11px] font-semibold text-slate-500">
+                      <HiMoon className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">
                         Rest
                       </span>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col h-full bg-white">
-                  <div className="py-2 px-3 bg-amber-50">
-                    <span className="text-[11px] font-bold text-center block text-amber-600">
+                <div className="flex flex-col h-full bg-white dark:bg-slate-800">
+                  <div className="py-2 px-3 bg-amber-50 dark:bg-amber-900/30">
+                    <span className="text-[11px] font-bold text-center block text-amber-600 dark:text-amber-300">
                       {day.day}
                     </span>
                   </div>
 
                   <div className="flex-1 flex items-center justify-center py-4">
-                    <span className="text-3xl font-black text-slate-800">
+                    <span className="text-3xl font-black text-slate-800 dark:text-slate-100">
                       {previewDayNumber}
                     </span>
                   </div>
 
-                  <div className="py-2 px-1.5 bg-slate-50">
+                  <div className="py-2 px-1.5 bg-slate-50 dark:bg-slate-700">
                     <div className="flex items-center justify-center gap-1.5">
                       <HiFire className="w-3.5 h-3.5 shrink-0 text-orange-500" />
                       <span className="text-[11px] font-bold tabular-nums text-orange-600">
                         {calories || 0}
                       </span>
-                      <span className="text-[11px] text-slate-400">|</span>
-                      <span className="text-[11px] font-bold tabular-nums text-teal-600">
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500">|</span>
+                      <span className="text-[11px] font-bold tabular-nums text-teal-600 dark:text-teal-300">
                         {minutes || 0}m
                       </span>
                     </div>
@@ -2387,21 +2387,21 @@ export default function MyWorkoutDetailsPage() {
       </div>
 
       {selectedPreviewDay && (
-        <div className="mt-5 pt-5 border-t border-slate-200">
-          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl p-4 mb-4">
+        <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
+          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-900/30 dark:to-emerald-900/30 rounded-xl p-4 mb-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
-                  <span className="text-base font-extrabold text-teal-600">
+                <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center">
+                  <span className="text-base font-extrabold text-teal-600 dark:text-teal-300">
                     {selectedPreviewDay.day.slice(0, 3)}
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-base font-bold text-slate-800">
+                  <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
                     {selectedPreviewDay.day}
                   </h4>
                   {selectedPreviewDay.title && (
-                    <p className="text-xs text-slate-600 font-medium">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
                       {selectedPreviewDay.title}
                     </p>
                   )}
@@ -2411,18 +2411,18 @@ export default function MyWorkoutDetailsPage() {
               <div className="flex items-center gap-3">
                 {typeof selectedPreviewDay.totalMinutes === "number" &&
                   selectedPreviewDay.totalMinutes > 0 && (
-                    <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg shadow-sm">
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
                       <HiClock className="w-4 h-4 text-teal-600" />
-                      <span className="text-xs font-bold text-slate-700">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                         {selectedPreviewDay.totalMinutes}m
                       </span>
                     </div>
                   )}
                 {typeof selectedPreviewCalories === "number" &&
                   selectedPreviewCalories > 0 && (
-                    <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg shadow-sm">
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
                       <HiFire className="w-4 h-4 text-orange-500" />
-                      <span className="text-xs font-bold text-slate-700">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                         {selectedPreviewCalories} cal
                       </span>
                     </div>
@@ -2436,7 +2436,7 @@ export default function MyWorkoutDetailsPage() {
                   {selectedPreviewDay.focus.slice(0, 4).map((focus, index) => (
                     <span
                       key={`${selectedPreviewDay.day}-focus-${index}`}
-                      className="text-[11px] bg-white text-teal-700 px-2.5 py-1 rounded-full font-semibold shadow-sm"
+                      className="text-[11px] bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full font-semibold shadow-sm"
                     >
                       {formatTagTitleCase(focus)}
                     </span>
@@ -2445,17 +2445,17 @@ export default function MyWorkoutDetailsPage() {
               )}
 
             {selectedPreviewDay.motivation && (
-              <p className="text-[11px] text-slate-500 italic mt-3 pt-3 border-t border-teal-100">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-3 pt-3 border-t border-teal-100 dark:border-teal-800">
                 &ldquo;{selectedPreviewDay.motivation}&rdquo;
               </p>
             )}
           </div>
 
           {selectedPreviewDay.isRestDay ? (
-            <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200">
-              <HiMoon className="w-7 h-7 text-slate-400 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-600">Rest Day</p>
-              <p className="text-xs text-slate-500 mt-1">
+            <div className="text-center py-8 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+              <HiMoon className="w-7 h-7 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Rest Day</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 No exercises scheduled for this day.
               </p>
             </div>
@@ -2533,7 +2533,7 @@ export default function MyWorkoutDetailsPage() {
               {selectedPreviewWarmupExercises.length === 0 &&
                 selectedPreviewMainExercises.length === 0 &&
                 selectedPreviewCooldownExercises.length === 0 && (
-                  <div className="text-center py-6 text-xs text-slate-400">
+                  <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-500">
                     No exercises generated for this day.
                   </div>
                 )}
@@ -2545,7 +2545,7 @@ export default function MyWorkoutDetailsPage() {
   ) : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="min-h-screen bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] pb-24">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
         {/* Hero Image */}
         <div className="relative h-52 md:h-64 rounded-3xl overflow-hidden mb-6 shadow-lg">
@@ -2621,16 +2621,16 @@ export default function MyWorkoutDetailsPage() {
         {/* Stats Cards - 2 Column */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           {/* Weeks */}
-          <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+          <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-3.5 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
-                <HiCalendar className="w-4 h-4 text-teal-600" />
+              <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-900/40 flex items-center justify-center">
+                <HiCalendar className="w-4 h-4 text-teal-600 dark:text-teal-300" />
               </div>
               <div>
-                <p className="text-base font-extrabold text-slate-800">
+                <p className="text-base font-extrabold text-slate-800 dark:text-slate-100">
                   {totalWeeks} Week{totalWeeks !== 1 ? "s" : ""}
                 </p>
-                <p className="text-[11px] font-medium text-slate-500">
+                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                   {workoutPlan.duration_days || 28} Days Program
                 </p>
               </div>
@@ -2638,13 +2638,13 @@ export default function MyWorkoutDetailsPage() {
           </div>
 
           {/* Created */}
-          <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100">
+          <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-3.5 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
-                <HiSparkles className="w-4 h-4 text-purple-500" />
+              <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/40 flex items-center justify-center">
+                <HiSparkles className="w-4 h-4 text-purple-500 dark:text-purple-300" />
               </div>
               <div>
-                <p className="text-base font-extrabold text-slate-800">
+                <p className="text-base font-extrabold text-slate-800 dark:text-slate-100">
                   {new Date(workoutPlan.created_at).toLocaleDateString(
                     "en-US",
                     {
@@ -2653,7 +2653,7 @@ export default function MyWorkoutDetailsPage() {
                     },
                   )}
                 </p>
-                <p className="text-[11px] font-medium text-slate-500">
+                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                   Created
                 </p>
               </div>
@@ -2663,27 +2663,27 @@ export default function MyWorkoutDetailsPage() {
 
         {/* Description (if available) */}
         {workoutPlan.description && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mb-6">
-            <h3 className="text-xs font-bold text-slate-700 mb-2">
+          <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-4 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700 mb-6">
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">
               About This Plan
             </h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {workoutPlan.description}
             </p>
           </div>
         )}
 
         {/* Attach a meal plan */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mb-6">
+        <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-4 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center">
-              <MdRestaurant className="w-5 h-5 text-amber-600" />
+            <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-900/35 flex items-center justify-center">
+              <MdRestaurant className="w-5 h-5 text-amber-600 dark:text-amber-300" />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-xs font-bold text-slate-800">
+              <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">
                 Attach a meal plan
               </h3>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 View or link a meal plan for this workout
               </p>
             </div>
@@ -2701,7 +2701,7 @@ export default function MyWorkoutDetailsPage() {
                   setMealPlanDialogOpen(true);
                 }
               }}
-              className="shrink-0 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-60 transition-colors"
+              className="shrink-0 px-4 py-2.5 bg-teal-600 dark:bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 dark:hover:bg-teal-400 disabled:opacity-60 transition-colors"
             >
               {checkingMealLink ? "Checking..." : "View meal plan"}
             </button>
@@ -2711,14 +2711,14 @@ export default function MyWorkoutDetailsPage() {
         {/* No linked meal plan dialog */}
         {mealPlanDialogOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50">
-            <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
-              <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
-                <MdRestaurant className="w-6 h-6 text-amber-600" />
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6 text-center border border-transparent dark:border-slate-700">
+              <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900/35 flex items-center justify-center mx-auto mb-4">
+                <MdRestaurant className="w-6 h-6 text-amber-600 dark:text-amber-300" />
               </div>
-              <h3 className="text-base font-bold text-slate-800 mb-2">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-2">
                 No linked meal plan
               </h3>
-              <p className="text-xs text-slate-600 mb-6">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mb-6">
                 No linked meal plan for this workout yet.
               </p>
               <div className="flex flex-col gap-2">
@@ -2730,14 +2730,14 @@ export default function MyWorkoutDetailsPage() {
                       planId ? `/meals/workout/plan/${planId}` : "/meals",
                     );
                   }}
-                  className="w-full py-3 rounded-xl bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition-colors"
+                  className="w-full py-3 rounded-xl bg-teal-600 dark:bg-teal-500 text-white text-sm font-semibold hover:bg-teal-700 dark:hover:bg-teal-400 transition-colors"
                 >
                   Generate
                 </button>
                 <button
                   type="button"
                   onClick={() => setMealPlanDialogOpen(false)}
-                  className="w-full py-3 rounded-xl border-2 border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                  className="w-full py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                 >
                   Okay
                 </button>
@@ -2751,7 +2751,7 @@ export default function MyWorkoutDetailsPage() {
           <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center">
             <HiCalendar className="w-4 h-4 text-white" />
           </div>
-          <h2 className="text-base font-extrabold text-slate-800">
+          <h2 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
             Weekly Schedule
           </h2>
         </div>
@@ -2768,7 +2768,7 @@ export default function MyWorkoutDetailsPage() {
             return (
               <div
                 key={weekNumber}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100"
+                className="bg-white dark:bg-slate-800/80 rounded-2xl p-4 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700"
               >
                 {/* Week Header */}
                 <div className="flex items-center justify-between mb-4">
@@ -2779,15 +2779,15 @@ export default function MyWorkoutDetailsPage() {
                       </span>
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800">
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                         Week {weekNumber}
                       </h3>
                     </div>
                   </div>
                   {hasData && (
-                    <div className="flex items-center gap-1.5 bg-teal-50 px-2.5 py-1 rounded-full">
+                    <div className="flex items-center gap-1.5 bg-teal-50 dark:bg-teal-900/40 px-2.5 py-1 rounded-full">
                       <div className="w-2 h-2 rounded-full bg-teal-500"></div>
-                      <span className="text-[11px] font-semibold text-teal-700">
+                      <span className="text-[11px] font-semibold text-teal-700 dark:text-teal-300">
                         Active
                       </span>
                     </div>
@@ -2854,21 +2854,21 @@ export default function MyWorkoutDetailsPage() {
                                 day.isRestDay
                                   ? "cursor-default"
                                   : isSelected
-                                    ? "ring-2 ring-teal-400 ring-offset-2 shadow-lg scale-[1.02]"
+                                    ? "ring-2 ring-teal-400 ring-offset-2 dark:ring-offset-slate-900 shadow-lg scale-[1.02]"
                                     : isCompletedDay
-                                      ? "hover:shadow-md hover:scale-[1.01] border border-emerald-300"
+                                      ? "hover:shadow-md hover:scale-[1.01] border border-emerald-300 dark:border-emerald-700"
                                       : isLockedByProgress
-                                        ? "hover:shadow-md hover:scale-[1.01] border border-slate-200"
-                                        : "hover:shadow-md hover:scale-[1.01] border border-slate-200"
+                                        ? "hover:shadow-md hover:scale-[1.01] border border-slate-200 dark:border-slate-700"
+                                        : "hover:shadow-md hover:scale-[1.01] border border-slate-200 dark:border-slate-700"
                               }
                             `}
                             >
                               {/* REST DAY - Subtle Design */}
                               {day.isRestDay ? (
-                                <div className="flex flex-col h-full bg-slate-100">
+                                <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-800">
                                   {/* Top - Day Name */}
-                                  <div className="bg-slate-200/70 py-2 px-3">
-                                    <span className="text-[11px] font-bold text-slate-400 text-center block">
+                                  <div className="bg-slate-200/70 dark:bg-slate-700 py-2 px-3">
+                                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-300 text-center block">
                                       {day.dayName}
                                     </span>
                                   </div>
@@ -2876,18 +2876,18 @@ export default function MyWorkoutDetailsPage() {
                                   {/* Middle - Day Number with Rest Icon */}
                                   <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
                                     <div className="absolute inset-0 flex items-center justify-center opacity-5">
-                                      <HiMoon className="w-16 h-16 text-slate-500" />
+                                      <HiMoon className="w-16 h-16 text-slate-500 dark:text-slate-300" />
                                     </div>
-                                    <span className="text-2xl font-black text-slate-300 relative z-10">
+                                    <span className="text-2xl font-black text-slate-300 dark:text-slate-500 relative z-10">
                                       {day.dayNumber}
                                     </span>
                                   </div>
 
                                   {/* Bottom - Rest Day Label */}
-                                  <div className="bg-slate-200/50 py-2.5 px-2">
+                                  <div className="bg-slate-200/50 dark:bg-slate-700 py-2.5 px-2">
                                     <div className="flex items-center justify-center gap-1.5">
-                                      <HiMoon className="w-4 h-4 text-slate-400" />
-                                      <span className="text-[11px] font-semibold text-slate-400">
+                                      <HiMoon className="w-4 h-4 text-slate-400 dark:text-slate-300" />
+                                      <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-300">
                                         Rest
                                       </span>
                                     </div>
@@ -2896,14 +2896,14 @@ export default function MyWorkoutDetailsPage() {
                               ) : (
                                 /* WORKOUT DAY - 3 Horizontal Divisions */
                                 <div
-                                  className={`flex flex-col h-full ${isCompletedDay ? "bg-emerald-50/40" : "bg-white"}`}
+                                  className={`flex flex-col h-full ${isCompletedDay ? "bg-emerald-50/40 dark:bg-emerald-900/20" : "bg-white dark:bg-slate-800"}`}
                                 >
                                   {/* TOP - Day Name with Amber Background */}
                                   <div
-                                    className={`py-2 px-3 ${isCompletedDay ? "bg-emerald-100" : "bg-amber-50"}`}
+                                    className={`py-2 px-3 ${isCompletedDay ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-amber-50 dark:bg-amber-900/30"}`}
                                   >
                                     <span
-                                      className={`text-[11px] font-bold text-center block ${isCompletedDay ? "text-emerald-700" : "text-amber-600"}`}
+                                      className={`text-[11px] font-bold text-center block ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-amber-600 dark:text-amber-300"}`}
                                     >
                                       {day.dayName}
                                     </span>
@@ -2912,7 +2912,7 @@ export default function MyWorkoutDetailsPage() {
                                   {/* MIDDLE - Day Number Centered */}
                                   <div className="flex-1 flex items-center justify-center py-4">
                                     <span
-                                      className={`text-3xl font-black ${isCompletedDay ? "text-emerald-700" : "text-slate-800"}`}
+                                      className={`text-3xl font-black ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-slate-100"}`}
                                     >
                                       {day.dayNumber}
                                     </span>
@@ -2920,22 +2920,22 @@ export default function MyWorkoutDetailsPage() {
 
                                   {/* BOTTOM - Calories & Minutes (### | ##m format) */}
                                   <div
-                                    className={`py-2 px-1.5 ${isCompletedDay ? "bg-emerald-100/80" : "bg-slate-50"}`}
+                                    className={`py-2 px-1.5 ${isCompletedDay ? "bg-emerald-100/80 dark:bg-emerald-900/35" : "bg-slate-50 dark:bg-slate-700"}`}
                                   >
                                     <div className="flex items-center justify-center gap-1.5">
                                       <HiFire
-                                        className={`w-3.5 h-3.5 shrink-0 ${isCompletedDay ? "text-emerald-600" : "text-orange-500"}`}
+                                        className={`w-3.5 h-3.5 shrink-0 ${isCompletedDay ? "text-emerald-600 dark:text-emerald-300" : "text-orange-500"}`}
                                       />
                                       <span
-                                        className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700" : "text-orange-600"}`}
+                                        className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-orange-600 dark:text-orange-300"}`}
                                       >
                                         {displayedCalories || 0}
                                       </span>
-                                      <span className="text-[11px] text-slate-400">
+                                      <span className="text-[11px] text-slate-400 dark:text-slate-500">
                                         |
                                       </span>
                                       <span
-                                        className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700" : "text-teal-600"}`}
+                                        className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-teal-600 dark:text-teal-300"}`}
                                       >
                                         {displayedMinutes || 0}m
                                       </span>
@@ -2963,8 +2963,8 @@ export default function MyWorkoutDetailsPage() {
                                   aria-label="Regenerate day"
                                   className={`rounded-full p-1.5 shadow-sm transition-all opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto ${
                                     isRegeneratingDay
-                                      ? "bg-slate-300 text-slate-600 cursor-not-allowed"
-                                      : "bg-white text-teal-700 border border-teal-200 hover:bg-teal-50"
+                                      ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                                      : "bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
                                   }`}
                                 >
                                   <HiArrowPath
@@ -3023,22 +3023,22 @@ export default function MyWorkoutDetailsPage() {
                           pendingSelectedRegeneration?.dayResult.cooldown || [];
 
                         return (
-                          <div className="mt-5 pt-5 border-t border-slate-200">
+                          <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
                             {/* Day Header - Enhanced */}
-                            <div className="bg-gradient-to-r from-teal-50 to-emerald-50 rounded-xl p-4 mb-4">
+                            <div className="bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-900/30 dark:to-emerald-900/30 rounded-xl p-4 mb-4">
                               <div className="flex items-start justify-between">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
-                                    <span className="text-base font-extrabold text-teal-600">
+                                  <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center">
+                                    <span className="text-base font-extrabold text-teal-600 dark:text-teal-300">
                                       {selectedDay.day.slice(0, 3)}
                                     </span>
                                   </div>
                                   <div>
-                                    <h4 className="text-base font-bold text-slate-800">
+                                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
                                       {selectedDay.day}
                                     </h4>
                                     {dayData?.title && (
-                                      <p className="text-xs text-slate-600 font-medium">
+                                      <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
                                         {dayData.title}
                                       </p>
                                     )}
@@ -3049,18 +3049,18 @@ export default function MyWorkoutDetailsPage() {
                                 <div className="flex items-start gap-2">
                                   <div className="flex items-center gap-3">
                                     {displayedTotalMinutes > 0 && (
-                                      <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg shadow-sm">
+                                      <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
                                         <HiClock className="w-4 h-4 text-teal-600" />
-                                        <span className="text-xs font-bold text-slate-700">
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                                           {displayedTotalMinutes}m
                                         </span>
                                       </div>
                                     )}
                                     {displayedTotalCalories &&
                                       displayedTotalCalories > 0 && (
-                                        <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg shadow-sm">
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
                                           <HiFire className="w-4 h-4 text-orange-500" />
-                                          <span className="text-xs font-bold text-slate-700">
+                                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
                                             {displayedTotalCalories} cal
                                           </span>
                                         </div>
@@ -3079,8 +3079,8 @@ export default function MyWorkoutDetailsPage() {
                                         disabled={isSelectedDayRegenerating}
                                         className={`rounded-md px-2 py-1 text-[12px] font-bold shadow-sm transition-colors ${
                                           isSelectedDayRegenerating
-                                            ? "bg-slate-300 text-slate-600 cursor-not-allowed"
-                                            : "bg-white text-amber-700 border border-teal-200 hover:bg-teal-50"
+                                            ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                                            : "bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
                                         }`}
                                       >
                                         {isSelectedDayRegenerating
@@ -3099,8 +3099,8 @@ export default function MyWorkoutDetailsPage() {
                                           disabled={isSelectedDaySaving}
                                           className={`rounded-md px-2 py-1 text-[10px] font-bold shadow-sm transition-colors ${
                                             isSelectedDaySaving
-                                              ? "bg-slate-300 text-slate-600 cursor-not-allowed"
-                                              : "bg-teal-600 text-white hover:bg-teal-700"
+                                              ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                                              : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
                                           }`}
                                         >
                                           {isSelectedDaySaving
@@ -3119,7 +3119,7 @@ export default function MyWorkoutDetailsPage() {
                                   {dayData.focus.slice(0, 4).map((f, i) => (
                                     <span
                                       key={i}
-                                      className="text-[11px] bg-white text-teal-700 px-2.5 py-1 rounded-full font-semibold shadow-sm"
+                                      className="text-[11px] bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full font-semibold shadow-sm"
                                     >
                                       {formatTagTitleCase(f)}
                                     </span>
@@ -3129,12 +3129,12 @@ export default function MyWorkoutDetailsPage() {
 
                               {/* Motivation Quote */}
                               {dayData?.motivation && (
-                                <p className="text-[11px] text-slate-500 italic mt-3 pt-3 border-t border-teal-100">
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-3 pt-3 border-t border-teal-100 dark:border-teal-800">
                                   &ldquo;{dayData.motivation}&rdquo;
                                 </p>
                               )}
                               {pendingSelectedRegeneration && (
-                                <p className="text-[11px] text-amber-700 mt-3 pt-3 border-t border-amber-100 font-semibold">
+                                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-3 pt-3 border-t border-amber-100 dark:border-amber-800 font-semibold">
                                   Unsaved regenerated exercises. Click Save to
                                   apply changes.
                                 </p>
@@ -3306,7 +3306,7 @@ export default function MyWorkoutDetailsPage() {
                                 )}
                               </div>
                             ) : (
-                              <div className="text-center py-6 text-xs text-slate-400">
+                              <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-500">
                                 No exercises found for this day.
                               </div>
                             )}
@@ -3318,9 +3318,9 @@ export default function MyWorkoutDetailsPage() {
                   nextWeekPreviewContent
                 ) : (
                   /* Week has no data - show placeholder message */
-                  <div className="flex flex-col items-center justify-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                    <HiSparkles className="w-10 h-10 text-slate-300 mb-3" />
-                    <p className="text-xs font-medium text-slate-500 text-center">
+                  <div className="flex flex-col items-center justify-center py-8 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                    <HiSparkles className="w-10 h-10 text-slate-300 dark:text-slate-500 mb-3" />
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 text-center">
                       Week {weekNumber} is not generated yet.
                     </p>
                     {weekNumber === nextWeekToGenerate &&
@@ -3329,25 +3329,25 @@ export default function MyWorkoutDetailsPage() {
                         <div className="mt-3 w-full max-w-xl">
                           <div className="flex items-start justify-between gap-3 mb-2">
                             <div>
-                              <h4 className="text-sm font-extrabold text-teal-800">
+                              <h4 className="text-sm font-extrabold text-teal-800 dark:text-teal-300">
                                 Generating Your Workout
                               </h4>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                                 This might take a while, please wait.
                               </p>
                             </div>
-                            <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-amber-100 text-amber-700 text-[11px] font-bold">
+                            <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
                               {generationProgressPercent}%
                             </div>
                           </div>
 
-                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-teal-500 to-amber-400 transition-all duration-700"
                               style={{ width: `${generationProgressPercent}%` }}
                             />
                           </div>
-                          <div className="mt-1 text-[10px] text-slate-400 text-right">
+                          <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 text-right">
                             ~{GENERATION_DURATION_SECONDS}s
                           </div>
 
@@ -3359,21 +3359,21 @@ export default function MyWorkoutDetailsPage() {
                               return (
                                 <div
                                   key={step.title}
-                                  className={`flex items-start gap-2 rounded-xl border px-3 py-2 transition-all ${
-                                    isActive
-                                      ? "border-teal-200 bg-teal-50"
-                                      : isComplete
-                                        ? "border-amber-200 bg-amber-50"
-                                        : "border-slate-200 bg-white"
-                                  }`}
-                                >
+                                    className={`flex items-start gap-2 rounded-xl border px-3 py-2 transition-all ${
+                                      isActive
+                                        ? "border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30"
+                                        : isComplete
+                                          ? "border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30"
+                                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                    }`}
+                                  >
                                   <div
                                     className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
                                       isComplete
                                         ? "bg-amber-500 text-white"
                                         : isActive
                                           ? "bg-teal-600 text-white"
-                                          : "bg-slate-100 text-slate-400"
+                                          : "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500"
                                     }`}
                                   >
                                     {isComplete ? "\u2713" : index + 1}
@@ -3382,15 +3382,15 @@ export default function MyWorkoutDetailsPage() {
                                     <p
                                       className={`text-[11px] font-bold ${
                                         isActive
-                                          ? "text-teal-800"
+                                          ? "text-teal-800 dark:text-teal-300"
                                           : isComplete
-                                            ? "text-amber-700"
-                                            : "text-slate-700"
+                                            ? "text-amber-700 dark:text-amber-300"
+                                            : "text-slate-700 dark:text-slate-200"
                                       }`}
                                     >
                                       {step.title}
                                     </p>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                                       {step.detail}
                                     </p>
                                   </div>
@@ -3409,21 +3409,21 @@ export default function MyWorkoutDetailsPage() {
                             disabled={isGeneratingNextWeek}
                             className={`mt-3 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
                               isGeneratingNextWeek
-                                ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                                : "bg-teal-600 text-white hover:bg-teal-700"
+                                ? "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
                             }`}
                           >
                             {isGeneratingNextWeek
                               ? "Generating..."
                               : "Generate Now"}
                           </button>
-                          <p className="text-[11px] text-slate-400 mt-2 text-center">
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2 text-center">
                             Preview will appear here after generation.
                           </p>
                         </>
                       )
                     ) : (
-                      <p className="text-[11px] text-slate-400 mt-1">
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
                         Keep going!
                       </p>
                     )}
@@ -3445,15 +3445,15 @@ export default function MyWorkoutDetailsPage() {
         maxWidth="900px"
         height="350px"
       >
-        <div className="pb-6 pt-6">
-          <h3 className="text-base font-extrabold text-slate-800 text-center">
+        <div className="pb-6 pt-6 text-slate-900 dark:text-slate-100">
+          <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100 text-center">
             What intensity do you want for this week&apos;s workout?
           </h3>
-          <p className="text-[11px] text-slate-500 text-center mt-2 mb-12">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center mt-2 mb-12">
             Choose one to generate next week.
           </p>
 
-          <div className="grid grid-cols-5 gap-0 border border-slate-200 rounded-lg overflow-hidden">
+          <div className="grid grid-cols-5 gap-0 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
             {INTENSITY_OPTIONS.map((option, index) => (
               <button
                 key={option.label}
@@ -3465,19 +3465,19 @@ export default function MyWorkoutDetailsPage() {
                 disabled={isGeneratingNextWeek}
                 className={`h-24 flex flex-col items-center justify-center transition-colors ${
                   index < INTENSITY_OPTIONS.length - 1
-                    ? "border-r border-slate-200"
+                    ? "border-r border-slate-200 dark:border-slate-700"
                     : ""
                 } ${
                   isGeneratingNextWeek
-                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    : "bg-white text-slate-700 hover:bg-teal-50"
+                    ? "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
+                    : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-teal-50 dark:hover:bg-teal-900/30"
                 }`}
               >
                 <span className="text-lg">{option.emoji}</span>
                 <span className="text-[10px] font-bold mt-1 text-center px-1">
                   {option.label}
                 </span>
-                <span className="hidden text-[10px] text-slate-500 mt-0.5">
+                <span className="hidden text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                   RPE {option.rpe}
                 </span>
               </button>
@@ -3487,7 +3487,7 @@ export default function MyWorkoutDetailsPage() {
       </Dialog>
 
       {/* Sticky Start Workout Button */}
-      <div className="fixed bottom-[70px] left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-40">
+      <div className="fixed bottom-[70px] left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-lg dark:shadow-black/40 z-40">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
           <button
             onClick={() => {
@@ -3496,10 +3496,10 @@ export default function MyWorkoutDetailsPage() {
             disabled={finalStartButtonDisabled}
             className={`w-full rounded-xl py-3.5 px-6 font-bold text-base shadow-md transition-all flex items-center justify-center gap-3 ${
               isTodayRestDay
-                ? "bg-amber-100 text-amber-700 border border-amber-300 cursor-not-allowed"
+                ? "bg-amber-100 dark:bg-amber-900/35 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 cursor-not-allowed"
                 : finalStartButtonDisabled
-                  ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                  : "bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white hover:shadow-lg"
+                  ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 text-white hover:shadow-lg"
             }`}
           >
             <HiCalendar className="w-5 h-5" />
@@ -3525,10 +3525,10 @@ function ExerciseRow({
   const hasImage = imageUrl && imageUrl.trim() !== "";
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
+    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md dark:hover:shadow-black/30 transition-all overflow-hidden">
       <div className="flex items-stretch">
         {/* Exercise Image - Square 1:1 */}
-        <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-slate-100 to-slate-50 rounded-l-2xl overflow-hidden">
+        <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 rounded-l-2xl overflow-hidden">
           {hasImage ? (
             <Image
               src={imageUrl}
@@ -3542,8 +3542,8 @@ function ExerciseRow({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center">
-                <HiBolt className="w-6 h-6 text-slate-400" />
+              <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
+                <HiBolt className="w-6 h-6 text-slate-400 dark:text-slate-300" />
               </div>
             </div>
           )}
@@ -3551,15 +3551,15 @@ function ExerciseRow({
 
         {/* Exercise Details */}
         <div className="flex-1 p-3 flex flex-col justify-center min-w-0">
-          <h5 className="font-bold text-slate-800 text-sm leading-tight mb-2 line-clamp-2">
+          <h5 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-tight mb-2 line-clamp-2">
             {exercise.exercise_details?.name || "Exercise"}
           </h5>
 
           {/* Exercise Meta */}
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
             {exercise.sets && exercise.sets > 0 && (
               <span>
-                <span className="font-bold text-slate-800">
+                <span className="font-bold text-slate-800 dark:text-slate-100">
                   {exercise.sets}
                 </span>{" "}
                 sets
@@ -3567,7 +3567,7 @@ function ExerciseRow({
             )}
             {exercise.reps && exercise.reps > 0 && (
               <span>
-                <span className="font-bold text-slate-800">
+                <span className="font-bold text-slate-800 dark:text-slate-100">
                   {exercise.reps}
                 </span>{" "}
                 reps
@@ -3575,13 +3575,13 @@ function ExerciseRow({
             )}
             {exercise.duration_seconds && exercise.duration_seconds > 0 && (
               <span>
-                <span className="font-bold text-slate-800">
+                <span className="font-bold text-slate-800 dark:text-slate-100">
                   {formatDuration(exercise.duration_seconds)}
                 </span>
               </span>
             )}
             {exercise.per_side && (
-              <span className="text-[11px] font-semibold text-purple-600">
+              <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-300">
                 Each side
               </span>
             )}
@@ -3603,45 +3603,51 @@ function PreviewExerciseRow({
   const metrics = parsePlanExerciseMetricsForSave(metricsText);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden">
+    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md dark:hover:shadow-black/30 transition-all overflow-hidden">
       <div className="flex items-stretch">
         <div className="flex-1 p-3 flex flex-col justify-center min-w-0">
-          <h5 className="font-bold text-slate-800 text-sm leading-tight mb-2 line-clamp-2">
+          <h5 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-tight mb-2 line-clamp-2">
             {exercise.name || "Exercise"}
           </h5>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
             {metrics.sets && metrics.sets > 0 && (
               <span>
-                <span className="font-bold text-slate-800">{metrics.sets}</span>{" "}
+                <span className="font-bold text-slate-800 dark:text-slate-100">
+                  {metrics.sets}
+                </span>{" "}
                 sets
               </span>
             )}
             {metrics.reps && metrics.reps > 0 && (
               <span>
-                <span className="font-bold text-slate-800">{metrics.reps}</span>{" "}
+                <span className="font-bold text-slate-800 dark:text-slate-100">
+                  {metrics.reps}
+                </span>{" "}
                 reps
               </span>
             )}
             {metrics.duration_seconds && metrics.duration_seconds > 0 && (
               <span>
-                <span className="font-bold text-slate-800">
+                <span className="font-bold text-slate-800 dark:text-slate-100">
                   {formatDuration(metrics.duration_seconds)}
                 </span>
               </span>
             )}
             {exercise.per_side?.toLowerCase() === "yes" && (
-              <span className="text-[11px] font-semibold text-purple-600">
+              <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-300">
                 Each side
               </span>
             )}
             {exercise.per_side?.toLowerCase() === "n/a" && (
-              <span className="text-[11px] font-semibold text-slate-400">
+              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
                 N/A
               </span>
             )}
             {metricsText.toLowerCase() === "none" && (
-              <span className="text-[11px] text-slate-400">No metrics</span>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                No metrics
+              </span>
             )}
           </div>
         </div>

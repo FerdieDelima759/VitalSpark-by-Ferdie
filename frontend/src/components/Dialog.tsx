@@ -40,11 +40,11 @@ export default function Dialog({
 
   return (
     <div
-      className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
       onClick={handleBackdropClick}
     >
       <div
-        className={`bg-white rounded-2xl shadow-2xl relative w-full flex flex-col ${
+        className={`relative w-full flex flex-col rounded-3xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 shadow-[0_24px_70px_rgba(2,6,23,0.35)] dark:shadow-[0_32px_90px_rgba(2,6,23,0.7)] ${
           !height && maxHeight === 600 ? "max-h-[90vh]" : ""
         }`}
         style={{
@@ -57,9 +57,9 @@ export default function Dialog({
         {showCloseButton && onDismiss && (
           <button
             onClick={onDismiss}
-            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors"
+            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
           >
-            <span className="text-xl">×</span>
+            <span className="text-xl">&times;</span>
           </button>
         )}
 

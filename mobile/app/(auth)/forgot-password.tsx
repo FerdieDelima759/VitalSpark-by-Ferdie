@@ -82,13 +82,13 @@ export default function ForgotPasswordScreen() {
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       (e) => {
         setKeyboardHeight(e.endCoordinates.height);
-      }
+      },
     );
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => {
         setKeyboardHeight(0);
-      }
+      },
     );
 
     return () => {
@@ -133,7 +133,7 @@ export default function ForgotPasswordScreen() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     if (Platform.OS === "web") {
       const id = toastIdRef.current++;
@@ -157,7 +157,7 @@ export default function ForgotPasswordScreen() {
       showToast(
         "error",
         "Invalid Email",
-        "Please enter a valid email address."
+        "Please enter a valid email address.",
       );
       return;
     }
@@ -170,7 +170,7 @@ export default function ForgotPasswordScreen() {
         showToast(
           "success",
           "Email Sent",
-          "Password reset link has been sent to your email."
+          "Password reset link has been sent to your email.",
         );
         setTimeout(() => {
           router.push("/(auth)/login");
@@ -182,7 +182,7 @@ export default function ForgotPasswordScreen() {
       showToast(
         "error",
         "Error",
-        error?.message || "Failed to send reset email."
+        error?.message || "Failed to send reset email.",
       );
     } finally {
       setLoading(false);
@@ -206,7 +206,7 @@ export default function ForgotPasswordScreen() {
               animated: true,
             });
           },
-          () => {}
+          () => {},
         );
       }
     }, 100);
@@ -233,7 +233,7 @@ export default function ForgotPasswordScreen() {
         }}
       >
         <Image
-          source={require("../../assets/images/Logo_VitalSpark_White.png")}
+          source={require("../../assets/images/Logo_VitalSpark_Vertical.png")}
           resizeMode="contain"
           style={{ width: 160 * scale, height: 160 * scale }}
           accessibilityIgnoresInvertColors

@@ -111,11 +111,18 @@ export default function MainLayout({
     };
 
     checkOnboarding();
-  }, [isAuthenticated, isLoading, user, router, maintenanceMode, enterMaintenanceMode]);
+  }, [
+    isAuthenticated,
+    isLoading,
+    user,
+    router,
+    maintenanceMode,
+    enterMaintenanceMode,
+  ]);
 
   if (maintenanceMode) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-6">
+      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]  px-6">
         <div className="max-w-md text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-teal-600">
             Maintenance
@@ -134,7 +141,7 @@ export default function MainLayout({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
+      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <Loader size="lg" text="Loading..." textColor="slate" />
       </div>
     );
@@ -147,7 +154,7 @@ export default function MainLayout({
   return (
     <BackgroundImageGenerationProvider>
       <MealsProvider>
-        <div className="min-h-screen bg-[#f8fafc] flex flex-col">
+        <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex flex-col">
           <main className={`flex-1 ${hideBottomNav ? "pb-0" : "pb-[70px]"}`}>
             {children}
           </main>

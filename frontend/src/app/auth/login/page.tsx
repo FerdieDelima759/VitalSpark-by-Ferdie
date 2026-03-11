@@ -18,7 +18,7 @@ const AUTH_STEP_TIMEOUT_MS = 15000;
 const withTimeout = async <T,>(
   promise: Promise<T>,
   timeoutMs: number,
-  label: string
+  label: string,
 ): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -83,7 +83,7 @@ export default function LoginPage() {
   const showToast = (
     type: "success" | "error",
     title: string,
-    message: string
+    message: string,
   ) => {
     const id = toastIdRef.current++;
     setToasts((prev) => [...prev, { id, type, title, message }]);
@@ -102,7 +102,7 @@ export default function LoginPage() {
       showToast(
         "error",
         "Missing info",
-        "Please enter both email and password."
+        "Please enter both email and password.",
       );
       return;
     }
@@ -111,7 +111,7 @@ export default function LoginPage() {
       showToast(
         "error",
         "Invalid Email",
-        "Please enter a valid email address."
+        "Please enter a valid email address.",
       );
       return;
     }
@@ -124,7 +124,7 @@ export default function LoginPage() {
           password: password,
         }),
         AUTH_STEP_TIMEOUT_MS,
-        "auth.signIn"
+        "auth.signIn",
       );
 
       if (!response.success) {
@@ -139,9 +139,9 @@ export default function LoginPage() {
           } = await withTimeout(
             supabase.auth.getUser(),
             AUTH_STEP_TIMEOUT_MS,
-            "supabase.auth.getUser"
+            "supabase.auth.getUser",
           );
-          
+
           if (user) {
             // Fetch user profile
             const { data: profileRows, error: profileError } = await supabase
@@ -162,7 +162,10 @@ export default function LoginPage() {
             const roleData = roleRows?.[0] ?? null;
 
             if (profileError) {
-              console.error("Error fetching user profile after login:", profileError);
+              console.error(
+                "Error fetching user profile after login:",
+                profileError,
+              );
             }
             if (roleError) {
               console.error("Error fetching user role after login:", roleError);
@@ -219,11 +222,7 @@ export default function LoginPage() {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unexpected error occurred.";
-      showToast(
-        "error",
-        "Error",
-        errorMessage
-      );
+      showToast("error", "Error", errorMessage);
     } finally {
       setLoading(false);
     }
@@ -245,13 +244,13 @@ export default function LoginPage() {
         style={{ paddingTop: 20 * scale, paddingBottom: 40 * scale }}
       >
         <Image
-          src="/images/Logo_VitalSpark_White.png"
+          src="/images/Logo_VitalSpark_Vertical.png"
           alt="VitalSpark Logo"
-          width={160 * scale}
-          height={160 * scale}
+          width={180 * scale}
+          height={180 * scale}
           priority
           className="object-contain"
-          style={{ width: 160 * scale, height: 160 * scale }}
+          style={{ width: 180 * scale, height: 160 * scale }}
         />
       </div>
 

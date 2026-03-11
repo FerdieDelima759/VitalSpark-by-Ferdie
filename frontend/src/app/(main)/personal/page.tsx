@@ -47,7 +47,7 @@ import type {
   ExerciseSection,
 } from "@/types/UserWorkout";
 import { supabase } from "@/lib/api/supabase";
-import { HiMoon, HiArrowRightOnRectangle } from "react-icons/hi2";
+import { HiMoon, HiSun, HiArrowRightOnRectangle } from "react-icons/hi2";
 
 // Helper function to format text in title case
 const formatTitleCase = (text: string): string => {
@@ -64,6 +64,10 @@ const DAY_GEN_CONCURRENCY = Math.max(
   1,
   Number(process.env.NEXT_PUBLIC_DAY_GEN_CONCURRENCY ?? "2"),
 );
+const LIGHT_PAGE_BG = "#f8fafc";
+const DARK_PAGE_BG =
+  "linear-gradient(to bottom, #0b1020 0%, #0f172a 50%, #111827 100%)";
+const DARK_OVERSCROLL_BG = "#0f172a";
 
 const aiLog = (...args: unknown[]) => {
   if (AI_LOG_ENABLED) {
@@ -200,7 +204,11 @@ const renderExerciseMetrics = (
   // If everything is "none", don't display anything
   if (!displayValue) return null;
 
-  return <p className="text-xs text-teal-600 font-medium">{displayValue}</p>;
+  return (
+    <p className="text-xs text-teal-600 dark:text-teal-300 font-medium">
+      {displayValue}
+    </p>
+  );
 };
 
 // Helper to render complete exercise metrics (sets, reps, duration, rest)
@@ -232,7 +240,7 @@ const renderCompleteExerciseMetrics = (
       : "none sec";
 
   return (
-    <p className="text-xs text-teal-600 font-medium">
+    <p className="text-xs text-teal-600 dark:text-teal-300 font-medium">
       {`${setsLabel}, ${repsLabel}, ${durationLabel}, ${metrics.rest_seconds} sec rest`}
     </p>
   );
@@ -360,6 +368,7 @@ export default function PersonalPage() {
     userContextProfile ?? null,
   );
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
 
   // OpenAI connection test state
   const [openAITestResult, setOpenAITestResult] = useState<{
@@ -499,6 +508,25 @@ export default function PersonalPage() {
     }, 5000);
   };
 
+  const applyThemeBackground = useCallback((theme: "light" | "dark") => {
+    const pageBackground = theme === "dark" ? DARK_PAGE_BG : LIGHT_PAGE_BG;
+    const overscrollColor = theme === "dark" ? DARK_OVERSCROLL_BG : LIGHT_PAGE_BG;
+    document.documentElement.style.background = pageBackground;
+    document.documentElement.style.backgroundColor = overscrollColor;
+    document.body.style.background = pageBackground;
+    document.body.style.backgroundColor = overscrollColor;
+  }, []);
+
+  const handleThemeToggle = useCallback((): void => {
+    const root = document.documentElement;
+    const nextTheme = root.classList.contains("dark") ? "light" : "dark";
+    root.classList.remove("light", "dark");
+    root.classList.add(nextTheme);
+    localStorage.setItem("theme", nextTheme);
+    applyThemeBackground(nextTheme);
+    setIsDarkTheme(nextTheme === "dark");
+  }, [applyThemeBackground]);
+
   const handleRefreshPage = useCallback(() => {
     setIsRefreshingPage(true);
     window.location.reload();
@@ -550,6 +578,29 @@ export default function PersonalPage() {
     // Navigate to coach workout details page
     router.push(`/personal/coach/workout/details?id=${plan.id}`);
   };
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const savedTheme = localStorage.getItem("theme");
+    const resolvedTheme =
+      savedTheme === "light" || savedTheme === "dark"
+        ? savedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
+    root.classList.remove("light", "dark");
+    root.classList.add(resolvedTheme);
+    applyThemeBackground(resolvedTheme);
+    setIsDarkTheme(resolvedTheme === "dark");
+
+    return () => {
+      document.documentElement.style.background = "";
+      document.documentElement.style.backgroundColor = "";
+      document.body.style.background = "";
+      document.body.style.backgroundColor = "";
+    };
+  }, [applyThemeBackground]);
 
   // Keep local profile in sync with context
   useEffect(() => {
@@ -2746,7 +2797,7 @@ export default function PersonalPage() {
   const profile = userProfile;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
       <div className="max-w-3xl mx-auto px-4 sm:px-5 py-5">
         {/* App Header */}
         <div className="mb-4 -ml-1">
@@ -2759,21 +2810,28 @@ export default function PersonalPage() {
                 height={28}
                 className="object-contain"
               />
-              <span className="text-xs sm:text-sm font-semibold text-gray-700">
+              <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-slate-300">
                 VitalSpark by Ferdie
               </span>
             </div>
             <div className="flex items-center gap-2 -pr-8">
               <button
                 type="button"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                onClick={handleThemeToggle}
+                aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
-                <HiMoon className="w-4 h-4" />
+                {isDarkTheme ? (
+                  <HiSun className="w-4 h-4" />
+                ) : (
+                  <HiMoon className="w-4 h-4" />
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => router.replace("/auth/logout")}
-                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
                 <span>Logout</span>
@@ -2787,14 +2845,14 @@ export default function PersonalPage() {
           <div className="flex items-start justify-between mb-2">
             <div className="flex-1">
               <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-                <h1 className="text-2xl sm:text-3xl text-teal-700 font-extrabold">
+                <h1 className="text-2xl sm:text-3xl text-teal-700 dark:text-teal-300 font-extrabold">
                   Spark AI
                 </h1>
                 <button
                   type="button"
                   onClick={handleRefreshPage}
                   disabled={isRefreshingPage}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-teal-200 bg-white text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-teal-200 bg-white text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors disabled:opacity-60 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
                 >
                   <HiArrowPath
                     className={`w-3.5 h-3.5 ${isRefreshingPage ? "animate-spin" : ""}`}
@@ -2802,7 +2860,7 @@ export default function PersonalPage() {
                   Refresh
                 </button>
               </div>
-              <p className="text-sm text-neutral-500">
+              <p className="text-sm text-neutral-500 dark:text-slate-400">
                 Your personalized AI workout companion
               </p>
             </div>
@@ -2814,14 +2872,14 @@ export default function PersonalPage() {
 
         {/* Simplified Fitness Profile Card */}
         {profile && (
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm mb-5">
+          <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-black/30 mb-5">
             {/* Header */}
             <div className="flex items-start justify-between mb-3.5">
               <div className="flex-1">
-                <h2 className="text-base sm:text-lg font-extrabold text-teal-800 mb-1">
+                <h2 className="text-base sm:text-lg font-extrabold text-teal-800 dark:text-teal-300 mb-1">
                   Fitness Profile
                 </h2>
-                <p className="text-xs text-gray-600 font-medium">
+                <p className="text-xs text-gray-600 dark:text-slate-400 font-medium">
                   Your current fitness details and preferences
                 </p>
               </div>
@@ -2837,17 +2895,17 @@ export default function PersonalPage() {
             </div>
 
             {/* Main Stats Row */}
-            <div className="flex gap-3 mb-3.5 pb-3.5 border-b border-gray-100">
+            <div className="flex gap-3 mb-3.5 pb-3.5 border-b border-gray-100 dark:border-slate-700">
               {/* Physical Stats */}
               <div className="flex-1">
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">
+                <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide mb-2">
                   Physical
                 </p>
                 <div className="space-y-2">
                   {profile.height && (
                     <div className="flex items-center gap-2">
                       <span className="text-teal-600">{"\uD83D\uDCCF"}</span>
-                      <span className="text-xs font-semibold text-gray-700">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
                         {profile.height}{" "}
                         {formatTitleCase(profile.height_unit || "cm")}
                       </span>
@@ -2856,7 +2914,7 @@ export default function PersonalPage() {
                   {profile.weight && (
                     <div className="flex items-center gap-2">
                       <span className="text-teal-600">{"\u2696\uFE0F"}</span>
-                      <span className="text-xs font-semibold text-gray-700">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
                         {profile.weight}{" "}
                         {formatTitleCase(profile.weight_unit || "kg")}
                       </span>
@@ -2867,14 +2925,14 @@ export default function PersonalPage() {
 
               {/* Fitness Stats */}
               <div className="flex-1">
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">
+                <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide mb-2">
                   Goals
                 </p>
                 <div className="space-y-2">
                   {profile.fitness_goal && (
                     <div className="flex items-center gap-2">
                       <span className="text-teal-600">{"\uD83C\uDFAF"}</span>
-                      <span className="text-xs font-semibold text-gray-700">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
                         {formatTitleCase(profile.fitness_goal)}
                       </span>
                     </div>
@@ -2882,7 +2940,7 @@ export default function PersonalPage() {
                   {profile.fitness_level && (
                     <div className="flex items-center gap-2">
                       <span className="text-teal-600">{"\uD83D\uDCC8"}</span>
-                      <span className="text-xs font-semibold text-gray-700">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
                         {formatTitleCase(profile.fitness_level)}
                       </span>
                     </div>
@@ -2893,15 +2951,15 @@ export default function PersonalPage() {
 
             {/* Workout Preferences */}
             <div className="space-y-2">
-              <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">
+              <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide">
                 Workout Preferences
               </p>
 
               <div className="flex gap-3 flex-wrap">
                 {profile.workout_duration_minutes && (
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-500">{"\u23F1\uFE0F"}</span>
-                    <span className="text-xs text-gray-700 font-medium">
+                    <span className="text-gray-500 dark:text-slate-400">{"\u23F1\uFE0F"}</span>
+                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
                       {profile.workout_duration_minutes} Min Sessions
                     </span>
                   </div>
@@ -2909,8 +2967,8 @@ export default function PersonalPage() {
 
                 {profile.workout_location && (
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-500">{"\uD83D\uDCCD"}</span>
-                    <span className="text-xs text-gray-700 font-medium">
+                    <span className="text-gray-500 dark:text-slate-400">{"\uD83D\uDCCD"}</span>
+                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
                       {formatTitleCase(profile.workout_location)}
                     </span>
                   </div>
@@ -2920,8 +2978,8 @@ export default function PersonalPage() {
               {profile.weekly_frequency &&
                 profile.weekly_frequency.length > 0 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-500">{"\uD83D\uDCC5"}</span>
-                    <span className="text-xs text-gray-700 font-medium">
+                    <span className="text-gray-500 dark:text-slate-400">{"\uD83D\uDCC5"}</span>
+                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
                       {profile.weekly_frequency
                         .map((day) => formatTitleCase(day))
                         .join(", ")}
@@ -2931,20 +2989,20 @@ export default function PersonalPage() {
 
               {profile.equipment_list && profile.equipment_list.length > 0 && (
                 <div className="flex items-start gap-2">
-                  <span className="text-gray-500">{"\uD83C\uDFCB\uFE0F"}</span>
+                  <span className="text-gray-500 dark:text-slate-400">{"\uD83C\uDFCB\uFE0F"}</span>
                   <div className="flex flex-wrap gap-1.5 flex-1">
                     {profile.equipment_list
                       .slice(0, 4)
                       .map((equipment, index) => (
                         <span
                           key={index}
-                          className="bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200 text-[11px] font-semibold text-teal-700"
+                          className="bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[11px] font-semibold text-teal-700 dark:text-teal-300"
                         >
                           {formatTitleCase(equipment)}
                         </span>
                       ))}
                     {profile.equipment_list.length > 4 && (
-                      <span className="bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200 text-[11px] font-semibold text-teal-700">
+                      <span className="bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[11px] font-semibold text-teal-700 dark:text-teal-300">
                         +{profile.equipment_list.length - 4}
                       </span>
                     )}
@@ -2958,7 +3016,7 @@ export default function PersonalPage() {
         {/* AI Generator Card */}
         {profile && (
           <div className="mb-5">
-            <div className="relative rounded-xl overflow-hidden shadow-lg bg-linear-to-br from-amber-500 via-amber-400 to-amber-300">
+            <div className="relative rounded-xl overflow-hidden shadow-lg dark:shadow-black/40 bg-linear-to-br from-amber-500 via-amber-400 to-amber-300 dark:from-amber-600 dark:via-orange-500 dark:to-rose-500">
               {/* Decorative Elements */}
               <div className="absolute -top-7 -right-7 w-16 h-16 rounded-full bg-white/15" />
               <div className="absolute -bottom-4 -left-4 w-14 h-14 rounded-full bg-white/10" />
@@ -2966,9 +3024,9 @@ export default function PersonalPage() {
 
               <div className="relative p-4 z-10">
                 {/* Badge */}
-                <div className="inline-flex items-center gap-1.5 bg-white/95 px-2.5 py-1 rounded-full mb-2.5 shadow-sm">
+                <div className="inline-flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/80 px-2.5 py-1 rounded-full mb-2.5 shadow-sm">
                   <HiSparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wide">
+                  <span className="text-[10px] font-bold text-amber-500 dark:text-amber-300 uppercase tracking-wide">
                     AI Powered
                   </span>
                 </div>
@@ -3020,23 +3078,23 @@ export default function PersonalPage() {
 
         {/* My Workout Plans Section */}
         <div className="mb-6">
-          <h3 className="text-xl font-extrabold text-teal-800 mb-4">
+          <h3 className="text-xl font-extrabold text-teal-800 dark:text-teal-300 mb-4">
             My Workout Plans
           </h3>
           {isLoadingMyPlans ? (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-600 mb-3" />
-              <p className="text-sm font-bold text-teal-700">
+              <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
                 Loading your workout plans...
               </p>
             </div>
           ) : myWorkoutPlans.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+            <div className="flex flex-col items-center justify-center py-12 bg-slate-50 dark:bg-slate-800/70 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
               <div className="text-4xl mb-3"></div>
-              <p className="text-base font-medium text-slate-500 text-center mb-1">
+              <p className="text-base font-medium text-slate-500 dark:text-slate-300 text-center mb-1">
                 No saved workout plans yet
               </p>
-              <p className="text-sm text-slate-400 text-center">
+              <p className="text-sm text-slate-400 dark:text-slate-400 text-center">
                 Generate a workout above to get started!
               </p>
             </div>
@@ -3058,10 +3116,10 @@ export default function PersonalPage() {
                       onClick={() =>
                         router.push(`/personal/workout/details?id=${plan.id}`)
                       }
-                      className="w-full bg-white rounded-xl shadow-xs border border-slate-100 overflow-hidden cursor-pointer hover:border-teal-300 hover:scale-[1.015] transition-all duration-200 group"
+                      className="w-full bg-white dark:bg-slate-800/80 rounded-xl shadow-xs border border-slate-100 dark:border-slate-700 overflow-hidden cursor-pointer hover:border-teal-300 dark:hover:border-teal-500 hover:scale-[1.015] transition-all duration-200 group"
                     >
                       {/* Image */}
-                      <div className="relative h-28 bg-slate-100">
+                      <div className="relative h-28 bg-slate-100 dark:bg-slate-700">
                         {plan.image_path ? (
                           <Image
                             src={plan.image_path}
@@ -3082,15 +3140,15 @@ export default function PersonalPage() {
                         <div className="absolute inset-0 bg-linear-to-t from-black/30 via-black/10 to-transparent" />
                         {plan.category && (
                           <div className="absolute top-3 right-3">
-                            <span className="bg-teal-100 text-teal-700 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide shadow-sm">
+                            <span className="bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide shadow-sm">
                               {plan.category}
                             </span>
                           </div>
                         )}
                       </div>
                       {/* Header */}
-                      <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50">
-                        <h4 className="font-semibold text-slate-800 text-xs leading-snug line-clamp-2">
+                      <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                        <h4 className="font-semibold text-slate-800 dark:text-slate-100 text-xs leading-snug line-clamp-2">
                           {cleanName}
                         </h4>
                       </div>
@@ -3114,7 +3172,7 @@ export default function PersonalPage() {
                                   d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                                 />
                               </svg>
-                              <span className="text-xs font-semibold text-slate-700">
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                                 {plan.duration_days} Days
                               </span>
                             </div>
@@ -3134,7 +3192,7 @@ export default function PersonalPage() {
                                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                                 />
                               </svg>
-                              <span className="text-xs font-semibold text-slate-700">
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                                 {totalWeeks} Week{totalWeeks > 1 ? "s" : ""}
                               </span>
                             </div>
@@ -3158,7 +3216,7 @@ export default function PersonalPage() {
                               return (
                                 <span
                                   key={index}
-                                  className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-medium"
+                                  className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg font-medium"
                                 >
                                   {formattedTag}
                                 </span>
@@ -3168,8 +3226,8 @@ export default function PersonalPage() {
                         )}
 
                         {/* Footer */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                          <span className="text-xs text-slate-400">
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700">
+                          <span className="text-xs text-slate-400 dark:text-slate-500">
                             {new Date(plan.created_at).toLocaleDateString(
                               "en-US",
                               {
@@ -3179,7 +3237,7 @@ export default function PersonalPage() {
                               },
                             )}
                           </span>
-                          <div className="flex items-center gap-1 text-teal-600 group-hover:text-teal-700 transition-colors">
+                          <div className="flex items-center gap-1 text-teal-600 dark:text-teal-300 group-hover:text-teal-700 dark:group-hover:text-teal-200 transition-colors">
                             <span className="text-xs font-semibold">View</span>
                             <HiArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                           </div>
@@ -3195,20 +3253,20 @@ export default function PersonalPage() {
 
         {/* Workout Plans by Fitness Coaches Section */}
         <div className="mb-8">
-          <h3 className="text-2xl font-extrabold text-teal-800 mb-6">
+          <h3 className="text-2xl font-extrabold text-teal-800 dark:text-teal-300 mb-6">
             Workout Plans by Fitness Coaches
           </h3>
           {isLoadingCoachPlans ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mb-4" />
-              <p className="text-base font-bold text-teal-700">
+              <p className="text-base font-bold text-teal-700 dark:text-teal-300">
                 Loading workout plans...
               </p>
             </div>
           ) : coachWorkoutPlans.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="text-5xl mb-4"></div>
-              <p className="text-base font-medium text-slate-500 text-center">
+              <p className="text-base font-medium text-slate-500 dark:text-slate-400 text-center">
                 No workout plans available from coaches yet
               </p>
             </div>
@@ -3234,7 +3292,7 @@ export default function PersonalPage() {
                   {getUserPlanTier() === "premium" ? (
                     <button
                       onClick={() => router.push("/personal/coach/workout")}
-                      className="w-full max-w-md bg-linear-to-r from-teal-600 to-teal-500 text-white rounded-2xl p-4 font-bold text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+                      className="w-full max-w-md bg-linear-to-r from-teal-600 to-teal-500 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
                     >
                       <span>View all plans</span>
                       <HiArrowRight className="w-5 h-5" />
@@ -3253,7 +3311,7 @@ export default function PersonalPage() {
                           },
                         });
                       }}
-                      className="w-full max-w-md bg-linear-to-r from-amber-500 to-amber-400 text-white rounded-2xl p-4 font-bold text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+                      className="w-full max-w-md bg-linear-to-r from-amber-500 to-amber-400 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
                     >
                       <HiLockOpen className="w-5 h-5" />
                       <span>Unlock all Workout Plans</span>
@@ -3272,11 +3330,11 @@ export default function PersonalPage() {
           onDismiss={() => setShowDurationDialog(false)}
           maxWidth="400px"
         >
-          <div className="p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-2 text-center">
+          <div className="p-6 text-slate-900 dark:text-slate-100">
+            <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100 mb-2 text-center">
               Choose Plan Duration
             </h2>
-            <p className="text-sm text-gray-500 mb-6 text-center">
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 text-center">
               How long would you like your workout plan to be?
             </p>
             <div className="flex flex-col gap-3">
@@ -3300,18 +3358,18 @@ export default function PersonalPage() {
                 <button
                   key={option.days}
                   onClick={() => handleDurationSelect(option.days)}
-                  className="w-full p-4 rounded-xl border-2 border-gray-200 hover:border-teal-500 hover:bg-teal-50 transition-all flex items-center justify-between group"
+                  className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/40 transition-all flex items-center justify-between group"
                 >
                   <div className="text-left">
-                    <p className="font-bold text-gray-800 group-hover:text-teal-700">
+                    <p className="font-bold text-gray-800 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
                       {option.label}
                     </p>
-                    <p className="text-xs text-gray-500 group-hover:text-teal-600">
+                    <p className="text-xs text-gray-500 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300">
                       {option.description}
                     </p>
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-teal-500 flex items-center justify-center transition-all">
-                    <span className="text-gray-400 group-hover:text-white text-lg">
+                  <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-slate-700 group-hover:bg-teal-500 flex items-center justify-center transition-all">
+                    <span className="text-gray-400 dark:text-slate-300 group-hover:text-white text-lg">
                       <HiArrowLeft className="h-5 w-5 -scale-x-100 font-bold" />
                     </span>
                   </div>
@@ -3320,7 +3378,7 @@ export default function PersonalPage() {
             </div>
             <button
               onClick={() => setShowDurationDialog(false)}
-              className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              className="w-full mt-4 py-2 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
             >
               Cancel
             </button>
@@ -3337,28 +3395,28 @@ export default function PersonalPage() {
           }}
           maxWidth="520px"
         >
-          <div className="p-6">
+          <div className="p-6 text-slate-900 dark:text-slate-100">
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <h2 className="text-xl font-extrabold text-teal-800">
+                <h2 className="text-xl font-extrabold text-teal-800 dark:text-teal-300">
                   Generating Your Workout
                 </h2>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                   This might take a while, please wait.
                 </p>
               </div>
-              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-amber-100 text-amber-700 text-sm font-bold">
+              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-sm font-bold">
                 {generationProgressPercent}%
               </div>
             </div>
 
-            <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
               <div
                 className="h-full rounded-full bg-linear-to-r from-teal-500 to-amber-400 transition-all duration-700"
                 style={{ width: `${generationProgressPercent}%` }}
               />
             </div>
-            <div className="mt-1 text-[10px] text-slate-400 text-right">
+            <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 text-right">
               ~{generationDurationSeconds}s
             </div>
 
@@ -3372,10 +3430,10 @@ export default function PersonalPage() {
                     key={step.title}
                     className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition-all ${
                       isActive
-                        ? "border-teal-200 bg-teal-50"
+                        ? "border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30"
                         : isComplete
-                          ? "border-amber-200 bg-amber-50"
-                          : "border-slate-200 bg-white"
+                          ? "border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/25"
+                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                     }`}
                   >
                     <div
@@ -3384,8 +3442,8 @@ export default function PersonalPage() {
                           ? "bg-amber-500 text-white"
                           : isActive
                             ? "bg-teal-600 text-white"
-                            : "bg-slate-100 text-slate-400"
-                      }`}
+                            : "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500"
+                       }`}
                     >
                       {isComplete ? "" : index + 1}
                     </div>
@@ -3393,15 +3451,15 @@ export default function PersonalPage() {
                       <p
                         className={`text-sm font-bold ${
                           isActive
-                            ? "text-teal-800"
+                            ? "text-teal-800 dark:text-teal-300"
                             : isComplete
-                              ? "text-amber-700"
-                              : "text-slate-700"
+                              ? "text-amber-700 dark:text-amber-300"
+                              : "text-slate-700 dark:text-slate-200"
                         }`}
                       >
                         {step.title}
                       </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         {step.detail}
                       </p>
                     </div>
@@ -3432,30 +3490,30 @@ export default function PersonalPage() {
           height="90vh"
         >
           {workoutPlanJSON && (
-            <div className="flex flex-col h-full overflow-y-auto">
+            <div className="flex flex-col h-full overflow-y-auto text-slate-900 dark:text-slate-100">
               {/* Plan Info Row - 3 Columns */}
-              <div className="grid grid-cols-3 gap-6 mb-4 mt-2 pb-2 border-b border-gray-200">
+              <div className="grid grid-cols-3 gap-6 mb-4 mt-2 pb-2 border-b border-gray-200 dark:border-slate-700">
                 <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                     Plan Name
                   </p>
-                  <p className="text-sm font-bold text-teal-700">
+                  <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
                     {planMetadata?.plan_name || "Loading..."}
                   </p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                     Week #
                   </p>
-                  <p className="text-sm font-bold text-slate-700">
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
                     {workoutPlanJSON.week_number}
                   </p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                     Rest Day(s)
                   </p>
-                  <p className="text-sm font-semibold text-slate-600">
+                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
                     {workoutPlanJSON.rest_days &&
                     workoutPlanJSON.rest_days.length > 0
                       ? workoutPlanJSON.rest_days
@@ -3500,14 +3558,14 @@ export default function PersonalPage() {
                           return (
                             <div
                               key={dayName}
-                              className="flex-none w-[85%] min-[1024px]:w-[calc((100%-2*1rem)/3)] min-[1520px]:w-[calc((100%-3*1rem)/4)] h-full bg-white rounded-xl border-2 border-gray-200 shadow-sm flex flex-col"
+                              className="flex-none w-[85%] min-[1024px]:w-[calc((100%-2*1rem)/3)] min-[1520px]:w-[calc((100%-3*1rem)/4)] h-full bg-white dark:bg-slate-800 rounded-xl border-2 border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-black/30 flex flex-col"
                             >
                               {/* Card Header */}
-                              <div className="p-4 border-b border-gray-100">
+                              <div className="p-4 border-b border-gray-100 dark:border-slate-700">
                                 <div className="flex items-start justify-between gap-2 mb-2">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-2">
-                                      <h3 className="text-base font-bold text-slate-800">
+                                      <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
                                         {formatTitleCase(dayName)}
                                       </h3>
                                       {dayResult &&
@@ -3528,16 +3586,16 @@ export default function PersonalPage() {
                                             .replace(/\s*(k?cal|kcal)\s*/gi, "")
                                             .trim();
                                           return (
-                                            <span className="text-[10px] text-amber-600 font-medium align-middle">
+                                            <span className="text-[10px] text-amber-600 dark:text-amber-300 font-medium align-middle">
                                               ({caloriesValue} kCal)
                                             </span>
                                           );
                                         })()}
                                     </div>
-                                    <p className="text-sm font-semibold text-teal-600 mb-1">
+                                    <p className="text-sm font-semibold text-teal-600 dark:text-teal-300 mb-1">
                                       {day.title}
                                     </p>
-                                    <p className="text-[10px] text-slate-600">
+                                    <p className="text-[10px] text-slate-600 dark:text-slate-300">
                                       <span className="font-medium">
                                         Focus:{" "}
                                       </span>
@@ -3566,13 +3624,13 @@ export default function PersonalPage() {
                                           );
                                         }}
                                         disabled={isGenerating}
-                                        className="shrink-0 p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         title="Regenerate exercises"
                                       >
                                         {isGenerating ? (
-                                          <div className="w-4 h-4 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                                          <div className="w-4 h-4 border-2 border-teal-600 dark:border-teal-400 border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                          <HiArrowPath className="w-5 h-5 text-teal-600" />
+                                          <HiArrowPath className="w-5 h-5 text-teal-600 dark:text-teal-400" />
                                         )}
                                       </button>
                                     </div>
@@ -3596,13 +3654,13 @@ export default function PersonalPage() {
                                       disabled={isGenerating}
                                       className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
                                         isGenerating
-                                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                          ? "bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-400 cursor-not-allowed"
                                           : "bg-linear-to-r from-amber-500 to-amber-400 text-white hover:from-amber-600 hover:to-amber-500 shadow-md hover:shadow-lg"
                                       }`}
                                     >
                                       {isGenerating ? (
                                         <>
-                                          <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                                          <div className="w-4 h-4 border-2 border-gray-500 dark:border-slate-400 border-t-transparent rounded-full animate-spin" />
                                           <span>Generating...</span>
                                         </>
                                       ) : (
@@ -3631,7 +3689,7 @@ export default function PersonalPage() {
                                         className={`px-3 py-2 rounded-lg text-[10px] font-semibold transition-all ${
                                           selectedSection[dayName] === "warm_up"
                                             ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
                                         }`}
                                       >
                                         Warm Up
@@ -3650,7 +3708,7 @@ export default function PersonalPage() {
                                           selectedSection[dayName] ===
                                           "main_workout"
                                             ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
                                         }`}
                                       >
                                         Main
@@ -3669,7 +3727,7 @@ export default function PersonalPage() {
                                           selectedSection[dayName] ===
                                           "cooldown"
                                             ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
                                         }`}
                                       >
                                         Cooldown
@@ -3686,7 +3744,7 @@ export default function PersonalPage() {
                                               (item, index) => (
                                                 <div
                                                   key={index}
-                                                  className="p-3 bg-teal-50 rounded-lg border border-teal-100"
+                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
                                                 >
                                                   <div className="flex items-start gap-2 mb-1">
                                                     <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
@@ -3694,7 +3752,7 @@ export default function PersonalPage() {
                                                     </span>
                                                     <div className="flex-1 min-w-0">
                                                       {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 mb-0.5">
+                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
                                                           {item.name}
                                                         </p>
                                                       )}
@@ -3704,15 +3762,15 @@ export default function PersonalPage() {
                                                       {item.per_side &&
                                                         item.per_side.toLowerCase() ===
                                                           "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium mt-1">
+                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
                                                             Per Side
                                                           </span>
                                                         )}
                                                     </div>
                                                   </div>
                                                   {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100">
-                                                      <p className="text-[9px] text-amber-700 font-medium">
+                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
+                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
                                                         {item.safety_cue}
                                                       </p>
                                                     </div>
@@ -3732,7 +3790,7 @@ export default function PersonalPage() {
                                               (item, index) => (
                                                 <div
                                                   key={index}
-                                                  className="p-3 bg-teal-50 rounded-lg border border-teal-100"
+                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
                                                 >
                                                   <div className="flex items-start gap-2 mb-1">
                                                     <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
@@ -3740,7 +3798,7 @@ export default function PersonalPage() {
                                                     </span>
                                                     <div className="flex-1 min-w-0">
                                                       {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 mb-0.5">
+                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
                                                           {item.name}
                                                         </p>
                                                       )}
@@ -3750,15 +3808,15 @@ export default function PersonalPage() {
                                                       {item.per_side &&
                                                         item.per_side.toLowerCase() ===
                                                           "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium mt-1">
+                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
                                                             Per Side
                                                           </span>
                                                         )}
                                                     </div>
                                                   </div>
                                                   {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100">
-                                                      <p className="text-[9px] text-amber-700 font-medium">
+                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
+                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
                                                         {item.safety_cue}
                                                       </p>
                                                     </div>
@@ -3778,7 +3836,7 @@ export default function PersonalPage() {
                                               (item, index) => (
                                                 <div
                                                   key={index}
-                                                  className="p-3 bg-teal-50 rounded-lg border border-teal-100"
+                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
                                                 >
                                                   <div className="flex items-start gap-2 mb-1">
                                                     <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
@@ -3786,7 +3844,7 @@ export default function PersonalPage() {
                                                     </span>
                                                     <div className="flex-1 min-w-0">
                                                       {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 mb-0.5">
+                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
                                                           {item.name}
                                                         </p>
                                                       )}
@@ -3796,15 +3854,15 @@ export default function PersonalPage() {
                                                       {item.per_side &&
                                                         item.per_side.toLowerCase() ===
                                                           "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium mt-1">
+                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
                                                             Per Side
                                                           </span>
                                                         )}
                                                     </div>
                                                   </div>
                                                   {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100">
-                                                      <p className="text-[9px] text-amber-700 font-medium">
+                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
+                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
                                                         {item.safety_cue}
                                                       </p>
                                                     </div>
@@ -3817,7 +3875,7 @@ export default function PersonalPage() {
 
                                       {/* No section selected message - should not show if warm_up is default */}
                                       {!selectedSection[dayName] && (
-                                        <div className="flex items-center justify-center h-full text-sm text-gray-500">
+                                        <div className="flex items-center justify-center h-full text-sm text-gray-500 dark:text-slate-400">
                                           Select a section to view exercises
                                         </div>
                                       )}
@@ -3869,20 +3927,20 @@ export default function PersonalPage() {
               </div>
 
               {/* Save Button */}
-              <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
                 {/* Debug info for save state */}
                 {!planMetadata && (
-                  <div className="mb-2 text-xs text-amber-600 text-center">
+                  <div className="mb-2 text-xs text-amber-600 dark:text-amber-300 text-center">
                     Waiting for plan metadata to generate...
                   </div>
                 )}
                 {!workoutPlanJSON && planMetadata && (
-                  <div className="mb-2 text-xs text-amber-600 text-center">
+                  <div className="mb-2 text-xs text-amber-600 dark:text-amber-300 text-center">
                     Waiting for workout plan to generate...
                   </div>
                 )}
                 {!user?.id && (
-                  <div className="mb-2 text-xs text-red-600 text-center">
+                  <div className="mb-2 text-xs text-red-600 dark:text-red-300 text-center">
                     Please log in to save your plan
                   </div>
                 )}
@@ -3930,18 +3988,18 @@ export default function PersonalPage() {
           onDismiss={() => setShowImageProcessingDialog(false)}
           maxWidth="520px"
         >
-          <div className="p-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">
+          <div className="p-6 text-slate-900 dark:text-slate-100">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2 text-center">
               Image Processing Still Running
             </h2>
-            <p className="text-sm text-slate-500 text-center">
+            <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
               Your plan is saved. We are still generating and uploading plan
               images in the background. Please keep this tab open, but you can
               continue browsing other tabs.
             </p>
             <button
               onClick={() => setShowImageProcessingDialog(false)}
-              className="w-full mt-5 py-2.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors"
+              className="w-full mt-5 py-2.5 text-sm font-semibold text-white bg-teal-600 dark:bg-teal-500 hover:bg-teal-700 dark:hover:bg-teal-400 rounded-lg transition-colors"
             >
               Got it
             </button>
@@ -3954,24 +4012,24 @@ export default function PersonalPage() {
             <div
               className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border ${
                 toast.type === "success"
-                  ? "bg-teal-50 border-teal-200"
+                  ? "bg-teal-50 dark:bg-teal-950/75 border-teal-200 dark:border-teal-800"
                   : toast.type === "error"
-                    ? "bg-red-50 border-red-200"
-                    : "bg-blue-50 border-blue-200"
+                    ? "bg-red-50 dark:bg-red-950/75 border-red-200 dark:border-red-800"
+                    : "bg-blue-50 dark:bg-blue-950/75 border-blue-200 dark:border-blue-800"
               }`}
             >
               <div
                 className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                   toast.type === "success"
-                    ? "bg-teal-100"
+                    ? "bg-teal-100 dark:bg-teal-900/60"
                     : toast.type === "error"
-                      ? "bg-red-100"
-                      : "bg-blue-100"
+                      ? "bg-red-100 dark:bg-red-900/60"
+                      : "bg-blue-100 dark:bg-blue-900/60"
                 }`}
               >
                 {toast.type === "success" ? (
                   <svg
-                    className="w-5 h-5 text-teal-600"
+                    className="w-5 h-5 text-teal-600 dark:text-teal-300"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -3985,7 +4043,7 @@ export default function PersonalPage() {
                   </svg>
                 ) : toast.type === "error" ? (
                   <svg
-                    className="w-5 h-5 text-red-600"
+                    className="w-5 h-5 text-red-600 dark:text-red-300"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -3999,7 +4057,7 @@ export default function PersonalPage() {
                   </svg>
                 ) : (
                   <svg
-                    className="w-5 h-5 text-blue-600"
+                    className="w-5 h-5 text-blue-600 dark:text-blue-300"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -4015,14 +4073,14 @@ export default function PersonalPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p
-                  className={`text-sm font-medium ${
-                    toast.type === "success"
-                      ? "text-teal-800"
-                      : toast.type === "error"
-                        ? "text-red-800"
-                        : "text-blue-800"
-                  }`}
-                >
+                    className={`text-sm font-medium ${
+                      toast.type === "success"
+                        ? "text-teal-800 dark:text-teal-200"
+                        : toast.type === "error"
+                          ? "text-red-800 dark:text-red-200"
+                          : "text-blue-800 dark:text-blue-200"
+                    }`}
+                  >
                   {toast.type === "success"
                     ? "Success!"
                     : toast.type === "error"
@@ -4030,14 +4088,14 @@ export default function PersonalPage() {
                       : "Info"}
                 </p>
                 <p
-                  className={`text-sm mt-0.5 ${
-                    toast.type === "success"
-                      ? "text-teal-700"
-                      : toast.type === "error"
-                        ? "text-red-700"
-                        : "text-blue-700"
-                  }`}
-                >
+                    className={`text-sm mt-0.5 ${
+                      toast.type === "success"
+                        ? "text-teal-700 dark:text-teal-300"
+                        : toast.type === "error"
+                          ? "text-red-700 dark:text-red-300"
+                          : "text-blue-700 dark:text-blue-300"
+                    }`}
+                  >
                   {toast.message}
                 </p>
               </div>
@@ -4045,10 +4103,10 @@ export default function PersonalPage() {
                 onClick={() => setToast((prev) => ({ ...prev, show: false }))}
                 className={`shrink-0 p-1 rounded-lg transition-colors ${
                   toast.type === "success"
-                    ? "hover:bg-teal-100 text-teal-500"
+                    ? "hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-500 dark:text-teal-300"
                     : toast.type === "error"
-                      ? "hover:bg-red-100 text-red-500"
-                      : "hover:bg-blue-100 text-blue-500"
+                      ? "hover:bg-red-100 dark:hover:bg-red-900/60 text-red-500 dark:text-red-300"
+                      : "hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-500 dark:text-blue-300"
                 }`}
               >
                 <svg

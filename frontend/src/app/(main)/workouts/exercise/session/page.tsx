@@ -91,6 +91,7 @@ export default function ExerciseSessionPage() {
   const [currentFlowIndex, setCurrentFlowIndex] = useState<number>(0);
   const [userGender, setUserGender] = useState<string>("male");
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [timer, setTimer] = useState<number>(0);
   const [isResting, setIsResting] = useState<boolean>(false);
@@ -218,6 +219,30 @@ export default function ExerciseSessionPage() {
     image.decoding = "async";
     image.src = url;
   }, []);
+
+  const withTimeout = useCallback(
+    async <T,>(
+      promise: PromiseLike<T>,
+      label: string,
+      timeoutMs: number = 15000,
+    ): Promise<T> =>
+      await new Promise<T>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+
+        Promise.resolve(promise)
+          .then((result) => {
+            clearTimeout(timeoutId);
+            resolve(result);
+          })
+          .catch((error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          });
+      }),
+    [],
+  );
 
   const preloadFlowImages = useCallback(
     (flow: WorkoutFlowItem[]) => {
@@ -542,12 +567,15 @@ export default function ExerciseSessionPage() {
     try {
       // STEP 1: Delete ALL active sessions for this user+plan (ended_at = NULL)
       try {
-        const { data: activeSessions } = await supabase
-          .from("workout_sessions")
-          .select("id")
-          .eq("user_id", userProfile.user_id)
-          .eq("plan_id", planId)
-          .is("ended_at", null);
+        const { data: activeSessions } = await withTimeout(
+          supabase
+            .from("workout_sessions")
+            .select("id")
+            .eq("user_id", userProfile.user_id)
+            .eq("plan_id", planId)
+            .is("ended_at", null),
+          "load active workout sessions",
+        );
 
         if (activeSessions && activeSessions.length > 0) {
           for (const session of activeSessions) {
@@ -559,25 +587,36 @@ export default function ExerciseSessionPage() {
       }
 
       // STEP 2: Fast cleanup of existing exercises for this user+plan
-      const { data: existingExercises } = await supabase
-        .from("workout_session_exercises")
-        .select("id")
-        .eq("user_id", userProfile.user_id)
-        .eq("plan_id", planId);
+      const { data: existingExercises } = await withTimeout(
+        supabase
+          .from("workout_session_exercises")
+          .select("id")
+          .eq("user_id", userProfile.user_id)
+          .eq("plan_id", planId),
+        "load existing session exercises",
+      );
 
       if (existingExercises && existingExercises.length > 0) {
         const exerciseIds = existingExercises.map((ex) => ex.id);
 
         // Sequential delete for reliability (sets first due to foreign key)
-        await supabase
-          .from("workout_session_sets")
-          .delete()
-          .in("session_exercise_id", exerciseIds);
+        await withTimeout(
+          supabase
+            .from("workout_session_sets")
+            .delete()
+            .in("session_exercise_id", exerciseIds),
+          "delete previous workout sets",
+          12000,
+        );
 
-        await supabase
-          .from("workout_session_exercises")
-          .delete()
-          .in("id", exerciseIds);
+        await withTimeout(
+          supabase
+            .from("workout_session_exercises")
+            .delete()
+            .in("id", exerciseIds),
+          "delete previous workout exercises",
+          12000,
+        );
       }
 
       // Clear local state to ensure fresh start
@@ -641,6 +680,7 @@ export default function ExerciseSessionPage() {
     deleteSession,
     retryDatabaseOperation,
     resetWorkoutState,
+    withTimeout,
   ]);
 
   // ===========================
@@ -2548,6 +2588,7 @@ export default function ExerciseSessionPage() {
 
     try {
       setIsLoading(true);
+      setLoadError(null);
 
       // Validate required data before proceeding
       if (!userProfile?.user_id || !planId) {
@@ -2561,43 +2602,47 @@ export default function ExerciseSessionPage() {
       }
 
       // Fetch plan and exercises in parallel
-      const [planDataResult, exercisesResult] = await Promise.all([
-        supabase
-          .from("workout_plans")
-          .select("id, name, level, total_exercises")
-          .eq("id", planId)
-          .maybeSingle(),
-        supabase
-          .from("workout_plan_exercises")
-          .select(
-            `
-          exercise_id,
-          position,
-          section,
-          sets,
-          reps,
-          duration_seconds,
-          rest_seconds,
-          safety_tip,
-          per_side,
-          workout_plan_exercises_details (
-            id,
-            name,
-            image_slug,
-            default_safety_tip,
-            primary_muscle
-          )
-        `,
-          )
-          .eq("plan_id", planId)
-          .order("position", { ascending: true }),
-      ]);
+      const [planDataResult, exercisesResult] = await withTimeout(
+        Promise.all([
+          supabase
+            .from("workout_plans")
+            .select("id, name, level, total_exercises")
+            .eq("id", planId)
+            .maybeSingle(),
+          supabase
+            .from("workout_plan_exercises")
+            .select(
+              `
+            exercise_id,
+            position,
+            section,
+            sets,
+            reps,
+            duration_seconds,
+            rest_seconds,
+            safety_tip,
+            per_side,
+            workout_plan_exercises_details (
+              id,
+              name,
+              image_slug,
+              default_safety_tip,
+              primary_muscle
+            )
+          `,
+            )
+            .eq("plan_id", planId)
+            .order("position", { ascending: true }),
+        ]),
+        "fetch workout plan data",
+      );
 
       // Validate plan data
       if (planDataResult?.data) {
         setWorkoutPlan(planDataResult.data);
       } else {
         setIsLoading(false);
+        setLoadError("Workout plan not found. Please try again.");
         return;
       }
 
@@ -2626,9 +2671,14 @@ export default function ExerciseSessionPage() {
         // OPTIMIZATION: Create session FIRST, then show countdown
         // During countdown, save first exercise to database (non-blocking background operation)
         // After countdown, load the workout flow and set isLoading to false
-        const newSessionId = await startWorkoutSession();
+        const newSessionId = await withTimeout(
+          startWorkoutSession(),
+          "start workout session",
+          12000,
+        );
         if (!newSessionId) {
           setIsLoading(false);
+          setLoadError("Unable to start workout session. Please try again.");
           return;
         }
 
@@ -2672,12 +2722,16 @@ export default function ExerciseSessionPage() {
         setIsLoading(false);
       } else {
         setIsLoading(false);
+        setLoadError("No exercises found for this workout plan.");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsLoading(false);
+      const message =
+        error instanceof Error ? error.message : "Failed to load workout.";
+      setLoadError(message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, userProfile?.user_id, preloadFlowImages]);
+  }, [planId, userProfile?.user_id, preloadFlowImages, startWorkoutSession, withTimeout]);
 
   // ===========================
   // Restart Handler for Reload
@@ -2823,14 +2877,18 @@ export default function ExerciseSessionPage() {
 
       try {
         // Check if there's an active session (ended_at is null) for this user and plan
-        const { data: activeSessions, error } = await supabase
-          .from("workout_sessions")
-          .select("id, started_at")
-          .eq("user_id", userProfile.user_id)
-          .eq("plan_id", planId)
-          .is("ended_at", null)
-          .order("started_at", { ascending: false })
-          .limit(1);
+        const { data: activeSessions, error } = await withTimeout(
+          supabase
+            .from("workout_sessions")
+            .select("id, started_at")
+            .eq("user_id", userProfile.user_id)
+            .eq("plan_id", planId)
+            .is("ended_at", null)
+            .order("started_at", { ascending: false })
+            .limit(1),
+          "check active workout session",
+          12000,
+        );
 
         if (!error && activeSessions && activeSessions.length > 0) {
           // Found an active session - show restart dialog
@@ -2854,7 +2912,7 @@ export default function ExerciseSessionPage() {
 
     checkActiveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, userProfile?.user_id, showRestartDialog]);
+  }, [planId, userProfile?.user_id, showRestartDialog, withTimeout]);
 
   // Reset state when planId changes
   useEffect(() => {
@@ -2874,6 +2932,7 @@ export default function ExerciseSessionPage() {
       setShowSessionRiskDialog(false);
       setSessionRiskReason(null);
       setIsLoading(true);
+      setLoadError(null);
       setIsRestartingFromReload(false);
       setShowRestartDialog(false);
       setOldSessionId(null);
@@ -2992,9 +3051,9 @@ export default function ExerciseSessionPage() {
 
   if (!planId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-slate-600">Redirecting...</p>
+          <p className="text-slate-600 dark:text-slate-300">Redirecting...</p>
         </div>
       </div>
     );
@@ -3003,21 +3062,21 @@ export default function ExerciseSessionPage() {
   if (!userProfile?.user_id) {
     if (userLoadingState.isLoading) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
           <div className="text-center">
-            <p className="text-slate-600">Loading workout...</p>
+            <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center px-6">
           <p className="text-red-600 font-semibold mb-2">
             Unable to load your profile.
           </p>
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
             {userLoadingState.error
               ? "Please retry or go back to workout details."
               : "Please retry loading your data or go back."}
@@ -3033,7 +3092,7 @@ export default function ExerciseSessionPage() {
             <button
               type="button"
               onClick={() => router.push(workoutDetailsPath)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               Back
             </button>
@@ -3046,9 +3105,9 @@ export default function ExerciseSessionPage() {
   // Show loading screen only if not starting workout (countdown screen will show instead)
   if (isLoading && !isStartingWorkout) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-slate-600">Loading workout...</p>
+          <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
         </div>
       </div>
     );
@@ -3056,9 +3115,39 @@ export default function ExerciseSessionPage() {
 
   if (isQuitting) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-red-600 font-semibold">Ending workout...</p>
+          <p className="text-red-600 dark:text-red-300 font-semibold">Ending workout...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError && !isStartingWorkout && !showRestartDialog) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
+        <div className="text-center px-6">
+          <p className="text-red-600 dark:text-red-300 font-semibold mb-2">
+            {loadError}
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void fetchWorkoutData();
+              }}
+              className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(workoutDetailsPath)}
+              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              Back
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -3068,15 +3157,15 @@ export default function ExerciseSessionPage() {
   if (showRestartDialog) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl dark:shadow-black/50 p-8 max-w-md w-full mx-4 border border-slate-200/80 dark:border-slate-700/80">
           <div className="text-center mb-6">
             <div className="mb-4">
               <HiArrowPath className="w-16 h-16 mx-auto text-teal-600" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
               Resume Workout?
             </h2>
-            <p className="text-slate-600 mb-4">
+            <p className="text-slate-600 dark:text-slate-300 mb-4">
               You have an active workout session. Would you like to restart it?
             </p>
             {isRestartingFromReload && (
@@ -3097,7 +3186,7 @@ export default function ExerciseSessionPage() {
                 router.push(workoutDetailsPath);
               }}
               disabled={isRestartingFromReload}
-              className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -3141,7 +3230,7 @@ export default function ExerciseSessionPage() {
   const normalizedDurationSeconds = currentExercise?.duration_seconds ?? 0;
 
   return (
-    <div className="min-h-screen bg-white pb-[140px]">
+    <div className="min-h-screen bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] text-slate-900 dark:text-slate-100 pb-[140px]">
       {/* Starting Workout Countdown Screen */}
       {isStartingWorkout && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-teal-700 via-teal-500 to-teal-600">
@@ -3168,12 +3257,12 @@ export default function ExerciseSessionPage() {
       {!isStartingWorkout && workoutFlow.length > 0 && (
         <>
           {/* Header with Progress */}
-          <div className="sticky top-0 z-40 bg-white border-b border-slate-200">
+          <div className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
               <div className="flex items-center justify-between mb-2">
                 <button
                   onClick={handleBackPress}
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                   aria-label="Exit workout"
                 >
                   <HiXMark className="w-6 h-6 text-teal-700" />
@@ -3182,7 +3271,7 @@ export default function ExerciseSessionPage() {
                   <h1 className="text-lg font-bold text-teal-700">
                     {workoutPlan?.name || "Workout"}
                   </h1>
-                  <p className="text-xs text-slate-600 mt-1">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                     Set {currentFlowIndex + 1}/{workoutFlow.length} •{" "}
                     {getSectionLabel(currentExercise?.section || "")}
                   </p>
@@ -3190,7 +3279,7 @@ export default function ExerciseSessionPage() {
                 <div className="w-10" /> {/* Spacer for centering */}
               </div>
               {/* Progress Bar */}
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-teal-600 to-teal-500 transition-all duration-300"
                   style={{ width: `${progress}%` }}
@@ -3209,7 +3298,7 @@ export default function ExerciseSessionPage() {
                     Rest Time
                   </h2>
                   {currentFlowIndex < workoutFlow.length - 1 && (
-                    <p className="text-slate-600">
+                    <p className="text-slate-600 dark:text-slate-300">
                       Next:{" "}
                       {workoutFlow[currentFlowIndex + 1]?.exercise?.details
                         ?.name || "Exercise"}{" "}
@@ -3231,8 +3320,9 @@ export default function ExerciseSessionPage() {
                       cy="128"
                       r="120"
                       fill="none"
-                      stroke="#e5e7eb"
+                      stroke="currentColor"
                       strokeWidth="8"
+                      className="text-slate-200 dark:text-slate-700"
                     />
                     <circle
                       cx="128"
@@ -3258,7 +3348,7 @@ export default function ExerciseSessionPage() {
                     <p className="text-5xl font-black text-amber-500 mb-1">
                       {formatTime(timer)}
                     </p>
-                    <p className="text-slate-600 font-semibold">remaining</p>
+                    <p className="text-slate-600 dark:text-slate-300 font-semibold">remaining</p>
                   </div>
                 </div>
 
@@ -3279,26 +3369,26 @@ export default function ExerciseSessionPage() {
                     {currentExercise?.per_side &&
                       currentSide !== "both" &&
                       getSideLabel(currentSide) !== "" && (
-                        <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                        <span className="px-3 py-1 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs font-semibold rounded-full flex items-center gap-1">
                           <HiArrowRight className="w-3 h-3" />
                           {getSideLabel(currentSide)}
                         </span>
                       )}
                     {totalSets > 1 && (
-                      <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                      <span className="px-3 py-1 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs font-semibold rounded-full flex items-center gap-1">
                         <HiBolt className="w-3 h-3" />
                         Set {currentSet} of {totalSets}
                       </span>
                     )}
                     {currentExercise?.reps && currentExercise.reps > 0 && (
-                      <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-full">
+                      <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-semibold rounded-full">
                         {currentExercise.reps === 1 ? "Rep" : "Reps"}:{" "}
                         {currentExercise.reps}
                       </span>
                     )}
                     {currentExercise?.rest_seconds &&
                       currentExercise.rest_seconds > 0 && (
-                        <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full flex items-center gap-1">
+                        <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-full flex items-center gap-1">
                           <HiClock className="w-3 h-3" />
                           Rest: {currentExercise.rest_seconds}s
                         </span>
@@ -3306,7 +3396,7 @@ export default function ExerciseSessionPage() {
                   </div>
 
                   {/* Exercise Image */}
-                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-100">
+                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                     {currentExercise?.details?.image_slug ? (
                       <Image
                         src={getExerciseImageUrl(
@@ -3320,7 +3410,7 @@ export default function ExerciseSessionPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <HiBolt className="w-16 h-16 text-slate-400" />
+                        <HiBolt className="w-16 h-16 text-slate-400 dark:text-slate-500" />
                       </div>
                     )}
                   </div>
@@ -3330,7 +3420,7 @@ export default function ExerciseSessionPage() {
                     <button
                       onClick={handleSkip}
                       disabled={isSkipping}
-                      className="w-full py-3 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-xl border-2 border-red-200 transition-colors"
+                      className="w-full py-3 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-xl border-2 border-red-200 dark:border-red-900/50 transition-colors"
                     >
                       {isSkipping ? "Skipping..." : "Skip Exercise"}
                     </button>
@@ -3352,8 +3442,9 @@ export default function ExerciseSessionPage() {
                           cy="128"
                           r="120"
                           fill="none"
-                          stroke="#e5e7eb"
+                          stroke="currentColor"
                           strokeWidth="8"
+                          className="text-slate-200 dark:text-slate-700"
                         />
                         <circle
                           cx="128"
@@ -3385,7 +3476,7 @@ export default function ExerciseSessionPage() {
                     <button
                       onClick={handleSkip}
                       disabled={isSkipping}
-                      className="px-6 py-2 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-lg transition-colors"
+                      className="px-6 py-2 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-semibold rounded-lg transition-colors"
                     >
                       {isSkipping ? "Skipping..." : "Skip Exercise"}
                     </button>
@@ -3396,7 +3487,7 @@ export default function ExerciseSessionPage() {
           </div>
 
           {/* Control Buttons - Fixed at viewport bottom */}
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-40">
+          <div className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-700 shadow-lg dark:shadow-black/40 backdrop-blur z-40">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
               {/* Exercise Name */}
               <div className="text-center mb-4">
@@ -3410,7 +3501,7 @@ export default function ExerciseSessionPage() {
                       </span>
                     )}
                   {totalSets > 1 && (
-                    <span className="text-base font-semibold text-slate-600 ml-2">
+                    <span className="text-base font-semibold text-slate-600 dark:text-slate-300 ml-2">
                       - Set {currentSet}/{totalSets}
                     </span>
                   )}
@@ -3422,11 +3513,11 @@ export default function ExerciseSessionPage() {
                 <button
                   onClick={handlePrevious}
                   disabled={currentFlowIndex === 0 || isGoingPrevious}
-                  className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                  className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                   aria-label="Previous exercise"
                 >
                   {isGoingPrevious ? (
-                    <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <HiArrowLeft className="w-7 h-7" />
                   )}
@@ -3434,7 +3525,7 @@ export default function ExerciseSessionPage() {
 
                 <button
                   onClick={handlePauseToggle}
-                  className="p-4 bg-gradient-to-br from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all"
+                  className="p-4 bg-gradient-to-br from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 text-white rounded-full shadow-lg hover:shadow-xl dark:shadow-black/40 transition-all"
                   aria-label={isPaused ? "Resume workout" : "Pause workout"}
                 >
                   {isPaused ? (
@@ -3448,11 +3539,11 @@ export default function ExerciseSessionPage() {
                   <button
                     onClick={handleFinish}
                     disabled={isGoingNext || isQuitting}
-                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                     aria-label="Finish workout"
                   >
                     {isGoingNext || isQuitting ? (
-                      <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <HiCheckCircle className="w-7 h-7" />
                     )}
@@ -3461,13 +3552,13 @@ export default function ExerciseSessionPage() {
                   <button
                     onClick={() => handleNext(false)}
                     disabled={isGoingNext}
-                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 hover:bg-teal-50 rounded-full transition-colors"
+                    className="p-3 disabled:opacity-30 disabled:cursor-not-allowed text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-full transition-colors"
                     aria-label={
                       isResting ? "Skip rest and continue" : "Next set"
                     }
                   >
                     {isGoingNext ? (
-                      <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-6 h-6 border-2 border-teal-700 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <HiArrowRight className="w-7 h-7" />
                     )}
@@ -3480,7 +3571,7 @@ export default function ExerciseSessionPage() {
           {/* Exit Confirmation Modal */}
           {showExitConfirmation && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-md w-full shadow-2xl dark:shadow-black/50 border border-slate-200/80 dark:border-slate-700/80">
                 {/* Motivational Header */}
                 <div className="text-center mb-6">
                   <div className="flex items-center justify-center gap-2 mb-4">
@@ -3488,13 +3579,13 @@ export default function ExerciseSessionPage() {
                     <HiBolt className="w-12 h-12 text-amber-500" />
                     <span className="text-5xl">💪</span>
                   </div>
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-2">
                     Don't give up now.
                   </h3>
-                  <p className="text-xl font-bold text-slate-700 mb-4">
+                  <p className="text-xl font-bold text-slate-700 dark:text-slate-200 mb-4">
                     You can do this!
                   </p>
-                  <p className="text-slate-600">
+                  <p className="text-slate-600 dark:text-slate-300">
                     Only{" "}
                     <span className="font-black text-amber-500 text-xl">
                       {Math.max(
@@ -3536,11 +3627,11 @@ export default function ExerciseSessionPage() {
                       isSkipping ||
                       isGoingPrevious
                     }
-                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-teal-600 font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-teal-600 dark:text-teal-300 font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
                   >
                     {isRestarting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-teal-600 dark:border-teal-300 border-t-transparent rounded-full animate-spin" />
                         Restarting workout, please wait...
                       </>
                     ) : (
@@ -3560,7 +3651,7 @@ export default function ExerciseSessionPage() {
                       isSkipping ||
                       isGoingPrevious
                     }
-                    className="w-full py-3 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed font-bold rounded-xl transition-colors"
+                    className="w-full py-3 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-bold rounded-xl transition-colors"
                   >
                     {isQuitting ? "Ending..." : "Quit"}
                   </button>
@@ -3571,15 +3662,15 @@ export default function ExerciseSessionPage() {
 
           {showSessionRiskDialog && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                <h3 className="text-lg font-black text-slate-900 mb-2">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl dark:shadow-black/50 border border-slate-200/80 dark:border-slate-700/80">
+                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-2">
                   This session might end...
                 </h3>
-                <p className="text-sm text-slate-600 mb-2">
+                <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
                   Keep this workout in fullscreen and stay on this tab to avoid
                   interruptions.
                 </p>
-                <p className="text-xs text-slate-500 mb-5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
                   {sessionRiskReason === "tab"
                     ? "A tab switch was detected."
                     : "Fullscreen was closed."}
@@ -3589,7 +3680,7 @@ export default function ExerciseSessionPage() {
                     onClick={() => {
                       void handleCancelSessionRisk();
                     }}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>

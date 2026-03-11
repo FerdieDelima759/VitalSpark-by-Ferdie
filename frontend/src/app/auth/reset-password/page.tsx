@@ -94,7 +94,7 @@ export default function ResetPasswordPage() {
         style={{ paddingTop: 20 * scale, paddingBottom: 40 * scale }}
       >
         <Image
-          src="/images/Logo_VitalSpark_White.png"
+          src="/images/Logo_VitalSpark_Vertical.png"
           alt="VitalSpark Logo"
           width={160 * scale}
           height={160 * scale}

@@ -17,6 +17,7 @@ import {
   HiArrowRight,
   HiArrowPath,
   HiMoon,
+  HiSun,
   HiArrowRightOnRectangle,
 } from "react-icons/hi2";
 
@@ -34,6 +35,7 @@ export default function WorkoutsPage() {
     useState<string>("All Workouts");
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [isRefreshingWorkouts, setIsRefreshingWorkouts] = useState(false);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
   const toastIdRef = useRef(0);
 
   const {
@@ -76,6 +78,31 @@ export default function WorkoutsPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [currentDate]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const savedTheme = localStorage.getItem("theme");
+    const resolvedTheme =
+      savedTheme === "light" || savedTheme === "dark"
+        ? savedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
+    root.classList.remove("light", "dark");
+    root.classList.add(resolvedTheme);
+    setIsDarkTheme(resolvedTheme === "dark");
+  }, []);
+
+  const handleThemeToggle = useCallback((): void => {
+    const root = document.documentElement;
+    const nextTheme = root.classList.contains("dark") ? "light" : "dark";
+
+    root.classList.remove("light", "dark");
+    root.classList.add(nextTheme);
+    localStorage.setItem("theme", nextTheme);
+    setIsDarkTheme(nextTheme === "dark");
+  }, []);
 
   const showToast = (
     type: "success" | "error",
@@ -239,7 +266,7 @@ export default function WorkoutsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
       <div className="max-w-3xl mx-auto px-4 sm:px-5 py-5">
         {/* Header */}
         <div className="mb-4 -ml-1 mt-1">
@@ -252,22 +279,29 @@ export default function WorkoutsPage() {
                 height={28}
                 className="object-contain"
               />
-              <span className="text-xs sm:text-sm font-semibold text-gray-700">
+              <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-slate-200">
                 VitalSpark by Ferdie
               </span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                onClick={handleThemeToggle}
+                aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
+                className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
-                <HiMoon className="w-4 h-4" />
+                {isDarkTheme ? (
+                  <HiSun className="w-4 h-4" />
+                ) : (
+                  <HiMoon className="w-4 h-4" />
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => router.replace("/auth/logout")}
 
-                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
                 <span>Logout</span>
@@ -277,7 +311,7 @@ export default function WorkoutsPage() {
         </div>
 
         {/* Week Calendar */}
-        <div className="mb-5 bg-gray-50 rounded-lg p-3.5">
+        <div className="mb-5 bg-gray-50 dark:bg-slate-800/70 border border-transparent dark:border-slate-700 rounded-lg p-3.5">
           <div className="flex justify-end items-center mb-2.5">
             <HiClock className="w-3.5 h-3.5 text-amber-500 mr-1.5" />
             <span className="text-xs sm:text-sm font-semibold text-amber-500 tracking-wide">
@@ -303,19 +337,19 @@ export default function WorkoutsPage() {
                   className={`flex flex-col items-center py-2.5 px-1.5 rounded-md transition-all ${
                     isTodayFlag
                       ? "bg-teal-600 text-white scale-[1.02] shadow-md"
-                      : "bg-transparent text-gray-600"
+                      : "bg-transparent text-gray-600 dark:text-slate-300"
                   }`}
                 >
                   <span
                     className={`text-[11px] font-semibold mb-1 ${
-                      isTodayFlag ? "text-white" : "text-gray-500"
+                      isTodayFlag ? "text-white" : "text-gray-500 dark:text-slate-400"
                     }`}
                   >
                     {dayName}
                   </span>
                   <span
                     className={`text-sm font-bold ${
-                      isTodayFlag ? "text-white" : "text-gray-700"
+                      isTodayFlag ? "text-white" : "text-gray-700 dark:text-slate-200"
                     }`}
                   >
                     {dateNumber}
@@ -385,15 +419,15 @@ export default function WorkoutsPage() {
         {/* View All Button with Total Count */}
         <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-xs sm:text-sm font-semibold text-gray-600">
+            <p className="text-xs sm:text-sm font-semibold text-gray-600 dark:text-slate-300">
               {filteredWorkouts.length} of {workoutPlans.length} workouts
             </p>
           </div>
           {selectedCategory !== "All Workouts" && (
             <button
               onClick={handleViewAll}
-              className="flex items-center gap-2 px-3 py-1.5 bg-teal-50 text-teal-600 rounded-lg font-semibold text-xs sm:text-sm hover:bg-teal-100 transition-colors"
-            >
+                className="flex items-center gap-2 px-3 py-1.5 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-300 rounded-lg font-semibold text-xs sm:text-sm hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors"
+              >
               <span>Clear Filter</span>
               <span className="text-sm">{"\u00D7"}</span>
             </button>
@@ -424,7 +458,7 @@ export default function WorkoutsPage() {
         ) : filteredWorkouts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="text-4xl mb-3">{"\uD83D\uDCAA"}</div>
-            <p className="text-sm font-medium text-slate-500 text-center">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 text-center">
               {selectedCategory === "All Workouts"
                 ? "No workouts available"
                 : `No workouts found in "${selectedCategory}" category`}
@@ -449,10 +483,10 @@ export default function WorkoutsPage() {
                 <button
                   key={plan.id}
                   onClick={() => handleWorkoutPress(plan)}
-                  className="group relative bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-all transform hover:scale-[1.01]"
+                  className="group relative bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-md dark:shadow-black/30 hover:shadow-lg dark:hover:shadow-black/50 transition-all transform hover:scale-[1.01]"
                 >
                   {/* Image Background */}
-                  <div className="relative h-40 sm:h-44 bg-gradient-to-br from-gray-200 to-gray-300">
+                  <div className="relative h-40 sm:h-44 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-slate-700 dark:to-slate-800">
                     {plan.image_path ? (
                       <Image
                         src={plan.image_path}
@@ -537,7 +571,7 @@ export default function WorkoutsPage() {
                   },
                 });
               }}
-              className="w-full bg-gradient-to-r from-amber-500 to-amber-400 text-white rounded-xl p-3.5 font-bold text-sm shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-amber-500 to-amber-400 dark:from-amber-500 dark:to-amber-300 text-white rounded-xl p-3.5 font-bold text-sm shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-2"
             >
               <HiLockOpen className="w-4 h-4" />
               <span>Unlock all exercises</span>

@@ -4,7 +4,7 @@
     "slug": "VitalSpark",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/Logo_VitalSpark_White.png",
+    "icon": "./assets/images/Logo_VitalSpark.png",
     "scheme": "vitalspark",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -42,7 +42,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/Logo_VitalSpark_White.png"
+      "favicon": "./assets/images/Logo_VitalSpark.png"
     },
     "plugins": [
       "expo-router",

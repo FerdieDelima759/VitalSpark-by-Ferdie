@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import ThemeBackground from "@/components/ThemeBackground";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WorkoutProvider } from "@/contexts/WorkoutContext";
 import { UserProvider } from "@/contexts/UserContext";
@@ -52,19 +53,21 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          <UserProvider>
-            <PlansProvider>
-              <WorkoutProvider>
-                <ImageGenerationProvider>
-                  {children}
-                  <PlanDialogProvider />
-                  <ImageGenerationProgress />
-                </ImageGenerationProvider>
-              </WorkoutProvider>
-            </PlansProvider>
-          </UserProvider>
-        </AuthProvider>
+        <ThemeBackground>
+          <AuthProvider>
+            <UserProvider>
+              <PlansProvider>
+                <WorkoutProvider>
+                  <ImageGenerationProvider>
+                    {children}
+                    <PlanDialogProvider />
+                    <ImageGenerationProgress />
+                  </ImageGenerationProvider>
+                </WorkoutProvider>
+              </PlansProvider>
+            </UserProvider>
+          </AuthProvider>
+        </ThemeBackground>
       </body>
     </html>
   );
