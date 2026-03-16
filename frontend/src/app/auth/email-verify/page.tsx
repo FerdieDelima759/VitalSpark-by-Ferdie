@@ -29,7 +29,7 @@ function EmailVerifyContent() {
         }}
       >
         <Image
-          src="/images/Logo_VitalSpark_Colored.png"
+          src="/images/Logo_VitalSpark.png"
           alt="VitalSpark Logo"
           width={100 * scale}
           height={100 * scale}
@@ -41,7 +41,10 @@ function EmailVerifyContent() {
             marginBottom: 16 * scale,
           }}
         />
-        <div style={{ marginBottom: 16 * scale }} className="flex justify-center">
+        <div
+          style={{ marginBottom: 16 * scale }}
+          className="flex justify-center"
+        >
           {isSuccess ? (
             <HiCheckCircle
               style={{ fontSize: 48 * scale }}
@@ -103,4 +106,3 @@ export default function EmailVerifyPage() {
     </Suspense>
   );
 }
-

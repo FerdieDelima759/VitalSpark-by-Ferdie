@@ -97,7 +97,7 @@ export function useUserData(): UseUserDataReturn {
                     .from('user_profile')
                     .select('*')
                     .eq('user_id', userId)
-                    .single();
+                    .maybeSingle();
 
                 if (fetchError) {
                     const apiError = handleError(fetchError);
@@ -105,6 +105,37 @@ export function useUserData(): UseUserDataReturn {
                     return {
                         success: false,
                         error: apiError.message,
+                    };
+                }
+
+                if (!data) {
+                    const timestamp = new Date().toISOString();
+                    const { data: createdProfile, error: createError } = await supabase
+                        .from('user_profile')
+                        .upsert(
+                            {
+                                user_id: userId,
+                                created_at: timestamp,
+                                updated_at: timestamp,
+                            },
+                            { onConflict: 'user_id' }
+                        )
+                        .select('*')
+                        .single();
+
+                    if (createError) {
+                        const apiError = handleError(createError);
+                        setError(apiError.message);
+                        return {
+                            success: false,
+                            error: apiError.message,
+                        };
+                    }
+
+                    return {
+                        success: true,
+                        error: undefined,
+                        data: createdProfile as UserProfile,
                     };
                 }
 
