@@ -22,10 +22,8 @@ export default function LogoutPage() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const toastIdRef = useRef(0);
   const hasLoggedOut = useRef(false);
-  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fallbackRedirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const redirectTimeoutRef = useRef<number | null>(null);
+  const fallbackRedirectTimeoutRef = useRef<number | null>(null);
 
   const clearRedirectTimers = useCallback(() => {
     if (redirectTimeoutRef.current) {
@@ -101,7 +99,7 @@ export default function LogoutPage() {
       );
 
       // Redirect to login after a short delay
-      redirectTimeoutRef.current = setTimeout(() => {
+      redirectTimeoutRef.current = window.setTimeout(() => {
         redirectToLogin("logged-out");
       }, 1500);
     } catch (error: unknown) {
