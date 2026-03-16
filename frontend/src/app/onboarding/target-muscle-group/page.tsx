@@ -13,6 +13,8 @@ interface TargetMuscleOption {
   label: string;
 }
 
+type UserGender = "male" | "female";
+
 const targetMuscleOptions: TargetMuscleOption[] = [
   { code: "fullBody", label: "Full Body" },
   { code: "chest", label: "Chest" },
@@ -51,7 +53,17 @@ export default function TargetMuscleGroupOnboarding() {
     loadProfile();
   }, [user, fetchUserProfile]);
 
-  const userGender = userProfile?.gender === "female" ? "female" : "male";
+  const resolveUserGender = (): UserGender | null => {
+    const rawGender = userProfile?.gender;
+    if (typeof rawGender !== "string") return null;
+    const normalizedGender = rawGender.trim().toLowerCase();
+    if (normalizedGender === "male" || normalizedGender === "female") {
+      return normalizedGender;
+    }
+    return null;
+  };
+
+  const userGender = resolveUserGender();
 
   const handleMuscleSelection = (muscleCode: string) => {
     setSelectedMuscles((prev) =>
@@ -61,7 +73,11 @@ export default function TargetMuscleGroupOnboarding() {
     );
   };
 
-  const getImageSource = () => {
+  const getImageSource = (): string | null => {
+    if (!userGender) {
+      return null;
+    }
+
     if (selectedMuscles.length === 0) {
       return `/images/Muscular/${userGender}/${userGender}_muscular_body_diagram.png`;
     }
@@ -84,6 +100,8 @@ export default function TargetMuscleGroupOnboarding() {
       imageMap[last] || `${userGender}_muscular_body_diagram.png`;
     return `/images/Muscular/${userGender}/${imageName}`;
   };
+
+  const imageSource = getImageSource();
 
   const handleContinue = async () => {
     if (!isValid) return;
@@ -210,12 +228,18 @@ export default function TargetMuscleGroupOnboarding() {
           <div className="hidden lg:flex flex-1 items-center justify-center relative min-h-[500px]">
             <div className="relative w-full h-full max-h-[700px] flex items-center justify-center">
               <div className="relative w-full h-full">
-                <img
-                  src={getImageSource()}
-                  alt="Muscle diagram"
-                  className="object-contain w-full h-full"
-                  style={{ maxHeight: "700px" }}
-                />
+                {imageSource ? (
+                  <img
+                    src={imageSource}
+                    alt="Muscle diagram"
+                    className="object-contain w-full h-full"
+                    style={{ maxHeight: "700px" }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Loader size="md" color="amber" />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -224,11 +248,17 @@ export default function TargetMuscleGroupOnboarding() {
         {/* Image Display for Mobile/Tablet - Below the selection */}
         <div className="lg:hidden mt-8 flex justify-center">
           <div className="relative w-full max-w-sm h-[400px]">
-            <img
-              src={getImageSource()}
-              alt="Muscle diagram"
-              className="object-contain w-full h-full"
-            />
+            {imageSource ? (
+              <img
+                src={imageSource}
+                alt="Muscle diagram"
+                className="object-contain w-full h-full"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Loader size="md" color="amber" />
+              </div>
+            )}
           </div>
         </div>
 

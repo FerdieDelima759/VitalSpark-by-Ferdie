@@ -62,7 +62,7 @@ interface WorkoutProviderProps {
 export function WorkoutProvider({
   children,
 }: WorkoutProviderProps): React.ReactElement {
-  const REQUEST_TIMEOUT_MS = 15000;
+  const REQUEST_TIMEOUT_MS = 8000;
   const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
   const [workoutTags, setWorkoutTags] = useState<WorkoutTag[]>([]);
   const [exerciseDetails, setExerciseDetails] = useState<

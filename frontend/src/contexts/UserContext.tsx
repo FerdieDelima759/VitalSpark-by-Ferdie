@@ -55,7 +55,40 @@ interface UserProviderProps {
   children: ReactNode;
 }
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 8000;
+const PROFILE_TIMEOUT_RELOAD_KEY = "vs:user-profile-timeout-auto-reload";
+const PROFILE_TIMEOUT_ERROR_FRAGMENT = "fetch user_profile timed out after";
+
+const isUserProfileTimeoutError = (message: string): boolean =>
+  message.toLowerCase().includes(PROFILE_TIMEOUT_ERROR_FRAGMENT);
+
+const markTimeoutReloadUsed = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PROFILE_TIMEOUT_RELOAD_KEY, "1");
+  } catch {
+    // Ignore storage errors.
+  }
+};
+
+const clearTimeoutReloadUsed = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(PROFILE_TIMEOUT_RELOAD_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+};
+
+const shouldTriggerTimeoutReload = (): boolean => {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(PROFILE_TIMEOUT_RELOAD_KEY) !== "1";
+  } catch {
+    // If storage is unavailable, still try to recover with reload.
+    return true;
+  }
+};
 
 const withTimeout = async <T,>(
   promise: PromiseLike<T>,
@@ -149,6 +182,7 @@ export function UserProvider({
 
       setUserProfile(profileData || null);
       setUserRole(roleData || null);
+      clearTimeoutReloadUsed();
 
       // Store in session storage
       if (typeof window !== "undefined") {
@@ -179,6 +213,13 @@ export function UserProvider({
       const errorMessage =
         error instanceof Error ? error.message : "An unexpected error occurred";
       console.error("Unexpected error fetching user data:", error);
+
+      if (isUserProfileTimeoutError(errorMessage) && shouldTriggerTimeoutReload()) {
+        markTimeoutReloadUsed();
+        window.location.reload();
+        return;
+      }
+
       setLoadingState({
         isLoading: false,
         isUpdating: false,

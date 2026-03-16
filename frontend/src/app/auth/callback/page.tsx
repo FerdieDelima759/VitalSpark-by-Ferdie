@@ -5,7 +5,7 @@ import { supabase } from "@/lib/api/supabase";
 import Image from "next/image";
 import { useScale } from "@/hooks/useScale";
 
-const CALLBACK_TIMEOUT_MS = 15000;
+const CALLBACK_TIMEOUT_MS = 8000;
 
 const withTimeout = async <T,>(
   promise: Promise<T>,

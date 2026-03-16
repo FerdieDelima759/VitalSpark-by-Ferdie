@@ -13,7 +13,7 @@ interface ToastState extends Omit<ToastProps, "onDismiss"> {
   id: number;
 }
 
-const AUTH_STEP_TIMEOUT_MS = 15000;
+const AUTH_STEP_TIMEOUT_MS = 8000;
 
 const withTimeout = async <T,>(
   promise: Promise<T>,
