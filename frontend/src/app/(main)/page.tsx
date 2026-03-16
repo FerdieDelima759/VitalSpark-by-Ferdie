@@ -43,6 +43,10 @@ interface WorkoutPlanLookupRow {
   duration_days: number | null;
 }
 
+interface WorkoutPlanCreatedRow extends WorkoutPlanLookupRow {
+  created_at: string | null;
+}
+
 interface DashboardWorkoutCard {
   key: string;
   source: WorkoutSessionSource;
@@ -62,6 +66,7 @@ interface WorkoutCardsCachePayload {
   timestamp: number;
   currentWorkoutCard: DashboardWorkoutCard | null;
   allRecentWorkoutCards: DashboardWorkoutCard[];
+  allNewlyCreatedWorkoutCards: DashboardWorkoutCard[];
 }
 
 interface StreakMetrics {
@@ -198,6 +203,11 @@ const readWorkoutCardsCache = (
       allRecentWorkoutCards: Array.isArray(parsed.allRecentWorkoutCards)
         ? parsed.allRecentWorkoutCards
         : [],
+      allNewlyCreatedWorkoutCards: Array.isArray(
+        parsed.allNewlyCreatedWorkoutCards,
+      )
+        ? parsed.allNewlyCreatedWorkoutCards
+        : [],
     };
   } catch (error) {
     console.warn("Failed to read dashboard workout cards cache:", error);
@@ -215,6 +225,7 @@ const writeWorkoutCardsCache = (
       timestamp: Date.now(),
       currentWorkoutCard: payload.currentWorkoutCard,
       allRecentWorkoutCards: payload.allRecentWorkoutCards,
+      allNewlyCreatedWorkoutCards: payload.allNewlyCreatedWorkoutCards,
     };
     window.localStorage.setItem(
       getWorkoutCardsCacheKey(userId),
@@ -248,6 +259,9 @@ export default function Home() {
     DashboardWorkoutCard[]
   >([]);
   const [recentWorkoutCards, setRecentWorkoutCards] = useState<
+    DashboardWorkoutCard[]
+  >([]);
+  const [newlyCreatedWorkoutCards, setNewlyCreatedWorkoutCards] = useState<
     DashboardWorkoutCard[]
   >([]);
   const [isWorkoutCardsLoading, setIsWorkoutCardsLoading] =
@@ -340,6 +354,7 @@ export default function Home() {
       setCurrentWorkoutCard(null);
       setAllRecentWorkoutCards([]);
       setRecentWorkoutCards([]);
+      setNewlyCreatedWorkoutCards([]);
       setWorkoutCardsError(null);
       setIsWorkoutCardsLoading(false);
       return;
@@ -348,7 +363,8 @@ export default function Home() {
     const cachedWorkoutCards = readWorkoutCardsCache(user.id);
     const hasCachedCards = Boolean(
       cachedWorkoutCards?.currentWorkoutCard ||
-        (cachedWorkoutCards?.allRecentWorkoutCards?.length || 0) > 0,
+        (cachedWorkoutCards?.allRecentWorkoutCards?.length || 0) > 0 ||
+        (cachedWorkoutCards?.allNewlyCreatedWorkoutCards?.length || 0) > 0,
     );
     const isCacheFresh = Boolean(
       cachedWorkoutCards &&
@@ -359,9 +375,12 @@ export default function Home() {
 
     if (cachedWorkoutCards) {
       const cachedRecent = cachedWorkoutCards.allRecentWorkoutCards || [];
+      const cachedNewlyCreated =
+        cachedWorkoutCards.allNewlyCreatedWorkoutCards || [];
       setCurrentWorkoutCard(cachedWorkoutCards.currentWorkoutCard || null);
       setAllRecentWorkoutCards(cachedRecent);
       setRecentWorkoutCards(cachedRecent.slice(0, 3));
+      setNewlyCreatedWorkoutCards(cachedNewlyCreated.slice(0, 3));
       setWorkoutCardsError(null);
       setIsWorkoutCardsLoading(false);
     }
@@ -434,26 +453,7 @@ export default function Home() {
         collectSessions("user_workout", sessionResults[1]);
 
         if (successfulSessionSources === 0) {
-          if (!hasCachedCards) {
-            setWorkoutCardsError("Unable to load workout cards right now.");
-            setCurrentWorkoutCard(null);
-            setAllRecentWorkoutCards([]);
-            setRecentWorkoutCards([]);
-          }
-          setIsWorkoutCardsLoading(false);
-          return;
-        }
-
-        if (combinedSessions.length === 0) {
-          setCurrentWorkoutCard(null);
-          setAllRecentWorkoutCards([]);
-          setRecentWorkoutCards([]);
-          writeWorkoutCardsCache(user.id, {
-            currentWorkoutCard: null,
-            allRecentWorkoutCards: [],
-          });
-          setIsWorkoutCardsLoading(false);
-          return;
+          console.error("Failed to read all workout session sources.");
         }
 
         const workoutPlanIds = Array.from(
@@ -575,12 +575,108 @@ export default function Home() {
           (card) => card.key !== currentCard?.key,
         );
 
+        const newlyCreatedPlanResults = await Promise.allSettled([
+          supabase
+            .from("user_workout_plans")
+            .select(
+              "id, name, image_path, image_alt, category, duration_days, created_at",
+            )
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(40),
+          supabase
+            .from("workout_plans")
+            .select(
+              "id, name, image_path, image_alt, category, duration_days, created_at",
+            )
+            .order("created_at", { ascending: false })
+            .limit(40),
+        ]);
+
+        if (isCancelled) return;
+
+        let newlyCreatedPlansReadFailed = false;
+
+        const collectCreatedPlans = (
+          source: WorkoutSessionSource,
+          result: PromiseSettledResult<{
+            data: WorkoutPlanCreatedRow[] | null;
+            error: { message?: string } | null;
+          }>,
+        ): DashboardWorkoutCard[] => {
+          if (result.status !== "fulfilled") {
+            newlyCreatedPlansReadFailed = true;
+            console.error(`Failed to read newly created ${source} plans:`, result.reason);
+            return [];
+          }
+
+          if (result.value.error) {
+            newlyCreatedPlansReadFailed = true;
+            console.error(
+              `Failed to read newly created ${source} plans:`,
+              result.value.error,
+            );
+            return [];
+          }
+
+          return ((result.value.data || []) as WorkoutPlanCreatedRow[]).map((plan) => {
+            const createdAt = plan.created_at || new Date(0).toISOString();
+            return {
+              key: `${source}:${plan.id}`,
+              source,
+              planId: plan.id,
+              planName: cleanPlanName(plan.name || "Workout Plan"),
+              imagePath: plan.image_path || null,
+              imageAlt: plan.image_alt || null,
+              category: plan.category || null,
+              durationDays: plan.duration_days ?? null,
+              startedAt: null,
+              endedAt: null,
+              activityAt: createdAt,
+              isActive: false,
+            } satisfies DashboardWorkoutCard;
+          });
+        };
+
+        const createdUserWorkoutCards = collectCreatedPlans(
+          "user_workout",
+          newlyCreatedPlanResults[0],
+        );
+        const createdWorkoutCards = collectCreatedPlans(
+          "workout",
+          newlyCreatedPlanResults[1],
+        );
+
+        const recentPlanKeys = new Set(allRecentCards.map((card) => card.key));
+        const seenNewlyCreatedKeys = new Set<string>();
+        const allNewlyCreatedCards = [...createdUserWorkoutCards, ...createdWorkoutCards]
+          .sort((a, b) => toTimestamp(b.activityAt) - toTimestamp(a.activityAt))
+          .filter((card) => !recentPlanKeys.has(card.key))
+          .filter((card) => card.key !== currentCard?.key)
+          .filter((card) => {
+            if (seenNewlyCreatedKeys.has(card.key)) return false;
+            seenNewlyCreatedKeys.add(card.key);
+            return true;
+          });
+
+        const newlyCreatedCards = allNewlyCreatedCards.slice(0, 3);
+
+        if (
+          !hasCachedCards &&
+          successfulSessionSources === 0 &&
+          newlyCreatedPlansReadFailed
+        ) {
+          setWorkoutCardsError("Unable to load workout cards right now.");
+        }
+
         setCurrentWorkoutCard(currentCard);
         setAllRecentWorkoutCards(allRecentCards);
         setRecentWorkoutCards(recentCards);
+        setNewlyCreatedWorkoutCards(newlyCreatedCards);
         writeWorkoutCardsCache(user.id, {
           currentWorkoutCard: currentCard,
           allRecentWorkoutCards: allRecentCards,
+          allNewlyCreatedWorkoutCards: allNewlyCreatedCards,
         });
         setIsWorkoutCardsLoading(false);
       } catch (error) {
@@ -896,7 +992,9 @@ export default function Home() {
                 Retry
               </button>
             </div>
-          ) : !currentWorkoutCard && recentWorkoutCards.length === 0 ? (
+          ) : !currentWorkoutCard &&
+            recentWorkoutCards.length === 0 &&
+            newlyCreatedWorkoutCards.length === 0 ? (
             <div className="bg-white dark:bg-slate-800/80 dark:border dark:border-slate-700 rounded-2xl p-6 shadow-md">
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
                 No recent workout activity yet.
@@ -1006,6 +1104,49 @@ export default function Home() {
                           </p>
                           <p className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">
                             Last active {formatShortDate(card.activityAt)}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newlyCreatedWorkoutCards.length > 0 && (
+                <div>
+                  <p className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 mb-2.5">
+                    Newly Created Workouts
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {newlyCreatedWorkoutCards.map((card) => (
+                      <button
+                        key={`new-${card.key}`}
+                        type="button"
+                        onClick={() => handleWorkoutCardPress(card)}
+                        className="text-left bg-white dark:bg-slate-800/80 dark:border dark:border-slate-700 rounded-xl overflow-hidden border border-slate-100 shadow-xs hover:shadow-md transition-all"
+                      >
+                        <div className="relative h-24 bg-slate-100 dark:bg-slate-700">
+                          <Image
+                            src={card.imagePath || FALLBACK_WORKOUT_IMAGE}
+                            alt={card.imageAlt || card.planName}
+                            fill
+                            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                            className="object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+                          <span className="absolute top-2 left-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-teal-600/90 text-white">
+                            New
+                          </span>
+                          <span className="absolute top-2 right-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-black/50 text-white">
+                            {card.source === "workout" ? "Standard" : "Personal"}
+                          </span>
+                        </div>
+                        <div className="p-3">
+                          <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 line-clamp-2 mb-1">
+                            {card.planName}
+                          </p>
+                          <p className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400">
+                            Created {formatShortDate(card.activityAt)}
                           </p>
                         </div>
                       </button>

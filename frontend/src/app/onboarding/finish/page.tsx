@@ -53,7 +53,7 @@ export default function FinishOnboarding() {
 
       const result = await upsertUserProfile({
         user_id: currentUser.user.id,
-        is_onboarding_complete: true,
+        is_onboarding_complete: false,
         plan_code: userProfile?.plan_code ?? "premium",
         current_step: 10,
       });
@@ -65,7 +65,7 @@ export default function FinishOnboarding() {
         return;
       }
 
-      router.replace("/");
+      router.replace("/onboarding/generate-workout");
     } catch (e: any) {
       console.error("Finish onboarding error:", e);
       setError(e?.message || "Failed to complete onboarding");

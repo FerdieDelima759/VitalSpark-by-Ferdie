@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import Toast, { ToastProps } from "@/components/Toast";
 import Image from "next/image";
@@ -22,13 +22,55 @@ export default function LogoutPage() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const toastIdRef = useRef(0);
   const hasLoggedOut = useRef(false);
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallbackRedirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const clearRedirectTimers = useCallback(() => {
+    if (redirectTimeoutRef.current) {
+      clearTimeout(redirectTimeoutRef.current);
+      redirectTimeoutRef.current = null;
+    }
+    if (fallbackRedirectTimeoutRef.current) {
+      clearTimeout(fallbackRedirectTimeoutRef.current);
+      fallbackRedirectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const redirectToLogin = useCallback(
+    (reason?: string) => {
+      const target = reason
+        ? `/auth/login?reason=${encodeURIComponent(reason)}`
+        : "/auth/login";
+
+      clearRedirectTimers();
+      router.replace(target);
+
+      // Fallback hard redirect for production edge cases where client routing stalls.
+      if (typeof window !== "undefined") {
+        fallbackRedirectTimeoutRef.current = window.setTimeout(() => {
+          if (window.location.pathname !== "/auth/login") {
+            window.location.replace(target);
+          }
+        }, 700);
+      }
+    },
+    [clearRedirectTimers, router],
+  );
+
+  useEffect(() => {
+    return () => {
+      clearRedirectTimers();
+    };
+  }, [clearRedirectTimers]);
 
   useEffect(() => {
     // If not authenticated, redirect to login
     if (!authLoading && !isAuthenticated) {
-      router.push("/auth/login");
+      redirectToLogin();
     }
-  }, [isAuthenticated, authLoading, router]);
+  }, [isAuthenticated, authLoading, redirectToLogin]);
 
   const showToast = (
     type: "success" | "error",
@@ -59,16 +101,16 @@ export default function LogoutPage() {
       );
 
       // Redirect to login after a short delay
-      setTimeout(() => {
-        router.push("/auth/login");
+      redirectTimeoutRef.current = setTimeout(() => {
+        redirectToLogin("logged-out");
       }, 1500);
-    } catch (error: any) {
+    } catch (error: unknown) {
       hasLoggedOut.current = false;
       setIsLoggingOut(false);
       showToast(
         "error",
         "Logout Failed",
-        error?.message ||
+        (error instanceof Error ? error.message : null) ||
           "An error occurred while logging out. Please try again.",
       );
     } finally {
@@ -85,7 +127,11 @@ export default function LogoutPage() {
   }
 
   if (!isAuthenticated) {
-    return null; // Will redirect
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#00b3b3] via-[#009898] to-[#002f2f]">
+        <Loader size="lg" text="Redirecting to login..." textColor="white" />
+      </div>
+    );
   }
 
   return (
@@ -212,7 +258,8 @@ export default function LogoutPage() {
                     marginBottom: 32 * scale,
                   }}
                 >
-                  Are you sure you want to log out? You'll need to sign in again
+                  Are you sure you want to log out? You&apos;ll need to sign in
+                  again
                   to access your account.
                 </p>
               </div>
@@ -242,7 +289,7 @@ export default function LogoutPage() {
 
               {/* Cancel Button */}
               <button
-                onClick={() => router.push("/")}
+                onClick={() => router.replace("/")}
                 disabled={loading}
                 className="w-full bg-white border-2 border-slate-200 text-slate-700 font-semibold rounded-2xl disabled:opacity-80 hover:bg-slate-50 transition-colors"
                 style={{
