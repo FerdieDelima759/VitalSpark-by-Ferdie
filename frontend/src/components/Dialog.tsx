@@ -37,6 +37,9 @@ export default function Dialog({
     typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight;
   const heightValue =
     typeof height === "number" ? `${height}px` : height;
+  const viewportBoundMaxHeight = height
+    ? undefined
+    : `min(calc(100vh - 2rem), ${maxHeightValue})`;
 
   return (
     <div
@@ -44,12 +47,10 @@ export default function Dialog({
       onClick={handleBackdropClick}
     >
       <div
-        className={`relative w-full flex flex-col rounded-3xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 shadow-[0_24px_70px_rgba(2,6,23,0.35)] dark:shadow-[0_32px_90px_rgba(2,6,23,0.7)] ${
-          !height && maxHeight === 600 ? "max-h-[90vh]" : ""
-        }`}
+        className="relative w-full flex flex-col rounded-3xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 shadow-[0_24px_70px_rgba(2,6,23,0.35)] dark:shadow-[0_32px_90px_rgba(2,6,23,0.7)]"
         style={{
           maxWidth: maxWidthValue,
-          maxHeight: height ? undefined : maxHeightValue,
+          maxHeight: viewportBoundMaxHeight,
           height: heightValue,
         }}
         onClick={(e) => e.stopPropagation()}

@@ -306,10 +306,16 @@ export default function WorkoutDetailsPage() {
     const fetchWorkoutPlan = async () => {
       setIsLoading(true);
       try {
-        const plan = await getWorkoutPlanFull(planId);
+        const plan = await Promise.race([
+          getWorkoutPlanFull(planId),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Loading workout timed out")), 15000),
+          ),
+        ]);
         setWorkoutPlan(plan);
       } catch (error) {
         console.error("Error fetching workout plan:", error);
+        setWorkoutPlan(null);
       } finally {
         setIsLoading(false);
       }
@@ -396,7 +402,7 @@ export default function WorkoutDetailsPage() {
     [workoutPlan],
   );
 
-  if (isLoading || loadingState.isLoading) {
+  if (isLoading || (loadingState.isLoading && !workoutPlan)) {
     return (
       <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

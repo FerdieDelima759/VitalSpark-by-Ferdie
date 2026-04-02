@@ -72,6 +72,12 @@ input:-webkit-autofill::first-line {
   }
 }
 
+/* Hide the built-in password reveal/clear icons (Edge/IE Chromium) */
+.hide-password-reveal::-ms-reveal,
+.hide-password-reveal::-ms-clear {
+  display: none !important;
+}
+
 /* Rounded scrollbar for dialogs / scrollable containers */
 .dialog-scrollbar::-webkit-scrollbar {
   width: 8px;

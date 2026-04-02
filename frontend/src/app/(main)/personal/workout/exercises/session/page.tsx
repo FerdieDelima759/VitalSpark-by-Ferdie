@@ -23,6 +23,7 @@ import {
   HiArrowPath,
   HiClock,
   HiBolt,
+  HiMusicalNote,
 } from "react-icons/hi2";
 
 // ===========================
@@ -74,14 +75,21 @@ interface ToastState extends Omit<ToastProps, "onDismiss"> {
 }
 
 type VoiceGender = "male" | "female";
+type PreRecordedCueKind = "ready" | "countdown" | "rest-countdown";
 type CountdownCueOptions = {
   interrupt?: boolean;
   maxWaitMs?: number;
   audioContent?: string;
-  onPlaybackStart?: () => void;
+  rate?: number;
+  onPlaybackStart?: (playbackInfo?: { durationMs: number | null }) => void;
 };
+const MALE_VOICE_PRIORITY = ["cedar", "ash"] as const;
+const FEMALE_VOICE_PRIORITY = ["marin", "sage"] as const;
 const MALE_VOICE_HINTS = [
   "male",
+  "man",
+  "boy",
+  "guy",
   "david",
   "daniel",
   "mark",
@@ -90,14 +98,13 @@ const MALE_VOICE_HINTS = [
   "john",
   "michael",
   "thomas",
-  "fred",
-  "george",
-  "guy",
-  "man",
+  "cedar",
+  "ash",
 ] as const;
 const FEMALE_VOICE_HINTS = [
   "female",
-  "zira",
+  "woman",
+  "girl",
   "samantha",
   "victoria",
   "karen",
@@ -107,8 +114,31 @@ const FEMALE_VOICE_HINTS = [
   "joanna",
   "sara",
   "emma",
-  "woman",
-  "girl",
+  "marin",
+  "sage",
+] as const;
+const BACKGROUND_MUSIC_TRACKS = [
+  "/audio/background/B-1.mp3",
+  "/audio/background/B-2.mp3",
+  "/audio/background/B-3.mp3",
+] as const;
+const MALE_REST_ENTRANCE_TRACKS = [
+  "/audio/male/rest/M-Rest-1.wav",
+  "/audio/male/rest/M-Rest-2.wav",
+  "/audio/male/rest/M-Rest-3.wav",
+  "/audio/male/rest/M-Rest-4.wav",
+  "/audio/male/rest/M-Rest-5.wav",
+  "/audio/male/rest/M-Rest-6.wav",
+  "/audio/male/rest/M-Rest-7.wav",
+] as const;
+const FEMALE_REST_ENTRANCE_TRACKS = [
+  "/audio/female/rest/F-Rest-1.wav",
+  "/audio/female/rest/F-Rest-2.wav",
+  "/audio/female/rest/F-Rest-3.wav",
+  "/audio/female/rest/F-Rest-4.wav",
+  "/audio/female/rest/F-Rest-5.wav",
+  "/audio/female/rest/F-Rest-6.wav",
+  "/audio/female/rest/F-Rest-7.wav",
 ] as const;
 
 export default function ExerciseSessionPage() {
@@ -184,12 +214,11 @@ export default function ExerciseSessionPage() {
   >(new Map());
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const toastIdRef = useRef(0);
-  const hasShownOpenAiTtsFailureRef = useRef(false);
   const countdownAudioRef = useRef<HTMLAudioElement | null>(null);
-  const countdownCueAudioCacheRef = useRef<Map<string, string>>(new Map());
-  const countdownCueAudioInFlightRef = useRef<
-    Map<string, Promise<string | null>>
-  >(new Map());
+  const restEntranceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const lastRestEntranceTrackRef = useRef<string | null>(null);
+  const backgroundMusicAudioRef = useRef<HTMLAudioElement | null>(null);
+  const lastBackgroundTrackRef = useRef<string | null>(null);
 
   // Refs for tracking time and state
   const sessionStartTimeRef = useRef<Date | null>(null);
@@ -215,7 +244,51 @@ export default function ExerciseSessionPage() {
   const isHandlingNextRef = useRef<boolean>(false);
   const isSessionRiskDialogOpenRef = useRef<boolean>(false);
   const shouldEnforceFullscreenRef = useRef<boolean>(shouldEnforceFullscreen);
+  const isFullscreenGuardActiveRef = useRef<boolean>(false);
+  const allowFullscreenExitRef = useRef<boolean>(false);
+  const isIntroVoicePlayingRef = useRef<boolean>(false);
   const preloadedImageUrlsRef = useRef<Set<string>>(new Set());
+  const nextExerciseAnnouncementKeyRef = useRef<string | null>(null);
+  const lastRestEntranceCueKeyRef = useRef<string | null>(null);
+
+  const stopBackgroundMusic = useCallback((resetTrack: boolean = false) => {
+    const audio = backgroundMusicAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    backgroundMusicAudioRef.current = null;
+    if (resetTrack) {
+      lastBackgroundTrackRef.current = null;
+    }
+  }, []);
+
+  const playRandomBackgroundMusic = useCallback(async (): Promise<void> => {
+    if (typeof window === "undefined") return;
+
+    stopBackgroundMusic(false);
+
+    const previousTrack = lastBackgroundTrackRef.current;
+    const availableTracks =
+      BACKGROUND_MUSIC_TRACKS.length > 1 && previousTrack
+        ? BACKGROUND_MUSIC_TRACKS.filter((track) => track !== previousTrack)
+        : [...BACKGROUND_MUSIC_TRACKS];
+    const selectedTrack =
+      availableTracks[Math.floor(Math.random() * availableTracks.length)] ||
+      BACKGROUND_MUSIC_TRACKS[0];
+
+    const audio = new Audio(selectedTrack);
+    audio.preload = "auto";
+    audio.loop = true;
+    audio.volume = 0.5;
+    backgroundMusicAudioRef.current = audio;
+    lastBackgroundTrackRef.current = selectedTrack;
+
+    try {
+      await audio.play();
+    } catch {
+      // Autoplay can be blocked until user interaction.
+    }
+  }, [stopBackgroundMusic]);
 
   const resetWorkoutState = useCallback(() => {
     exercisesAddedRef.current.clear();
@@ -236,10 +309,23 @@ export default function ExerciseSessionPage() {
     isStartingSessionRef.current = false;
     inFlightSetRecordingsRef.current.clear();
     isHandlingNextRef.current = false;
+    isIntroVoicePlayingRef.current = false;
+    setIsFullscreenGuardActive(false);
+    isFullscreenGuardActiveRef.current = false;
+    allowFullscreenExitRef.current = false;
     setShowWorkoutCompleteSheet(false);
     setWorkoutRpe(5);
     setIsSavingWorkoutRpe(false);
-  }, []);
+    const restEntranceAudio = restEntranceAudioRef.current;
+    if (restEntranceAudio) {
+      restEntranceAudio.pause();
+      restEntranceAudio.currentTime = 0;
+      restEntranceAudioRef.current = null;
+    }
+    lastRestEntranceTrackRef.current = null;
+    lastRestEntranceCueKeyRef.current = null;
+    stopBackgroundMusic(true);
+  }, [stopBackgroundMusic]);
 
   // Normalize gender for image paths (only male/female images available)
   const normalizedGender = useMemo(() => {
@@ -271,16 +357,6 @@ export default function ExerciseSessionPage() {
   const dismissToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
-
-  const showOpenAiTtsFallbackToast = useCallback(() => {
-    if (hasShownOpenAiTtsFailureRef.current) return;
-    hasShownOpenAiTtsFailureRef.current = true;
-    showToast(
-      "error",
-      "OpenAI TTS failed",
-      "Falling back to device voice for countdown.",
-    );
-  }, [showToast]);
 
   const normalizeStoredGender = useCallback(
     (rawGender: string | null | undefined): VoiceGender => {
@@ -336,10 +412,38 @@ export default function ExerciseSessionPage() {
   }, [normalizeStoredGender]);
 
   const getCurrentVoiceGender = useCallback((): VoiceGender => {
+    if (userProfile?.gender) {
+      return normalizeStoredGender(userProfile.gender);
+    }
     const storedGender = readGenderFromStorage();
     if (storedGender) return storedGender;
     return normalizedGender === "female" ? "female" : "male";
-  }, [normalizedGender, readGenderFromStorage]);
+  }, [
+    normalizedGender,
+    normalizeStoredGender,
+    readGenderFromStorage,
+    userProfile?.gender,
+  ]);
+
+  const getPreRecordedCuePath = useCallback(
+    (cue: PreRecordedCueKind): string => {
+      const voiceGender = getCurrentVoiceGender();
+      if (cue === "rest-countdown") {
+        return voiceGender === "female"
+          ? "/audio/female/countdown/F-rest-countdown.wav"
+          : "/audio/male/countdown/M-rest-countdown.wav";
+      }
+      if (cue === "countdown") {
+        return voiceGender === "female"
+          ? "/audio/female/countdown/Countdown-Female.wav"
+          : "/audio/male/countdown/Countdown-Male.wav";
+      }
+      return voiceGender === "female"
+        ? "/audio/female/ready/Female-Ready.wav"
+        : "/audio/male/ready/Male-Ready.wav";
+    },
+    [getCurrentVoiceGender],
+  );
 
   const stopCountdownAudio = useCallback(() => {
     if (!countdownAudioRef.current) return;
@@ -348,11 +452,48 @@ export default function ExerciseSessionPage() {
     countdownAudioRef.current = null;
   }, []);
 
+  const stopRestEntranceAudio = useCallback(() => {
+    if (!restEntranceAudioRef.current) return;
+    restEntranceAudioRef.current.pause();
+    restEntranceAudioRef.current.currentTime = 0;
+    restEntranceAudioRef.current = null;
+  }, []);
+
+  const playRandomRestEntranceAudio = useCallback(async (): Promise<void> => {
+    const voiceGender = getCurrentVoiceGender();
+    const tracks =
+      voiceGender === "female"
+        ? FEMALE_REST_ENTRANCE_TRACKS
+        : MALE_REST_ENTRANCE_TRACKS;
+    const previousTrack = lastRestEntranceTrackRef.current;
+    const availableTracks =
+      tracks.length > 1 && previousTrack
+        ? tracks.filter((track) => track !== previousTrack)
+        : [...tracks];
+    const selectedTrack =
+      availableTracks[Math.floor(Math.random() * availableTracks.length)] ||
+      tracks[0];
+
+    stopRestEntranceAudio();
+
+    const audio = new Audio(selectedTrack);
+    audio.preload = "auto";
+    restEntranceAudioRef.current = audio;
+    lastRestEntranceTrackRef.current = selectedTrack;
+
+    try {
+      await audio.play();
+    } catch {
+      // Ignore blocked autoplay and continue session flow.
+    }
+  }, [getCurrentVoiceGender, stopRestEntranceAudio]);
+
   const stopCountdownSpeech = useCallback(() => {
     stopCountdownAudio();
+    stopRestEntranceAudio();
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-  }, [stopCountdownAudio]);
+  }, [stopCountdownAudio, stopRestEntranceAudio]);
 
   useEffect(() => {
     const storedGender = readGenderFromStorage();
@@ -372,14 +513,6 @@ export default function ExerciseSessionPage() {
     [],
   );
 
-  const voiceHasAnyHint = useCallback(
-    (voice: SpeechSynthesisVoice, hints: readonly string[]): boolean => {
-      const identity = getVoiceIdentity(voice);
-      return hints.some((hint) => identity.includes(hint));
-    },
-    [getVoiceIdentity],
-  );
-
   const getVoiceForGender = useCallback(
     (targetGender: VoiceGender): SpeechSynthesisVoice | null => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -394,37 +527,46 @@ export default function ExerciseSessionPage() {
       );
       const pool = englishVoices.length > 0 ? englishVoices : voices;
 
-      const preferredHints =
+      const prioritizedVoices =
+        targetGender === "female" ? FEMALE_VOICE_PRIORITY : MALE_VOICE_PRIORITY;
+
+      for (const preferredName of prioritizedVoices) {
+        const matchedVoice = pool.find((voice) =>
+          getVoiceIdentity(voice).includes(preferredName),
+        );
+        if (matchedVoice) {
+          return matchedVoice;
+        }
+      }
+
+      const targetHints =
         targetGender === "female" ? FEMALE_VOICE_HINTS : MALE_VOICE_HINTS;
       const oppositeHints =
         targetGender === "female" ? MALE_VOICE_HINTS : FEMALE_VOICE_HINTS;
 
-      // Best case: explicit hint for target gender and no opposite hint.
-      const explicitGenderMatch = pool.find(
-        (voice) =>
-          voiceHasAnyHint(voice, preferredHints) &&
-          !voiceHasAnyHint(voice, oppositeHints),
-      );
-      if (explicitGenderMatch) return explicitGenderMatch;
-
-      // Next: any voice with target hint.
-      const looseGenderMatch = pool.find((voice) =>
-        voiceHasAnyHint(voice, preferredHints),
-      );
-      if (looseGenderMatch) return looseGenderMatch;
-
-      // Male fallback requirement: avoid obviously female voices when possible.
-      if (targetGender === "male") {
-        const nonFemaleFallback = pool.find(
-          (voice) => !voiceHasAnyHint(voice, FEMALE_VOICE_HINTS),
+      const explicitGenderMatch = pool.find((voice) => {
+        const identity = getVoiceIdentity(voice);
+        const hasTarget = targetHints.some((hint) => identity.includes(hint));
+        const hasOpposite = oppositeHints.some((hint) =>
+          identity.includes(hint),
         );
-        if (nonFemaleFallback) return nonFemaleFallback;
+        return hasTarget && !hasOpposite;
+      });
+      if (explicitGenderMatch) {
+        return explicitGenderMatch;
       }
 
-      const defaultVoice = pool.find((voice) => voice.default);
-      return defaultVoice ?? pool[0] ?? null;
+      const looseGenderMatch = pool.find((voice) => {
+        const identity = getVoiceIdentity(voice);
+        return targetHints.some((hint) => identity.includes(hint));
+      });
+      if (looseGenderMatch) {
+        return looseGenderMatch;
+      }
+
+      return pool[0] ?? null;
     },
-    [voiceHasAnyHint],
+    [getVoiceIdentity],
   );
 
   const ensureSpeechVoicesLoaded = useCallback(async (): Promise<void> => {
@@ -451,10 +593,7 @@ export default function ExerciseSessionPage() {
   }, []);
 
   const speakCountdownCueAndWaitFallback = useCallback(
-    async (
-      text: string,
-      options?: CountdownCueOptions,
-    ): Promise<void> => {
+    async (text: string, options?: CountdownCueOptions): Promise<void> => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         return;
       }
@@ -475,9 +614,13 @@ export default function ExerciseSessionPage() {
         utterance.lang = "en-US";
       }
 
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      utterance.volume = 1;
+      const requestedRate =
+        typeof options?.rate === "number" && Number.isFinite(options.rate)
+          ? options.rate
+          : 1;
+      utterance.rate = Math.min(2, Math.max(0.5, requestedRate));
+      utterance.pitch = 1.15;
+      utterance.volume = 0.6;
 
       await new Promise<void>((resolve) => {
         let settled = false;
@@ -504,110 +647,39 @@ export default function ExerciseSessionPage() {
     [getCurrentVoiceGender, getVoiceForGender],
   );
 
-  const requestOpenAiTtsAudio = useCallback(
-    async (text: string): Promise<string> => {
-      const targetGender = getCurrentVoiceGender();
-      const response = await fetch("/api/openai-tts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-          gender: targetGender,
-          speakingRate: 1,
-          pitch: 1,
-          responseFormat: "wav",
-          instructions:
-            "Speak smoothly at normal speed (1.00x) with short pauses and no trailing silence.",
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`OpenAI TTS failed with status ${response.status}`);
-      }
-
-      const payload = (await response.json()) as { audioContent?: string };
-      if (!payload.audioContent) {
-        throw new Error("OpenAI TTS did not return audio content");
-      }
-
-      return payload.audioContent;
-    },
-    [getCurrentVoiceGender],
-  );
-
-  const getCountdownCueCacheKey = useCallback(
-    (text: string): string => {
-      const targetGender = getCurrentVoiceGender();
-      return `${targetGender}:${text.trim().toLowerCase()}`;
-    },
-    [getCurrentVoiceGender],
-  );
-
-  const getCachedCountdownCueAudio = useCallback(
-    (text: string): string | null => {
-      const cacheKey = getCountdownCueCacheKey(text);
-      return countdownCueAudioCacheRef.current.get(cacheKey) ?? null;
-    },
-    [getCountdownCueCacheKey],
-  );
-
-  const prefetchCountdownCueAudio = useCallback(
-    async (text: string): Promise<string | null> => {
-      const cacheKey = getCountdownCueCacheKey(text);
-      const cached = countdownCueAudioCacheRef.current.get(cacheKey);
-      if (cached) return cached;
-
-      const inFlight = countdownCueAudioInFlightRef.current.get(cacheKey);
-      if (inFlight) return inFlight;
-
-      const requestPromise = requestOpenAiTtsAudio(text)
-        .then((audioContent) => {
-          countdownCueAudioCacheRef.current.set(cacheKey, audioContent);
-          return audioContent;
-        })
-        .catch(() => null)
-        .finally(() => {
-          if (countdownCueAudioInFlightRef.current.get(cacheKey) === requestPromise) {
-            countdownCueAudioInFlightRef.current.delete(cacheKey);
-          }
-        });
-
-      countdownCueAudioInFlightRef.current.set(cacheKey, requestPromise);
-      return requestPromise;
-    },
-    [getCountdownCueCacheKey, requestOpenAiTtsAudio],
-  );
-
-  const playOpenAiTtsCue = useCallback(
+  const playPreRecordedCueAndWait = useCallback(
     async (
-      text: string,
-      options?: CountdownCueOptions & { waitForEnd?: boolean },
+      cue: PreRecordedCueKind,
+      options?: CountdownCueOptions,
     ): Promise<boolean> => {
       try {
         if (options?.interrupt) {
           stopCountdownAudio();
         }
 
-        const audioContent =
-          options?.audioContent || (await requestOpenAiTtsAudio(text));
-        const audio = new Audio(`data:audio/wav;base64,${audioContent}`);
-        audio.playbackRate = 1;
-        const pitchAudio = audio as HTMLAudioElement & {
-          preservesPitch?: boolean;
-          mozPreservesPitch?: boolean;
-          webkitPreservesPitch?: boolean;
-        };
-        if ("preservesPitch" in pitchAudio) {
-          pitchAudio.preservesPitch = true;
-        }
-        if ("mozPreservesPitch" in pitchAudio) {
-          pitchAudio.mozPreservesPitch = true;
-        }
-        if ("webkitPreservesPitch" in pitchAudio) {
-          pitchAudio.webkitPreservesPitch = true;
-        }
+        const audio = new Audio(getPreRecordedCuePath(cue));
+        audio.preload = "auto";
+        await new Promise<void>((resolve) => {
+          if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            resolve();
+            return;
+          }
+
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            audio.removeEventListener("loadedmetadata", finish);
+            audio.removeEventListener("error", finish);
+            resolve();
+          };
+
+          const timeoutId = window.setTimeout(finish, 1000);
+          audio.addEventListener("loadedmetadata", finish);
+          audio.addEventListener("error", finish);
+          audio.load();
+        });
         countdownAudioRef.current = audio;
         audio.onended = () => {
           if (countdownAudioRef.current === audio) {
@@ -623,13 +695,17 @@ export default function ExerciseSessionPage() {
         const playPromise = audio.play();
         if (playPromise) {
           await playPromise;
-          options?.onPlaybackStart?.();
+          const durationMs =
+            Number.isFinite(audio.duration) && audio.duration > 0
+              ? Math.ceil(audio.duration * 1000)
+              : null;
+          options?.onPlaybackStart?.({ durationMs });
         } else {
-          options?.onPlaybackStart?.();
-        }
-
-        if (!options?.waitForEnd) {
-          return true;
+          const durationMs =
+            Number.isFinite(audio.duration) && audio.duration > 0
+              ? Math.ceil(audio.duration * 1000)
+              : null;
+          options?.onPlaybackStart?.({ durationMs });
         }
 
         await new Promise<void>((resolve) => {
@@ -643,48 +719,87 @@ export default function ExerciseSessionPage() {
             resolve();
           };
 
+          const audioDurationMs =
+            Number.isFinite(audio.duration) && audio.duration > 0
+              ? Math.ceil(audio.duration * 1000) + 1200
+              : 10000;
           const timeoutId = window.setTimeout(
             finish,
-            options?.maxWaitMs ?? Math.max(700, text.length * 65),
+            options?.maxWaitMs
+              ? Math.max(options.maxWaitMs, audioDurationMs)
+              : audioDurationMs,
           );
-
           audio.onended = finish;
           audio.onerror = finish;
         });
 
         return true;
       } catch {
-        showOpenAiTtsFallbackToast();
         return false;
       }
     },
-    [requestOpenAiTtsAudio, showOpenAiTtsFallbackToast, stopCountdownAudio],
+    [getPreRecordedCuePath, stopCountdownAudio],
   );
 
   const speakCountdownCueAndWait = useCallback(
-    async (
-      text: string,
-      options?: CountdownCueOptions,
-    ): Promise<void> => {
-      const usedOpenAi = await playOpenAiTtsCue(text, {
-        interrupt: options?.interrupt,
-        waitForEnd: true,
-        maxWaitMs: options?.maxWaitMs,
-        audioContent: options?.audioContent,
-        onPlaybackStart: options?.onPlaybackStart,
-      });
-
-      if (!usedOpenAi) {
-        await speakCountdownCueAndWaitFallback(text, options);
-      }
+    async (text: string, options?: CountdownCueOptions): Promise<void> => {
+      await speakCountdownCueAndWaitFallback(text, options);
     },
-    [playOpenAiTtsCue, speakCountdownCueAndWaitFallback],
+    [speakCountdownCueAndWaitFallback],
   );
 
-  useEffect(() => {
-    void prefetchCountdownCueAudio("Ready");
-    void prefetchCountdownCueAudio("3, 2, 1");
-  }, [prefetchCountdownCueAudio]);
+  const announceRestMidpointCueIfNeeded =
+    useCallback(async (): Promise<void> => {
+      if (!activeSessionId) return;
+      const currentItem = workoutFlow[currentFlowIndex];
+      if (!currentItem || !currentItem.isRestAfter) return;
+
+      const restSeconds = currentItem.exercise.rest_seconds || 0;
+      if (restSeconds <= 0) return;
+      const halfRestRemaining = Math.ceil(restSeconds / 2);
+      if (timer !== halfRestRemaining) {
+        return;
+      }
+
+      let announcementText: string | null = null;
+      let announcementVariant = "";
+      const currentExerciseName =
+        currentItem.exercise.details?.name?.trim() ?? "this exercise";
+
+      if (currentItem.setNumber < currentItem.totalSets) {
+        const upcomingSetNumber = currentItem.setNumber + 1;
+        announcementText = `Let's do set ${upcomingSetNumber} of ${currentExerciseName}`;
+        announcementVariant = `set-${upcomingSetNumber}`;
+      } else {
+        const nextIndex = currentFlowIndex + 1;
+        if (nextIndex >= workoutFlow.length) return;
+        const nextExerciseName =
+          workoutFlow[nextIndex]?.exercise?.details?.name?.trim() ?? "";
+        if (!nextExerciseName) return;
+        announcementText = `Next up, ${nextExerciseName}`;
+        announcementVariant = `next-${nextIndex}`;
+      }
+
+      const announcementKey = `${activeSessionId}:${currentFlowIndex}:${lastTimerSetRef.current}:${announcementVariant}:half`;
+      if (nextExerciseAnnouncementKeyRef.current === announcementKey) {
+        return;
+      }
+      nextExerciseAnnouncementKeyRef.current = announcementKey;
+
+      await ensureSpeechVoicesLoaded();
+      await speakCountdownCueAndWait(announcementText, {
+        interrupt: true,
+        rate: 0.9,
+        maxWaitMs: Math.max(2200, announcementText.length * 120),
+      });
+    }, [
+      activeSessionId,
+      workoutFlow,
+      currentFlowIndex,
+      timer,
+      ensureSpeechVoicesLoaded,
+      speakCountdownCueAndWait,
+    ]);
 
   const getSectionLabel = useCallback((section: string): string => {
     if (section === "warmup") return "Warm Up";
@@ -750,30 +865,70 @@ export default function ExerciseSessionPage() {
     preloadedImageUrlsRef.current.clear();
   }, [planId, normalizedGender]);
 
+  const hasActiveFullscreen = useCallback((): boolean => {
+    if (typeof document === "undefined") return false;
+    const fsDocument = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      mozFullScreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
+    return Boolean(
+      fsDocument.fullscreenElement ||
+      fsDocument.webkitFullscreenElement ||
+      fsDocument.mozFullScreenElement ||
+      fsDocument.msFullscreenElement,
+    );
+  }, []);
+
   const requestSessionFullscreen = useCallback(async (): Promise<boolean> => {
     if (typeof document === "undefined") return false;
-    if (document.fullscreenElement) return true;
+    if (hasActiveFullscreen()) return true;
 
     try {
-      await document.documentElement.requestFullscreen();
-      return true;
+      const target = document.documentElement as HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void> | void;
+        mozRequestFullScreen?: () => Promise<void> | void;
+        msRequestFullscreen?: () => Promise<void> | void;
+      };
+      const requestFullscreen =
+        target.requestFullscreen ||
+        target.webkitRequestFullscreen ||
+        target.mozRequestFullScreen ||
+        target.msRequestFullscreen;
+      if (!requestFullscreen) return false;
+
+      await requestFullscreen.call(target);
+      return hasActiveFullscreen();
     } catch (error) {
       return false;
     }
-  }, []);
+  }, [hasActiveFullscreen]);
 
   const exitSessionFullscreen = useCallback(async (): Promise<void> => {
     if (typeof document === "undefined") return;
-    if (!document.fullscreenElement) return;
+    if (!hasActiveFullscreen()) return;
 
     try {
-      await document.exitFullscreen();
+      const fsDocument = document as Document & {
+        webkitExitFullscreen?: () => Promise<void> | void;
+        mozCancelFullScreen?: () => Promise<void> | void;
+        msExitFullscreen?: () => Promise<void> | void;
+      };
+      const exitFullscreen =
+        fsDocument.exitFullscreen ||
+        fsDocument.webkitExitFullscreen ||
+        fsDocument.mozCancelFullScreen ||
+        fsDocument.msExitFullscreen;
+      if (!exitFullscreen) return;
+
+      await exitFullscreen.call(fsDocument);
     } catch (error) {
       // Ignore fullscreen exit errors and continue quitting flow.
     }
-  }, []);
+  }, [hasActiveFullscreen]);
 
   const handleCancelSessionRisk = useCallback(async () => {
+    allowFullscreenExitRef.current = false;
     const restoredFullscreen = await requestSessionFullscreen();
     setShowSessionRiskDialog(false);
     setSessionRiskReason(null);
@@ -781,6 +936,21 @@ export default function ExerciseSessionPage() {
       setIsPaused(false);
     }
   }, [requestSessionFullscreen]);
+
+  const ensureFullscreenBeforeWorkoutStart =
+    useCallback(async (): Promise<boolean> => {
+      if (!shouldEnforceFullscreenRef.current) {
+        return true;
+      }
+
+      const enteredFullscreen = await requestSessionFullscreen();
+      setIsFullscreenGuardActive(enteredFullscreen);
+      isFullscreenGuardActiveRef.current = enteredFullscreen;
+      if (enteredFullscreen) {
+        allowFullscreenExitRef.current = false;
+      }
+      return enteredFullscreen;
+    }, [requestSessionFullscreen]);
 
   // ===========================
   // Database Operations
@@ -1157,7 +1327,8 @@ export default function ExerciseSessionPage() {
               if (missingDayPlanColumn || missingWeeklyPlanColumn) {
                 const fallbackPayload = {
                   ...baseSessionPayload,
-                  ...(resolvedDayPlanForSession !== null && !missingDayPlanColumn
+                  ...(resolvedDayPlanForSession !== null &&
+                  !missingDayPlanColumn
                     ? { day_plan_id: resolvedDayPlanForSession }
                     : {}),
                   ...(resolvedWeeklyPlanForSession !== null &&
@@ -2041,6 +2212,8 @@ export default function ExerciseSessionPage() {
   // Timer countdown effect - only restarts when pause changes or timerRestartKey changes
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentTimerRef = useRef<number>(timer);
+  const lastExerciseFinalCountdownCueKeyRef = useRef<string | null>(null);
+  const lastRestFinalCountdownCueKeyRef = useRef<string | null>(null);
 
   // Keep currentTimerRef in sync with timer
   useEffect(() => {
@@ -2123,6 +2296,108 @@ export default function ExerciseSessionPage() {
     };
   }, [isPaused, timerRestartKey]); // Only restart when pause or restart key changes
 
+  // Play a pre-recorded 5..1 countdown once per exercise segment.
+  useEffect(() => {
+    if (isStartingWorkout || isIntroVoicePlayingRef.current) return;
+    if (!activeSessionId || isPaused || isResting) return;
+    if (timer !== 5) return;
+
+    const segmentKey = `${activeSessionId}:${currentFlowIndex}:${lastTimerSetRef.current}`;
+    if (lastExerciseFinalCountdownCueKeyRef.current === segmentKey) {
+      return;
+    }
+    lastExerciseFinalCountdownCueKeyRef.current = segmentKey;
+
+    void playPreRecordedCueAndWait("countdown", {
+      interrupt: true,
+      maxWaitMs: 7000,
+    });
+  }, [
+    timer,
+    isPaused,
+    isResting,
+    isStartingWorkout,
+    activeSessionId,
+    currentFlowIndex,
+    playPreRecordedCueAndWait,
+  ]);
+
+  useEffect(() => {
+    if (isStartingWorkout || isIntroVoicePlayingRef.current) return;
+    if (!activeSessionId || isPaused || !isResting) return;
+
+    const currentItem = workoutFlow[currentFlowIndex];
+    if (!currentItem || !currentItem.isRestAfter) return;
+    const restSeconds = currentItem.exercise.rest_seconds || 0;
+    if (restSeconds <= 0) return;
+    if (timer !== restSeconds) return;
+
+    const segmentKey = `${activeSessionId}:${currentFlowIndex}:${lastTimerSetRef.current}`;
+    if (lastRestEntranceCueKeyRef.current === segmentKey) {
+      return;
+    }
+    lastRestEntranceCueKeyRef.current = segmentKey;
+
+    void playRandomRestEntranceAudio();
+  }, [
+    timer,
+    isPaused,
+    isResting,
+    isStartingWorkout,
+    activeSessionId,
+    workoutFlow,
+    currentFlowIndex,
+    playRandomRestEntranceAudio,
+  ]);
+
+  useEffect(() => {
+    if (isStartingWorkout || isIntroVoicePlayingRef.current) return;
+    if (!activeSessionId || isPaused || !isResting) return;
+    void announceRestMidpointCueIfNeeded();
+  }, [
+    timer,
+    isPaused,
+    isResting,
+    isStartingWorkout,
+    activeSessionId,
+    announceRestMidpointCueIfNeeded,
+  ]);
+
+  useEffect(() => {
+    if (!isResting) {
+      stopRestEntranceAudio();
+    }
+  }, [isResting, stopRestEntranceAudio]);
+
+  useEffect(() => {
+    if (isStartingWorkout || isIntroVoicePlayingRef.current) return;
+    if (!activeSessionId || isPaused || !isResting) return;
+    if (timer !== 3) return;
+
+    const currentItem = workoutFlow[currentFlowIndex];
+    if (!currentItem || !currentItem.isRestAfter) return;
+
+    const segmentKey = `${activeSessionId}:${currentFlowIndex}:${lastTimerSetRef.current}`;
+    if (lastRestFinalCountdownCueKeyRef.current === segmentKey) {
+      return;
+    }
+    lastRestFinalCountdownCueKeyRef.current = segmentKey;
+
+    void playPreRecordedCueAndWait("rest-countdown", {
+      interrupt: true,
+      maxWaitMs: 7000,
+    });
+  }, [
+    timer,
+    isPaused,
+    isResting,
+    isStartingWorkout,
+    activeSessionId,
+    workoutFlow,
+    currentFlowIndex,
+    playPreRecordedCueAndWait,
+  ]);
+
   // Track previous values to prevent unnecessary timer resets
   const prevFlowIndexRef = useRef<number>(-1);
   const prevIsRestingRef = useRef<boolean>(false);
@@ -2169,6 +2444,11 @@ export default function ExerciseSessionPage() {
     // 🔒 FIX: Do not touch timer while workout is still starting
     if (isStartingWorkout) {
       prevIsStartingWorkoutRef.current = true;
+      return;
+    }
+
+    // Keep timer frozen while intro voice is playing.
+    if (isIntroVoicePlayingRef.current) {
       return;
     }
 
@@ -2438,7 +2718,8 @@ export default function ExerciseSessionPage() {
   const openWorkoutCompleteSheet = useCallback(() => {
     setIsPaused(true);
     setShowWorkoutCompleteSheet(true);
-  }, []);
+    stopBackgroundMusic(false);
+  }, [stopBackgroundMusic]);
 
   const handleSaveWorkoutRpe = useCallback(async () => {
     if (isSavingWorkoutRpe) return;
@@ -2489,6 +2770,10 @@ export default function ExerciseSessionPage() {
       }
 
       await endWorkoutSessionRecord();
+      allowFullscreenExitRef.current = true;
+      setIsFullscreenGuardActive(false);
+      isFullscreenGuardActiveRef.current = false;
+      await exitSessionFullscreen();
       resetWorkoutState();
       router.push(workoutDetailsPath);
     } catch {
@@ -2505,6 +2790,7 @@ export default function ExerciseSessionPage() {
     resolvedDayPlanId,
     workoutRpe,
     endWorkoutSessionRecord,
+    exitSessionFullscreen,
     resetWorkoutState,
     router,
     workoutDetailsPath,
@@ -2586,6 +2872,7 @@ export default function ExerciseSessionPage() {
             currentFlowIndex + 1,
             workoutFlow.length - 1,
           );
+
           // Now update state - timer effect will detect both flowIndexChanged and restingStateChanged
           setCurrentFlowIndex(nextIndex);
           setIsResting(false);
@@ -2928,11 +3215,7 @@ export default function ExerciseSessionPage() {
 
       openWorkoutCompleteSheet();
     } catch {
-      showToast(
-        "error",
-        "Unable to finish workout",
-        "Please try again.",
-      );
+      showToast("error", "Unable to finish workout", "Please try again.");
     } finally {
       setIsGoingNext(false);
     }
@@ -2955,7 +3238,9 @@ export default function ExerciseSessionPage() {
     if (isQuitting || isRestarting) return;
 
     setIsQuitting(true);
+    allowFullscreenExitRef.current = true;
     setIsFullscreenGuardActive(false);
+    isFullscreenGuardActiveRef.current = false;
 
     try {
       const sessionId = activeSessionId;
@@ -2966,6 +3251,7 @@ export default function ExerciseSessionPage() {
 
       // If user quits while in fullscreen, exit fullscreen immediately.
       await exitSessionFullscreen();
+      stopBackgroundMusic(true);
 
       // Ensure unfinished session is deleted before leaving.
       await deleteUnfinishedSession(sessionId);
@@ -2987,25 +3273,24 @@ export default function ExerciseSessionPage() {
     router,
     deleteUnfinishedSession,
     exitSessionFullscreen,
+    stopBackgroundMusic,
   ]);
 
   const handleProceedSessionRisk = useCallback(async () => {
-    setIsFullscreenGuardActive(false);
-    await exitSessionFullscreen();
+    allowFullscreenExitRef.current = true;
     await handleEndWorkout();
-  }, [exitSessionFullscreen, handleEndWorkout]);
+  }, [handleEndWorkout]);
 
   // ===========================
   // Data Fetching
   // ===========================
 
   const showStartCountdown = useCallback(async (): Promise<void> => {
-    const READY_CUE_TEXT = "Ready";
-    const COUNTDOWN_CUE_TEXT = "3, 2, 1";
-    const SHOW_TWO_AFTER_COUNTDOWN_START_MS = 1300;
-    const SHOW_ONE_AFTER_COUNTDOWN_START_MS = 2100;
-    const READY_MAX_WAIT_MS = 1400;
-    const COUNTDOWN_MAX_WAIT_MS = 2200;
+    const HOLD_ON_THREE_MS = 2000;
+    const SHOW_TWO_AFTER_COUNTDOWN_START_MS = HOLD_ON_THREE_MS;
+    const SHOW_ONE_AFTER_COUNTDOWN_START_MS = HOLD_ON_THREE_MS + 1000;
+    const COMPLETE_COUNTDOWN_AFTER_MS = HOLD_ON_THREE_MS + 2000;
+    const INTRO_CUE_BASE_MAX_WAIT_MS = 2600;
 
     // Prevent multiple countdowns from running simultaneously
     if (isCountdownRunningRef.current) {
@@ -3020,40 +3305,80 @@ export default function ExerciseSessionPage() {
       countdownIntervalRef.current = null;
     }
 
-    // Warm both clips so playback can start immediately when possible.
-    const readyAudioPromise = prefetchCountdownCueAudio(READY_CUE_TEXT);
-    const countdownAudioPromise = prefetchCountdownCueAudio(COUNTDOWN_CUE_TEXT);
-
     stopCountdownSpeech();
     // Ensure voices are loaded before selecting gender-specific voice.
     await ensureSpeechVoicesLoaded();
-
-    const shouldGuardFullscreen = shouldEnforceFullscreenRef.current;
-    setIsFullscreenGuardActive(shouldGuardFullscreen);
-    if (shouldGuardFullscreen) {
-      const enteredFullscreen = await requestSessionFullscreen();
-      if (!enteredFullscreen) {
-        setIsFullscreenGuardActive(false);
-      }
-    }
 
     // Show 3-second countdown
     return new Promise<void>((resolve, reject) => {
       (async () => {
         const uiTickTimers: number[] = [];
+        let hasSyncedCountdownUi = false;
+        let hasPlayedReadyCue = false;
+        let countdownUiSyncPromise: Promise<void> | null = null;
         try {
           setIsStartingWorkout(true);
           // Keep countdown UI at "3" while "Ready" audio is playing.
           setStartCountdown(3);
 
-          const cachedReadyAudio = getCachedCountdownCueAudio(READY_CUE_TEXT);
-          const readyAudioContent =
-            cachedReadyAudio ?? (await readyAudioPromise) ?? undefined;
-          await speakCountdownCueAndWait(READY_CUE_TEXT, {
-            interrupt: true,
-            maxWaitMs: READY_MAX_WAIT_MS,
-            audioContent: readyAudioContent,
-          });
+          // Wait a frame so "Ready" is visible before requesting fullscreen.
+          await new Promise<void>((resolveFrame) =>
+            window.requestAnimationFrame(() => resolveFrame()),
+          );
+
+          const isFullscreenAvailable =
+            await ensureFullscreenBeforeWorkoutStart();
+          if (!isFullscreenAvailable && shouldEnforceFullscreenRef.current) {
+            setIsStartingWorkout(false);
+            setStartCountdown(0);
+            isCountdownRunningRef.current = false;
+            throw new Error("Fullscreen permission was not granted.");
+          }
+
+          const startSyncedCountdownUi = (_playbackInfo?: {
+            durationMs: number | null;
+          }) => {
+            if (hasSyncedCountdownUi) return;
+            hasSyncedCountdownUi = true;
+            setStartCountdown(3);
+            countdownUiSyncPromise = new Promise<void>((resolveCountdownUi) => {
+              uiTickTimers.push(
+                window.setTimeout(() => {
+                  if (isCountdownRunningRef.current) {
+                    setStartCountdown(2);
+                  }
+                }, SHOW_TWO_AFTER_COUNTDOWN_START_MS),
+              );
+              uiTickTimers.push(
+                window.setTimeout(() => {
+                  if (isCountdownRunningRef.current) {
+                    setStartCountdown(1);
+                  }
+                }, SHOW_ONE_AFTER_COUNTDOWN_START_MS),
+              );
+              uiTickTimers.push(
+                window.setTimeout(() => {
+                  resolveCountdownUi();
+                }, COMPLETE_COUNTDOWN_AFTER_MS),
+              );
+            });
+          };
+
+          if (!hasPlayedReadyCue) {
+            hasPlayedReadyCue = true;
+            await playPreRecordedCueAndWait("ready", {
+              interrupt: true,
+              onPlaybackStart: startSyncedCountdownUi,
+            });
+          }
+
+          if (!hasSyncedCountdownUi) {
+            startSyncedCountdownUi({ durationMs: null });
+          }
+
+          if (countdownUiSyncPromise) {
+            await countdownUiSyncPromise;
+          }
 
           if (!isCountdownRunningRef.current) {
             setIsStartingWorkout(false);
@@ -3063,33 +3388,6 @@ export default function ExerciseSessionPage() {
             return;
           }
 
-          const startSyncedCountdownUi = () => {
-            setStartCountdown(3);
-            uiTickTimers.push(
-              window.setTimeout(() => {
-                if (isCountdownRunningRef.current) {
-                  setStartCountdown(2);
-                }
-              }, SHOW_TWO_AFTER_COUNTDOWN_START_MS),
-            );
-            uiTickTimers.push(
-              window.setTimeout(() => {
-                if (isCountdownRunningRef.current) {
-                  setStartCountdown(1);
-                }
-              }, SHOW_ONE_AFTER_COUNTDOWN_START_MS),
-            );
-          };
-
-          const cachedCountdownAudio = getCachedCountdownCueAudio(COUNTDOWN_CUE_TEXT);
-          const countdownAudioContent =
-            cachedCountdownAudio ?? (await countdownAudioPromise) ?? undefined;
-          await speakCountdownCueAndWait(COUNTDOWN_CUE_TEXT, {
-            interrupt: true,
-            maxWaitMs: COUNTDOWN_MAX_WAIT_MS,
-            audioContent: countdownAudioContent,
-            onPlaybackStart: startSyncedCountdownUi,
-          });
           uiTickTimers.forEach((timerId) => window.clearTimeout(timerId));
 
           if (!isCountdownRunningRef.current) {
@@ -3100,21 +3398,46 @@ export default function ExerciseSessionPage() {
             return;
           }
 
+          const flow = workoutFlowRef.current;
+
+          // Show the first exercise only after pre-recorded countdown finishes.
+          if (flow.length > 0) {
+            setWorkoutFlow(flow);
+            setCurrentFlowIndex(0);
+          }
+
           setIsStartingWorkout(false);
           setStartCountdown(0);
           isCountdownRunningRef.current = false;
 
-          // CRITICAL: Immediately initialize timer for first exercise after countdown
+          // CRITICAL: Immediately initialize timer for first exercise after intro voice
           // This ensures the timer displays the correct duration instead of 00:00
           // Use refs to get current values without dependencies
-          const flow = workoutFlowRef.current;
+
+          const firstExerciseName =
+            flow[0]?.exercise?.details?.name?.trim() || "this exercise";
+          const introCueText = `Let's warm up with ${firstExerciseName}!`;
+          isIntroVoicePlayingRef.current = true;
+          try {
+            await speakCountdownCueAndWait(introCueText, {
+              interrupt: true,
+              rate: 1,
+              maxWaitMs: Math.max(
+                INTRO_CUE_BASE_MAX_WAIT_MS,
+                introCueText.length * 75,
+              ),
+            });
+          } finally {
+            isIntroVoicePlayingRef.current = false;
+          }
+
+          await playRandomBackgroundMusic();
 
           if (flow.length > 0) {
             const firstItem = flow[0];
-            // Only set timer if first item is an exercise (not rest) and has duration
+            // Initialize first exercise timer when it has a duration.
             if (
               firstItem &&
-              !firstItem.isRestAfter &&
               firstItem.exercise.duration_seconds &&
               firstItem.exercise.duration_seconds > 0
             ) {
@@ -3146,17 +3469,20 @@ export default function ExerciseSessionPage() {
           isCountdownRunningRef.current = false;
           setIsStartingWorkout(false);
           setStartCountdown(0);
+          isIntroVoicePlayingRef.current = false;
           setIsFullscreenGuardActive(false);
+          isFullscreenGuardActiveRef.current = false;
+          allowFullscreenExitRef.current = false;
           stopCountdownSpeech();
           reject(error);
         }
       })();
     });
   }, [
-    getCachedCountdownCueAudio,
-    prefetchCountdownCueAudio,
-    requestSessionFullscreen,
+    ensureFullscreenBeforeWorkoutStart,
     ensureSpeechVoicesLoaded,
+    playRandomBackgroundMusic,
+    playPreRecordedCueAndWait,
     speakCountdownCueAndWait,
     stopCountdownSpeech,
   ]);
@@ -3465,7 +3791,7 @@ export default function ExerciseSessionPage() {
           details: ex.exercise_details || null,
         }));
 
-        // Create workout flow locally (don't set to state yet - will load after countdown)
+        // Create workout flow locally
         const flow = createWorkoutFlow(formattedExercises);
         // Set ref immediately so showStartCountdown can access it for timer initialization
         workoutFlowRef.current = flow;
@@ -3525,7 +3851,18 @@ export default function ExerciseSessionPage() {
         setIsLoading(false);
       }
     } catch (error: unknown) {
+      const fullscreenPermissionDenied =
+        error instanceof Error &&
+        error.message === "Fullscreen permission was not granted.";
       setIsLoading(false);
+      if (fullscreenPermissionDenied && shouldEnforceFullscreenRef.current) {
+        showToast(
+          "error",
+          "Fullscreen required",
+          "Could not enter fullscreen automatically. Please tap Start Workout again.",
+        );
+        router.push(workoutDetailsPath);
+      }
     } finally {
       isFetchingWorkoutDataRef.current = false;
     }
@@ -3540,6 +3877,9 @@ export default function ExerciseSessionPage() {
     readGenderFromStorage,
     normalizeStoredGender,
     preloadFlowImages,
+    showToast,
+    router,
+    workoutDetailsPath,
   ]);
 
   // ===========================
@@ -3602,6 +3942,10 @@ export default function ExerciseSessionPage() {
   }, [shouldEnforceFullscreen]);
 
   useEffect(() => {
+    isFullscreenGuardActiveRef.current = isFullscreenGuardActive;
+  }, [isFullscreenGuardActive]);
+
+  useEffect(() => {
     resolvedDayPlanIdRef.current = resolvedDayPlanId;
   }, [resolvedDayPlanId]);
 
@@ -3613,6 +3957,12 @@ export default function ExerciseSessionPage() {
     if (!shouldEnforceFullscreen || !isFullscreenGuardActive) return;
 
     const openSessionRiskDialog = (reason: "fullscreen" | "tab") => {
+      if (
+        !isFullscreenGuardActiveRef.current ||
+        allowFullscreenExitRef.current
+      ) {
+        return;
+      }
       if (!activeSessionId) return;
       if (isSessionRiskDialogOpenRef.current) {
         // If fullscreen closes after an earlier tab/blur signal, prefer fullscreen reason.
@@ -3627,9 +3977,9 @@ export default function ExerciseSessionPage() {
     };
 
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        openSessionRiskDialog("fullscreen");
-      }
+      if (hasActiveFullscreen()) return;
+      openSessionRiskDialog("fullscreen");
+      void requestSessionFullscreen();
     };
 
     const handleVisibilityChange = () => {
@@ -3639,7 +3989,7 @@ export default function ExerciseSessionPage() {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && document.fullscreenElement) {
+      if (event.key === "Escape" && hasActiveFullscreen()) {
         event.preventDefault();
         event.stopPropagation();
         openSessionRiskDialog("fullscreen");
@@ -3672,7 +4022,13 @@ export default function ExerciseSessionPage() {
       window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [shouldEnforceFullscreen, isFullscreenGuardActive, activeSessionId]);
+  }, [
+    shouldEnforceFullscreen,
+    isFullscreenGuardActive,
+    activeSessionId,
+    hasActiveFullscreen,
+    requestSessionFullscreen,
+  ]);
 
   // Check for active session on reload (only once per planId/userProfile combination)
   useEffect(() => {
@@ -3749,8 +4105,11 @@ export default function ExerciseSessionPage() {
       setIsGoingNext(false);
       setIsGoingPrevious(false);
       setIsStartingWorkout(false);
+      isIntroVoicePlayingRef.current = false;
       setStartCountdown(0); // Reset countdown to 0
       setIsFullscreenGuardActive(false);
+      isFullscreenGuardActiveRef.current = false;
+      allowFullscreenExitRef.current = false;
       setIsPaused(false);
       setIsResting(false);
       setShowExitConfirmation(false);
@@ -3794,6 +4153,7 @@ export default function ExerciseSessionPage() {
         countdownIntervalRef.current = null;
       }
       stopCountdownSpeech();
+      stopBackgroundMusic(true);
 
       // Reset flow
       setCurrentFlowIndex(0);
@@ -3806,7 +4166,31 @@ export default function ExerciseSessionPage() {
       currentTimerValueRef.current = 0;
       lastTimerSetRef.current = 0;
     }
-  }, [planId, dayPlanId, weekParam, dayParam, stopCountdownSpeech]);
+  }, [
+    planId,
+    dayPlanId,
+    weekParam,
+    dayParam,
+    stopCountdownSpeech,
+    stopBackgroundMusic,
+  ]);
+
+  useEffect(() => {
+    const audio = backgroundMusicAudioRef.current;
+    if (!audio) return;
+
+    if (isPaused || isStartingWorkout || showWorkoutCompleteSheet) {
+      audio.pause();
+      return;
+    }
+
+    const resumePromise = audio.play();
+    if (resumePromise) {
+      void resumePromise.catch(() => {
+        // Ignore resume errors caused by browser autoplay policy.
+      });
+    }
+  }, [isPaused, isStartingWorkout, showWorkoutCompleteSheet]);
 
   // Cleanup countdown interval on unmount
   useEffect(() => {
@@ -3816,8 +4200,9 @@ export default function ExerciseSessionPage() {
         countdownIntervalRef.current = null;
       }
       stopCountdownSpeech();
+      stopBackgroundMusic(true);
     };
-  }, [stopCountdownSpeech]);
+  }, [stopCountdownSpeech, stopBackgroundMusic]);
 
   // Main initialization effect (only if restart dialog is not shown and not restarting from reload)
   useEffect(() => {
@@ -3920,7 +4305,9 @@ export default function ExerciseSessionPage() {
       return (
         <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
           <div className="text-center">
-            <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
+            <p className="text-slate-600 dark:text-slate-300">
+              Loading workout...
+            </p>
           </div>
         </div>
       );
@@ -3959,11 +4346,18 @@ export default function ExerciseSessionPage() {
   }
 
   // Show loading screen only if not starting workout (countdown screen will show instead)
-  if (isLoading && !isStartingWorkout && !showRestartDialog) {
+  if (
+    isLoading &&
+    workoutFlow.length === 0 &&
+    !isStartingWorkout &&
+    !showRestartDialog
+  ) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-slate-600 dark:text-slate-300">Loading workout...</p>
+          <p className="text-slate-600 dark:text-slate-300">
+            Loading workout...
+          </p>
         </div>
       </div>
     );
@@ -3973,7 +4367,9 @@ export default function ExerciseSessionPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <div className="text-center">
-          <p className="text-red-600 dark:text-red-300 font-semibold">Ending workout...</p>
+          <p className="text-red-600 dark:text-red-300 font-semibold">
+            Ending workout...
+          </p>
         </div>
       </div>
     );
@@ -4059,6 +4455,18 @@ export default function ExerciseSessionPage() {
   const currentExerciseImageUrl = currentExercise
     ? getExerciseResolvedImageUrl(currentExercise)
     : "";
+  const workoutChallengeScale = [
+    { value: 1, label: "Very Light", emoji: "\u{1F60C}" },
+    { value: 3, label: "Light", emoji: "\u{1F642}" },
+    { value: 5, label: "Moderate", emoji: "\u{1F610}" },
+    { value: 7, label: "Hard", emoji: "\u{1F624}" },
+    { value: 10, label: "Very Hard", emoji: "\u{1F975}" },
+  ] as const;
+  const lastWorkoutChallengeIndex = workoutChallengeScale.length - 1;
+  const workoutChallengeBandIndex = Math.max(
+    0,
+    workoutChallengeScale.findIndex((item) => item.value >= workoutRpe),
+  );
 
   return (
     <div
@@ -4082,7 +4490,7 @@ export default function ExerciseSessionPage() {
               </span>
             </div>
             <p className="text-xl font-semibold text-white/90">
-              Get ready to move!
+              {startCountdown >= 3 ? "Ready" : "Get ready to move!"}
             </p>
           </div>
         </div>
@@ -4091,6 +4499,12 @@ export default function ExerciseSessionPage() {
       {/* Don't render exercise content during countdown */}
       {!isStartingWorkout && workoutFlow.length > 0 && (
         <>
+          <div className="pointer-events-none fixed right-5 top-24 z-50">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 shadow-lg shadow-amber-500/30 ring-2 ring-amber-300/60">
+              <HiMusicalNote className="h-6 w-6 text-slate-700" />
+            </div>
+          </div>
+
           {/* Header with Progress */}
           <div className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
@@ -4183,7 +4597,9 @@ export default function ExerciseSessionPage() {
                     <p className="text-5xl font-black text-amber-500 mb-1">
                       {formatTime(timer)}
                     </p>
-                    <p className="text-slate-600 dark:text-slate-300 font-semibold">remaining</p>
+                    <p className="text-slate-600 dark:text-slate-300 font-semibold">
+                      remaining
+                    </p>
                   </div>
                 </div>
 
@@ -4245,7 +4661,7 @@ export default function ExerciseSessionPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                          <HiBolt className="w-16 h-16 text-slate-400 dark:text-slate-500" />
+                        <HiBolt className="w-16 h-16 text-slate-400 dark:text-slate-500" />
                       </div>
                     )}
                   </div>
@@ -4408,66 +4824,89 @@ export default function ExerciseSessionPage() {
           </div>
 
           {showWorkoutCompleteSheet && (
-            <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40">
-              <div className="w-full max-w-2xl rounded-t-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl dark:shadow-black/50 sm:mb-4 sm:rounded-3xl sm:p-8 border border-slate-200/80 dark:border-slate-700/80">
-                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700 sm:hidden" />
-                <div className="text-center">
-                  <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100">
-                    Workout Complete 🎉
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+              <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-black/50">
+                <div className="bg-gradient-to-r from-teal-600 to-cyan-500 p-6 text-white">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
+                    <HiCheckCircle className="h-7 w-7" />
+                  </div>
+                  <h3 className="text-center text-3xl font-black tracking-tight">
+                    Workout Complete
                   </h3>
-                  <p className="mt-2 text-lg font-semibold text-slate-700 dark:text-slate-200">
-                    Great job today!
-                  </p>
-                  <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">
-                    How challenging was this workout?
+                  <p className="mt-2 text-center text-sm font-semibold text-white/90">
+                    Session finished. Log your effort before closing.
                   </p>
                 </div>
 
-                <div className="mt-6">
-                  <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    <span>1</span>
-                    <span className="text-base font-black text-teal-700 dark:text-teal-300">
-                      {workoutRpe}/10
-                    </span>
-                    <span>10</span>
+                <div className="space-y-6 p-6 sm:p-7">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800/70">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                        How challenging was this workout?
+                      </p>
+                    </div>
+
+                    <div className="mt-1 px-4">
+                      <input
+                        type="range"
+                        min={0}
+                        max={lastWorkoutChallengeIndex}
+                        step={1}
+                        value={workoutChallengeBandIndex}
+                        onChange={(event) => {
+                          const index = Number(event.target.value);
+                          const selected = workoutChallengeScale[index];
+                          if (selected) {
+                            setWorkoutRpe(selected.value);
+                          }
+                        }}
+                        disabled={isSavingWorkoutRpe}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 accent-teal-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-700 dark:accent-teal-500"
+                        aria-label="Workout challenge rating from 1 to 10"
+                      />
+                    </div>
+
+                    <div className="mt-2 px-4">
+                      <div className="relative h-11">
+                        {workoutChallengeScale.map(
+                          ({ label, emoji }, index) => (
+                            <div
+                              key={label}
+                              style={{
+                                left: `${(index / lastWorkoutChallengeIndex) * 100}%`,
+                              }}
+                              className={`absolute top-0 -translate-x-1/2 flex flex-col items-center justify-center text-center ${
+                                workoutChallengeBandIndex === index
+                                  ? "text-teal-700 dark:text-teal-300"
+                                  : "text-slate-500 dark:text-slate-400"
+                              }`}
+                            >
+                              <span className="mb-1 text-lg leading-none">
+                                {emoji}
+                              </span>
+                              <span className="text-[10px] font-semibold leading-tight">
+                                {label}
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={workoutRpe}
-                    onChange={(event) =>
-                      setWorkoutRpe(Number(event.target.value))
-                    }
+
+                  <button
+                    onClick={handleSaveWorkoutRpe}
                     disabled={isSavingWorkoutRpe}
-                    className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 dark:bg-slate-700 accent-teal-600 dark:accent-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label="Workout challenge rating from 1 to 10"
-                  />
-                  <div className="mt-4 flex justify-between gap-3 text-xs font-semibold text-slate-600 dark:text-slate-300 sm:text-sm">
-                    <div className="text-left">
-                      <p>😌 So Easy</p>
-                    </div>
-                    <div className="text-center">
-                      <p>🙂     😐 Moderate</p>
-                    </div>
-                    <div className="text-right">
-                      <p>😤     😵‍💫 Very Hard</p>
-                    </div>
-                  </div>
+                    className="w-full rounded-2xl bg-gradient-to-r from-teal-600 to-teal-500 py-3.5 font-bold text-white transition-colors hover:from-teal-700 hover:to-teal-600 disabled:cursor-not-allowed disabled:opacity-50 dark:from-teal-500 dark:to-teal-400 dark:hover:from-teal-400 dark:hover:to-teal-300"
+                  >
+                    {isSavingWorkoutRpe
+                      ? "Saving..."
+                      : "Save Rating and Finish"}
+                  </button>
                 </div>
-
-                <button
-                  onClick={handleSaveWorkoutRpe}
-                  disabled={isSavingWorkoutRpe}
-                  className="mt-8 w-full rounded-2xl bg-gradient-to-r from-teal-600 to-teal-500 dark:from-teal-500 dark:to-teal-400 py-3 font-bold text-white transition-colors hover:from-teal-700 hover:to-teal-600 dark:hover:from-teal-400 dark:hover:to-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSavingWorkoutRpe ? "Saving..." : "Save Rating & Finish"}
-                </button>
               </div>
             </div>
           )}
-
           {/* Exit Confirmation Modal */}
           {showExitConfirmation && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

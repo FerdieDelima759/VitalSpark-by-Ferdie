@@ -10,7 +10,7 @@ import React, {
   ReactNode,
 } from "react";
 import { supabase } from "@/lib/api/supabase";
-import { generateExerciseImage } from "@/lib/gemini";
+import { generateExerciseImage, isImageQuotaExceededError } from "@/lib/gemini";
 import { getUserSessionData } from "@/utils/sessionStorage";
 import type { UserExerciseDetails } from "@/types/UserWorkout";
 
@@ -23,7 +23,6 @@ export interface BackgroundImageGenExercise {
   name: string;
   imageSlug: string;
   section: string;
-  safetyCue: string | null;
   status:
     | "pending"
     | "checking"
@@ -186,6 +185,33 @@ const fetchPlanExerciseImageStatus = async (
   } catch (err) {
     log.warn("is_image_generated check failed");
     return { hasRecords: false, shouldProcess: true };
+  }
+};
+
+const fetchPlanExerciseDescription = async (
+  imagePath: string,
+): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from("user_workout_plan_exercises")
+      .select("description")
+      .eq("image_path", imagePath)
+      .not("description", "is", null)
+      .limit(1);
+
+    if (error) {
+      log.warn(`Failed to read description: ${error.message}`);
+      return null;
+    }
+
+    const description = data?.[0]?.description;
+    if (typeof description !== "string") return null;
+
+    const trimmed = description.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    log.warn("description read failed");
+    return null;
   }
 };
 
@@ -383,6 +409,7 @@ export function BackgroundImageGenerationProvider({
     let consecutiveErrors = 0;
     let processed = 0;
     const gender = userGenderRef.current;
+    let quotaExceeded = false;
 
     while (!isPausedRef.current && consecutiveErrors < MAX_CONSECUTIVE_ERRORS) {
       const currentExercises = exercisesRef.current;
@@ -396,7 +423,6 @@ export function BackgroundImageGenerationProvider({
         id: exerciseId,
         imageSlug,
         name: exerciseName,
-        safetyCue,
       } = nextExercise;
       processed++;
 
@@ -431,8 +457,19 @@ export function BackgroundImageGenerationProvider({
         log.progress(processed, totalPending, exerciseName, "generating...");
         updateExerciseStatus(exerciseId, "generating");
 
-        const description =
-          safetyCue || `Performing ${exerciseName} with proper form`;
+        const description = await fetchPlanExerciseDescription(imagePath);
+        if (!description) {
+          updateExerciseStatus(exerciseId, "failed", {
+            error:
+              "Missing description in user_workout_plan_exercises.description",
+          });
+          consecutiveErrors++;
+          await new Promise((resolve) =>
+            setTimeout(resolve, GENERATE_DELAY_MS),
+          );
+          continue;
+        }
+
         const result = await generateExerciseImage(
           exerciseName,
           description,
@@ -449,6 +486,14 @@ export function BackgroundImageGenerationProvider({
           );
           updateExerciseStatus(exerciseId, "failed", { error: result.error });
           consecutiveErrors++;
+          if (isImageQuotaExceededError(result.error)) {
+            quotaExceeded = true;
+            isPausedRef.current = true;
+            log.warn("Quota reached. Pausing background image generation.");
+          }
+          if (quotaExceeded) {
+            break;
+          }
           await new Promise((resolve) =>
             setTimeout(resolve, GENERATE_DELAY_MS),
           );
@@ -486,8 +531,20 @@ export function BackgroundImageGenerationProvider({
         log.error(`${exerciseName} error`, err);
         updateExerciseStatus(exerciseId, "failed", { error: err?.message });
         consecutiveErrors++;
+        if (isImageQuotaExceededError(err?.message)) {
+          quotaExceeded = true;
+          isPausedRef.current = true;
+          log.warn("Quota reached. Pausing background image generation.");
+        }
+        if (quotaExceeded) {
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, GENERATE_DELAY_MS));
       }
+    }
+
+    if (quotaExceeded) {
+      log.warn("Background image generation paused until Gemini quota resets.");
     }
 
     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
@@ -553,7 +610,6 @@ export function BackgroundImageGenerationProvider({
           name: ex.name,
           imageSlug: ex.image_slug!,
           section: ex.section || "main",
-          safetyCue: ex.safety_cue,
           status: "pending" as const,
         }));
 

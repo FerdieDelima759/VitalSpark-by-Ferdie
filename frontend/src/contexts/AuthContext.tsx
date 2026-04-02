@@ -40,9 +40,9 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const AUTH_INIT_TIMEOUT_MS = 8000;
-const AUTH_INIT_HARD_TIMEOUT_MS = 12000;
-const SIGN_OUT_TIMEOUT_MS = 4000;
+const AUTH_INIT_TIMEOUT_MS = 20000;
+const AUTH_INIT_HARD_TIMEOUT_MS = 30000;
+const SIGN_OUT_TIMEOUT_MS = 10000;
 const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const LAST_ACTIVITY_KEY = "vs:last-activity-ts";
 const ACTIVITY_WRITE_THROTTLE_MS = 10000;

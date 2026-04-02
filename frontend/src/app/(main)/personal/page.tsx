@@ -172,6 +172,27 @@ const uploadImageToStorage = async (
   }
 };
 
+const fetchPlanExerciseDescriptionByPath = async (
+  imagePath: string,
+): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from("user_workout_plan_exercises")
+      .select("description")
+      .eq("image_path", imagePath)
+      .not("description", "is", null)
+      .limit(1);
+
+    if (error) return null;
+    const description = data?.[0]?.description;
+    if (typeof description !== "string") return null;
+    const trimmed = description.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
+};
+
 // ============================================================================
 // IMAGE GENERATION STATE is managed by ImageGenerationContext (background only).
 // ============================================================================
@@ -362,7 +383,7 @@ export default function PersonalPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { fetchUserProfile } = useUserData();
-  const { userProfile: userContextProfile } = useUserContext();
+  const { userProfile: userContextProfile, refreshUserData } = useUserContext();
   const { showPlanDialog } = usePlansContext();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(
     userContextProfile ?? null,
@@ -527,10 +548,125 @@ export default function PersonalPage() {
     setIsDarkTheme(nextTheme === "dark");
   }, [applyThemeBackground]);
 
-  const handleRefreshPage = useCallback(() => {
+  const handleRefreshPage = useCallback(async () => {
+    if (isRefreshingPage) return;
     setIsRefreshingPage(true);
-    window.location.reload();
-  }, []);
+
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("coach_workout_plans_cache");
+        if (user?.id) {
+          localStorage.removeItem(`my_workout_plans_cache_${user.id}`);
+        }
+      }
+
+      const tasks: Promise<void>[] = [];
+
+      tasks.push(
+        (async () => {
+          setIsLoadingCoachPlans(true);
+          try {
+            const result = await fetchCoachWorkoutPlans();
+            if (result.success && result.data) {
+              const { supabase } = await import("@/lib/api/supabase");
+              const { data: tagsData } = await supabase
+                .from("workout_tags")
+                .select("*")
+                .order("name", { ascending: true });
+
+              const plansWithTags = await Promise.all(
+                result.data.map(async (plan) => {
+                  const { data: planTagsData } = await supabase
+                    .from("coach_workout_plan_tags")
+                    .select("tag_id")
+                    .eq("plan_id", plan.id);
+
+                  const tagIds = planTagsData?.map((pt) => pt.tag_id) || [];
+                  const tags = (tagsData || []).filter((tag) =>
+                    tagIds.includes(tag.id),
+                  );
+
+                  return { ...plan, tags };
+                }),
+              );
+
+              setCoachWorkoutPlans(plansWithTags);
+
+              if (typeof window !== "undefined") {
+                localStorage.setItem(
+                  "coach_workout_plans_cache",
+                  JSON.stringify({
+                    data: plansWithTags,
+                    timestamp: Date.now(),
+                  }),
+                );
+              }
+            }
+          } catch (error) {
+            console.error("Error refreshing coach workout plans:", error);
+          } finally {
+            setIsLoadingCoachPlans(false);
+          }
+        })(),
+      );
+
+      if (user?.id) {
+        tasks.push(
+          (async () => {
+            try {
+              await refreshUserData();
+            } catch (error) {
+              console.error("Error refreshing user context:", error);
+            }
+          })(),
+        );
+
+        tasks.push(
+          (async () => {
+            setIsLoadingProfile(true);
+            try {
+              const result = await fetchUserProfile(user.id);
+              if (result.success && result.data) {
+                setUserProfile(result.data);
+              }
+            } catch (error) {
+              console.error("Error refreshing user profile:", error);
+            } finally {
+              setIsLoadingProfile(false);
+            }
+          })(),
+        );
+
+        tasks.push(
+          (async () => {
+            setIsLoadingMyPlans(true);
+            try {
+              const result = await fetchUserWorkoutPlans(user.id);
+              if (result.success && result.data) {
+                updateMyWorkoutPlansCache(result.data, user.id);
+              }
+            } catch (error) {
+              console.error("Error refreshing user workout plans:", error);
+            } finally {
+              setIsLoadingMyPlans(false);
+            }
+          })(),
+        );
+      }
+
+      await Promise.all(tasks);
+    } finally {
+      setIsRefreshingPage(false);
+    }
+  }, [
+    isRefreshingPage,
+    user?.id,
+    fetchCoachWorkoutPlans,
+    fetchUserProfile,
+    fetchUserWorkoutPlans,
+    refreshUserData,
+    updateMyWorkoutPlansCache,
+  ]);
 
   // Get user's plan tier
   const getUserPlanTier = (): "free" | "pro" | "premium" => {
@@ -1028,6 +1164,7 @@ export default function PersonalPage() {
     exerciseName: string,
     exerciseDescription: string,
   ) => {
+    void exerciseDescription;
     if (!userProfile?.gender) {
       aiWarn("Cannot generate image: user gender not available");
       return;
@@ -1041,6 +1178,7 @@ export default function PersonalPage() {
 
     const imageKey = `${dayName}-${section}-${index}`;
     const imageSlug = createImageSlug(section, exerciseName);
+    const storageUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${gender}/${imageSlug}.png`;
 
     aiLog(` [Regenerate] Starting: ${exerciseName}`);
     aiLog(`     Section: ${section}  ${mapSectionKeyToStorage(section)}`);
@@ -1050,9 +1188,18 @@ export default function PersonalPage() {
     aiLog(`     Generating image via context...`);
 
     try {
+      const descriptionFromPlan =
+        await fetchPlanExerciseDescriptionByPath(storageUrl);
+      if (!descriptionFromPlan) {
+        aiWarn(
+          "     Missing description in user_workout_plan_exercises.description",
+        );
+        return;
+      }
+
       const result = await generateExerciseImage(
         exerciseName,
-        exerciseDescription,
+        descriptionFromPlan,
         gender,
       );
 
@@ -1212,7 +1359,14 @@ export default function PersonalPage() {
 
         try {
           const exerciseDescription =
-            exercise.description || exercise.safety_cue || "A fitness exercise";
+            await fetchPlanExerciseDescriptionByPath(storageUrl);
+          if (!exerciseDescription) {
+            failedCount++;
+            aiWarn(
+              `${progress}  Missing description in user_workout_plan_exercises.description`,
+            );
+            continue;
+          }
 
           // Step 1: Generate the image
           const result = await generateExerciseImage(
@@ -1461,21 +1615,28 @@ export default function PersonalPage() {
 
   const expectedDayNames = useMemo(() => {
     if (!workoutPlanJSON?.days) return [];
-    const dayOrder = [
-      "monday",
-      "tuesday",
-      "wednesday",
-      "thursday",
-      "friday",
-      "saturday",
-      "sunday",
-    ] as const;
-    type DayName = (typeof dayOrder)[number];
 
-    return dayOrder.filter((dayName) => {
-      const day = workoutPlanJSON.days?.[dayName as DayName];
-      return day?.title?.trim() && day?.focus?.trim();
-    });
+    const dayEntries = Object.entries(
+      workoutPlanJSON.days as Record<
+        string,
+        { title?: string; focus?: string } | undefined
+      >,
+    );
+
+    const completeDayNames = dayEntries
+      .filter(
+        ([, day]) => Boolean(day?.title?.trim()) && Boolean(day?.focus?.trim()),
+      )
+      .map(([dayName]) => dayName);
+
+    if (completeDayNames.length > 0) {
+      return completeDayNames;
+    }
+
+    // Fallback for non-standard model output (e.g., 14-day variants with custom keys).
+    return dayEntries
+      .filter(([, day]) => Boolean(day))
+      .map(([dayName]) => dayName);
   }, [workoutPlanJSON]);
 
   const allDaysGenerated =
@@ -1527,9 +1688,26 @@ export default function PersonalPage() {
       autoGenerationStartedRef.current = true;
 
       // Get ordered list of days
+      const dayLookup = workoutPlanJSON.days as Record<
+        string,
+        { title?: string; focus?: string } | undefined
+      >;
       const daysWithData = expectedDayNames
-        .map((dayName) => [dayName, workoutPlanJSON.days?.[dayName]] as const)
-        .filter(([_, day]) => day?.title?.trim() && day?.focus?.trim());
+        .map((dayName) => {
+          const day = dayLookup[dayName];
+          if (!day) return null;
+          return {
+            dayName,
+            title: day.title?.trim() || formatTitleCase(dayName),
+            focus: day.focus?.trim() || "General fitness",
+          };
+        })
+        .filter(
+          (
+            item,
+          ): item is { dayName: string; title: string; focus: string } =>
+            Boolean(item),
+        );
 
       // Sequentially generate exercises for each day
       const generateAllDays = async () => {
@@ -1544,7 +1722,7 @@ export default function PersonalPage() {
             const current = queue[index];
             index += 1;
             if (!current) break;
-            const [dayName, day] = current;
+            const { dayName, title, focus } = current;
 
             // Skip if already generated (check both ref and current state)
             if (
@@ -1558,8 +1736,8 @@ export default function PersonalPage() {
             aiLog(` Auto-generating exercises for ${dayName}...`);
             const success = await handleDayWorkoutGenerate(
               dayName,
-              day.title,
-              day.focus,
+              title,
+              focus,
             );
 
             if (success) {
@@ -3328,13 +3506,13 @@ export default function PersonalPage() {
         <Dialog
           visible={showDurationDialog}
           onDismiss={() => setShowDurationDialog(false)}
-          maxWidth="400px"
+          maxWidth="clamp(18rem, 30vw, 26rem)"
         >
-          <div className="p-6 text-slate-900 dark:text-slate-100">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-slate-100 mb-2 text-center">
+          <div className="p-4 xl:p-6 text-slate-900 dark:text-slate-100">
+            <h2 className="text-[clamp(0.95rem,1vw,1.125rem)] font-bold text-gray-800 dark:text-slate-100 mb-2 text-center">
               Choose Plan Duration
             </h2>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 text-center">
+            <p className="text-[clamp(0.7rem,0.75vw,0.85rem)] text-gray-500 dark:text-slate-400 mb-6 text-center">
               How long would you like your workout plan to be?
             </p>
             <div className="flex flex-col gap-3">
@@ -3361,10 +3539,10 @@ export default function PersonalPage() {
                   className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/40 transition-all flex items-center justify-between group"
                 >
                   <div className="text-left">
-                    <p className="font-bold text-gray-800 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
+                    <p className="text-[clamp(0.82rem,0.85vw,0.95rem)] font-bold text-gray-800 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
                       {option.label}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300">
+                    <p className="text-[clamp(0.65rem,0.7vw,0.75rem)] text-gray-500 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300">
                       {option.description}
                     </p>
                   </div>
@@ -3378,7 +3556,7 @@ export default function PersonalPage() {
             </div>
             <button
               onClick={() => setShowDurationDialog(false)}
-              className="w-full mt-4 py-2 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+              className="w-full mt-4 py-2 text-[clamp(0.7rem,0.75vw,0.85rem)] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
             >
               Cancel
             </button>
@@ -3388,24 +3566,20 @@ export default function PersonalPage() {
         {/* Generation Progress Dialog */}
         <Dialog
           visible={showGenerationModal}
-          onDismiss={() => {
-            if (!isGeneratingWorkout) {
-              setShowGenerationModal(false);
-            }
-          }}
-          maxWidth="520px"
+          onDismiss={() => setShowGenerationModal(false)}
+          maxWidth="clamp(22rem, 62vw, 72rem)"
         >
-          <div className="p-6 text-slate-900 dark:text-slate-100">
+          <div className="p-4 xl:p-6 text-slate-900 dark:text-slate-100">
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <h2 className="text-xl font-extrabold text-teal-800 dark:text-teal-300">
+                <h2 className="text-[clamp(1rem,1vw,1.2rem)] font-extrabold text-teal-800 dark:text-teal-300 whitespace-nowrap">
                   Generating Your Workout
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1 whitespace-nowrap">
                   This might take a while, please wait.
                 </p>
               </div>
-              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-sm font-bold">
+              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-bold">
                 {generationProgressPercent}%
               </div>
             </div>
@@ -3428,7 +3602,7 @@ export default function PersonalPage() {
                 return (
                   <div
                     key={step.title}
-                    className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition-all ${
+                    className={`flex items-center gap-3 rounded-2xl border px-4 py-2.5 transition-all ${
                       isActive
                         ? "border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30"
                         : isComplete
@@ -3447,19 +3621,19 @@ export default function PersonalPage() {
                     >
                       {isComplete ? "" : index + 1}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <p
                         className={`text-sm font-bold ${
                           isActive
                             ? "text-teal-800 dark:text-teal-300"
-                            : isComplete
+                          : isComplete
                               ? "text-amber-700 dark:text-amber-300"
                               : "text-slate-700 dark:text-slate-200"
-                        }`}
+                        } whitespace-nowrap truncate text-[13px] leading-tight`}
                       >
                         {step.title}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 whitespace-nowrap truncate leading-tight">
                         {step.detail}
                       </p>
                     </div>
@@ -3470,7 +3644,7 @@ export default function PersonalPage() {
 
             {generationSeconds >= generationDurationSeconds &&
               isGeneratingWorkout && (
-                <div className="mt-4 text-[10px] text-amber-600 font-semibold">
+                <div className="mt-4 text-[10px] text-amber-600 font-semibold whitespace-nowrap">
                   Still working on the final touches...
                 </div>
               )}

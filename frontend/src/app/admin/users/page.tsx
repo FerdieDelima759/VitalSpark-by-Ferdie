@@ -5,7 +5,6 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useAdminSupabase } from "@/hooks/useAdminSupabase";
-import Image from "next/image";
 import Loader from "@/components/Loader";
 import Dialog from "@/components/Dialog";
 import Toast, { ToastProps } from "@/components/Toast";
@@ -310,6 +309,12 @@ export default function UsersManagementPage() {
       return;
     }
 
+    const normalizedRole = role.toLowerCase();
+    if (normalizedRole !== "admin" && normalizedRole !== "member") {
+      showToast("error", "Update Failed", "Invalid role selected.");
+      return;
+    }
+
     try {
       setIsUpdatingRole(true);
       setError(null);
@@ -318,7 +323,7 @@ export default function UsersManagementPage() {
       const { error: upsertError } = await adminClient.from("user_role").upsert(
         {
           user_id: userId,
-          role: role,
+          role: normalizedRole,
         },
         {
           onConflict: "user_id",
@@ -331,7 +336,9 @@ export default function UsersManagementPage() {
 
       // Update local state
       setUsers(
-        users.map((u) => (u.id === userId ? { ...u, userRole: role } : u))
+        users.map((u) =>
+          u.id === userId ? { ...u, userRole: normalizedRole } : u
+        )
       );
 
       // Close dropdown
@@ -342,7 +349,7 @@ export default function UsersManagementPage() {
       showToast(
         "success",
         "Role Updated",
-        `User role has been updated to ${role} for ${userEmail}.`
+        `User role has been updated to ${normalizedRole} for ${userEmail}.`
       );
     } catch (err: any) {
       console.error("Error updating role:", err);
@@ -498,50 +505,56 @@ export default function UsersManagementPage() {
                               )}
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">
-                              {user.userRole ? (
-                                <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-md font-medium">
-                                  {user.userRole}
-                                </span>
-                              ) : (
-                                <div className="relative inline-block role-dropdown-container">
-                                  <button
-                                    onClick={() =>
-                                      setEditingRole({
-                                        userId: user.id,
-                                        showDropdown: true,
-                                      })
-                                    }
-                                    disabled={isUpdatingRole}
-                                    className="flex items-center gap-2 px-3 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md font-medium transition-colors disabled:opacity-50"
-                                  >
-                                    <HiPencil className="text-base" />
-                                    Update
-                                  </button>
-                                  {editingRole.userId === user.id &&
-                                    editingRole.showDropdown && (
-                                      <div className="absolute left-0 bottom-full mb-2 bg-white border border-slate-300 rounded-xl shadow-2xl z-[9999] min-w-[140px] overflow-hidden">
-                                        <button
-                                          onClick={() =>
-                                            handleUpdateRole(user.id, "member")
-                                          }
-                                          disabled={isUpdatingRole}
-                                          className="w-full px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-b border-slate-100 last:border-b-0"
-                                        >
-                                          Member
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleUpdateRole(user.id, "admin")
-                                          }
-                                          disabled={isUpdatingRole}
-                                          className="w-full px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                        >
-                                          Admin
-                                        </button>
-                                      </div>
-                                    )}
-                                </div>
-                              )}
+                              <div className="relative inline-flex items-center gap-2 role-dropdown-container">
+                                {user.userRole ? (
+                                  <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-md font-medium">
+                                    {user.userRole}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 italic">
+                                    No role
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() =>
+                                    setEditingRole({
+                                      userId: user.id,
+                                      showDropdown:
+                                        editingRole.userId === user.id
+                                          ? !editingRole.showDropdown
+                                          : true,
+                                    })
+                                  }
+                                  disabled={isUpdatingRole}
+                                  className="flex items-center gap-2 px-3 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md font-medium transition-colors disabled:opacity-50"
+                                >
+                                  <HiPencil className="text-base" />
+                                  Update
+                                </button>
+                                {editingRole.userId === user.id &&
+                                  editingRole.showDropdown && (
+                                    <div className="absolute left-0 top-full mt-2 bg-white border border-slate-300 rounded-xl shadow-2xl z-[9999] min-w-[140px] overflow-hidden">
+                                      <button
+                                        onClick={() =>
+                                          handleUpdateRole(user.id, "member")
+                                        }
+                                        disabled={isUpdatingRole}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-b border-slate-100"
+                                      >
+                                        Member
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          handleUpdateRole(user.id, "admin")
+                                        }
+                                        disabled={isUpdatingRole}
+                                        className="w-full px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                      >
+                                        Admin
+                                      </button>
+                                    </div>
+                                  )}
+                              </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-600">
                               {new Date(user.created_at).toLocaleDateString()}

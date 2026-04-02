@@ -400,7 +400,7 @@ export default function LoginPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") onSignIn();
                 }}
-                className="flex-1 text-slate-900 bg-white outline-none placeholder:text-slate-400"
+                className="flex-1 text-slate-900 bg-white outline-none placeholder:text-slate-400 hide-password-reveal"
                 style={{
                   paddingTop: 12 * scale,
                   paddingBottom: 12 * scale,

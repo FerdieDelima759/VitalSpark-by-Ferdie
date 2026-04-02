@@ -16,6 +16,7 @@ import {
   type DayWorkoutResponse,
   type ExerciseItem,
 } from "@/lib/openai-prompt";
+import type { UserMealPlan } from "@/types/UserMeals";
 import type {
   CreateUserExerciseDetailsPayload,
   CreateUserWorkoutPlanExercisePayload,
@@ -162,6 +163,8 @@ const GENERATION_STEPS = [
 
 const GENERATION_STEP_TIMINGS = [0, 20, 45, 70];
 const GENERATION_DURATION_SECONDS = 90;
+// Local-only testing: bypass day/rest/completion start-workout gating in non-production.
+const BYPASS_START_WORKOUT_DAY_CHECKER = process.env.NODE_ENV !== "production";
 
 const mapSectionNameForPlan = (sectionKey: string): ExerciseSection | null => {
   const sectionMap: Record<string, ExerciseSection> = {
@@ -331,6 +334,7 @@ export default function MyWorkoutDetailsPage() {
   const { getLinkedMealPlanForWorkout } = useMeals();
 
   const [workoutPlan, setWorkoutPlan] = useState<UserWorkoutPlan | null>(null);
+  const [linkedMealPlan, setLinkedMealPlan] = useState<UserMealPlan | null>(null);
   const [mealPlanDialogOpen, setMealPlanDialogOpen] = useState(false);
   const [checkingMealLink, setCheckingMealLink] = useState(false);
   const [weeksData, setWeeksData] = useState<Map<number, WeekData>>(new Map());
@@ -375,6 +379,7 @@ export default function MyWorkoutDetailsPage() {
   const ongoingExerciseFetchesRef = useRef<
     Map<string, Promise<UserWorkoutPlanExerciseWithDetails[]>>
   >(new Map());
+  const selectedDayImagePollInFlightRef = useRef(false);
   const autoGenerationInFlightRef = useRef(false);
   const normalizedGender = useMemo(() => {
     const gender = userProfile?.gender?.toLowerCase().trim() || "male";
@@ -446,6 +451,19 @@ export default function MyWorkoutDetailsPage() {
     [fetchUserWorkoutPlanExercises, preloadExercisesImages],
   );
 
+  const fetchExercisesFresh = useCallback(
+    async (
+      dayPlanId: string,
+    ): Promise<UserWorkoutPlanExerciseWithDetails[]> => {
+      const result = await fetchUserWorkoutPlanExercises(dayPlanId);
+      const exercises = result.success && result.data ? result.data : [];
+      exercisesByDayPlanIdRef.current.set(dayPlanId, exercises);
+      preloadExercisesImages(exercises);
+      return exercises;
+    },
+    [fetchUserWorkoutPlanExercises, preloadExercisesImages],
+  );
+
   const fetchWeeksDataForPlan = useCallback(
     async (targetPlanId: string): Promise<Map<number, WeekData>> => {
       const weeksResult = await fetchAllUserWorkoutWeekPlans(targetPlanId);
@@ -512,6 +530,27 @@ export default function MyWorkoutDetailsPage() {
 
     void loadWorkoutPlanDetails(planId);
   }, [planId, source, loadWorkoutPlanDetails, router]);
+
+  const loadLinkedMealPlan = useCallback(async (): Promise<void> => {
+    if (!planId) {
+      setLinkedMealPlan(null);
+      return;
+    }
+
+    setCheckingMealLink(true);
+    try {
+      const linked = await getLinkedMealPlanForWorkout(planId);
+      setLinkedMealPlan(linked?.mealPlan ?? null);
+    } catch {
+      setLinkedMealPlan(null);
+    } finally {
+      setCheckingMealLink(false);
+    }
+  }, [getLinkedMealPlanForWorkout, planId]);
+
+  useEffect(() => {
+    void loadLinkedMealPlan();
+  }, [loadLinkedMealPlan]);
 
   const maybeAutoGenerateNextWeekForPlan = useCallback(
     async (options?: {
@@ -1120,6 +1159,51 @@ export default function MyWorkoutDetailsPage() {
     fetchExercises();
   }, [selectedDay, weeksData, fetchExercisesWithCache]);
 
+  const selectedDayPlanId = useMemo(() => {
+    if (!selectedDay) return null;
+    const weekData = weeksData.get(selectedDay.week);
+    const dayPlan = weekData?.dayPlans?.find(
+      (d) => d.day?.toLowerCase() === selectedDay.day.toLowerCase(),
+    );
+    return dayPlan?.id || null;
+  }, [selectedDay, weeksData]);
+
+  const hasPendingSelectedDayImages = useMemo(
+    () => selectedDayExercises.some((exercise) => exercise.is_image_generated !== true),
+    [selectedDayExercises],
+  );
+
+  // Poll selected-day exercises every 15s while any image is still not generated.
+  useEffect(() => {
+    if (!selectedDayPlanId || !hasPendingSelectedDayImages) return;
+
+    let isCancelled = false;
+
+    const refreshSelectedDayExercises = async () => {
+      if (isCancelled || selectedDayImagePollInFlightRef.current) return;
+
+      selectedDayImagePollInFlightRef.current = true;
+      try {
+        const freshExercises = await fetchExercisesFresh(selectedDayPlanId);
+        if (isCancelled) return;
+        setSelectedDayExercises(freshExercises);
+      } catch (error) {
+        console.error("Error polling exercise image status:", error);
+      } finally {
+        selectedDayImagePollInFlightRef.current = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshSelectedDayExercises();
+    }, 15000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedDayPlanId, hasPendingSelectedDayImages, fetchExercisesFresh]);
+
   useEffect(() => {
     if (!planId || !user?.id) {
       setCompletedSessionsCount(0);
@@ -1451,7 +1535,10 @@ export default function MyWorkoutDetailsPage() {
   }, [selectedWorkoutDay, workoutDayOrderByKey, completedSessionsCount]);
 
   const resolvedStartDay = useMemo<WorkoutDayRef | null>(() => {
-    if (selectedWorkoutDay && !isSelectedDayLocked) {
+    if (
+      selectedWorkoutDay &&
+      (!isSelectedDayLocked || BYPASS_START_WORKOUT_DAY_CHECKER)
+    ) {
       return selectedWorkoutDay;
     }
     return nextUnlockedWorkoutDay;
@@ -1465,7 +1552,10 @@ export default function MyWorkoutDetailsPage() {
   }, [planId, resolvedStartDay]);
 
   const isStartWorkoutDisabled =
-    !resolvedStartDay || (Boolean(selectedDay) && isSelectedDayLocked);
+    !resolvedStartDay ||
+    (Boolean(selectedDay) &&
+      isSelectedDayLocked &&
+      !BYPASS_START_WORKOUT_DAY_CHECKER);
 
   const todayDayName = useMemo(
     () => new Date().toLocaleDateString("en-US", { weekday: "long" }),
@@ -1486,7 +1576,9 @@ export default function MyWorkoutDetailsPage() {
     return Boolean(todayEntry?.isRestDay);
   }, [activeProgressWeek, getWeekCalendarData, todayDayName]);
 
-  const isStartWorkoutButtonDisabled = isTodayRestDay || isStartWorkoutDisabled;
+  const isStartWorkoutButtonDisabled =
+    (isTodayRestDay && !BYPASS_START_WORKOUT_DAY_CHECKER) ||
+    isStartWorkoutDisabled;
 
   const selectedDayCompletion = useMemo(() => {
     if (!selectedDay) {
@@ -1510,18 +1602,24 @@ export default function MyWorkoutDetailsPage() {
 
   const isSelectedDayCompleted = selectedDayCompletion.isCompleted;
   const finalStartButtonDisabled =
-    isStartWorkoutButtonDisabled || isSelectedDayCompleted;
+    isStartWorkoutButtonDisabled ||
+    (isSelectedDayCompleted && !BYPASS_START_WORKOUT_DAY_CHECKER);
 
-  const handleStartWorkout = useCallback(() => {
-    if (isTodayRestDay) {
+  const handleStartWorkout = useCallback(async () => {
+    if (isTodayRestDay && !BYPASS_START_WORKOUT_DAY_CHECKER) {
       return;
     }
 
-    if (isSelectedDayCompleted) {
+    if (isSelectedDayCompleted && !BYPASS_START_WORKOUT_DAY_CHECKER) {
       return;
     }
 
-    if (selectedDay && isSelectedDayLocked && nextUnlockedWorkoutDay) {
+    if (
+      selectedDay &&
+      isSelectedDayLocked &&
+      nextUnlockedWorkoutDay &&
+      !BYPASS_START_WORKOUT_DAY_CHECKER
+    ) {
       alert(
         `Complete Day ${nextUnlockedWorkoutDay.dayNumber} (${nextUnlockedWorkoutDay.day}) first before starting another day.`,
       );
@@ -1543,15 +1641,20 @@ export default function MyWorkoutDetailsPage() {
   ]);
 
   const startWorkoutLabel = useMemo(() => {
-    if (isTodayRestDay) {
+    if (isTodayRestDay && !BYPASS_START_WORKOUT_DAY_CHECKER) {
       return "Time to take a Rest!";
     }
 
-    if (isSelectedDayCompleted) {
+    if (isSelectedDayCompleted && !BYPASS_START_WORKOUT_DAY_CHECKER) {
       return `You have completed day ${selectedDayCompletion.dayNumber ?? "#"}`;
     }
 
-    if (selectedDay && isSelectedDayLocked && nextUnlockedWorkoutDay) {
+    if (
+      selectedDay &&
+      isSelectedDayLocked &&
+      nextUnlockedWorkoutDay &&
+      !BYPASS_START_WORKOUT_DAY_CHECKER
+    ) {
       return `Complete Day ${nextUnlockedWorkoutDay.dayNumber} (${nextUnlockedWorkoutDay.day}) first`;
     }
 
@@ -2684,7 +2787,9 @@ export default function MyWorkoutDetailsPage() {
                 Attach a meal plan
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                View or link a meal plan for this workout
+                {linkedMealPlan
+                  ? `Connected: ${linkedMealPlan.plan_name || "Meal plan"}`
+                  : "View or link a meal plan for this workout"}
               </p>
             </div>
             <button
@@ -2692,20 +2797,55 @@ export default function MyWorkoutDetailsPage() {
               disabled={checkingMealLink}
               onClick={async () => {
                 if (!planId) return;
+                if (linkedMealPlan) {
+                  router.push(`/meals/workout/plan/${planId}`);
+                  return;
+                }
+
                 setCheckingMealLink(true);
                 const linked = await getLinkedMealPlanForWorkout(planId);
                 setCheckingMealLink(false);
-                if (linked) {
+                if (linked?.mealPlan) {
+                  setLinkedMealPlan(linked.mealPlan);
                   router.push(`/meals/workout/plan/${planId}`);
-                } else {
-                  setMealPlanDialogOpen(true);
+                  return;
                 }
+                setMealPlanDialogOpen(true);
               }}
               className="shrink-0 px-4 py-2.5 bg-teal-600 dark:bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 dark:hover:bg-teal-400 disabled:opacity-60 transition-colors"
             >
               {checkingMealLink ? "Checking..." : "View meal plan"}
             </button>
           </div>
+          {linkedMealPlan && (
+            <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3">
+              <div className="flex items-center gap-3">
+                <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700 shrink-0">
+                  {linkedMealPlan.image_path ? (
+                    <Image
+                      src={linkedMealPlan.image_path}
+                      alt={linkedMealPlan.image_alt || linkedMealPlan.plan_name || "Meal plan"}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center">
+                      <MdRestaurant className="w-6 h-6 text-slate-400 dark:text-slate-500" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                    {linkedMealPlan.plan_name || "Meal plan"}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Duration: {linkedMealPlan.duration_dayss ?? "-"} days
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* No linked meal plan dialog */}
@@ -3495,7 +3635,7 @@ export default function MyWorkoutDetailsPage() {
             }}
             disabled={finalStartButtonDisabled}
             className={`w-full rounded-xl py-3.5 px-6 font-bold text-base shadow-md transition-all flex items-center justify-center gap-3 ${
-              isTodayRestDay
+              isTodayRestDay && !BYPASS_START_WORKOUT_DAY_CHECKER
                 ? "bg-amber-100 dark:bg-amber-900/35 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 cursor-not-allowed"
                 : finalStartButtonDisabled
                   ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
@@ -3522,7 +3662,7 @@ function ExerciseRow({
   formatDuration: (seconds: number) => string;
 }) {
   const imageUrl = exercise.image_path?.trim() || "";
-  const hasImage = imageUrl && imageUrl.trim() !== "";
+  const hasImage = Boolean(imageUrl && exercise.is_image_generated === true);
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md dark:hover:shadow-black/30 transition-all overflow-hidden">

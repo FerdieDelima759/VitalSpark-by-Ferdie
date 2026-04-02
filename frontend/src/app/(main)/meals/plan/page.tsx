@@ -4,12 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  MdAutorenew,
   MdChevronLeft,
+  MdClose,
   MdRestaurant,
   MdRefresh,
+  MdSave,
   MdSchedule,
+  MdSwapHoriz,
 } from "react-icons/md";
 import { HiMoon, HiArrowRightOnRectangle } from "react-icons/hi2";
+import { useAuth } from "@/contexts/AuthContext";
+import { useUserData } from "@/hooks/useUserData";
 import { supabase } from "@/lib/api/supabase";
 import type {
   UserMeal,
@@ -18,6 +24,7 @@ import type {
   UserMealWeeklyDayPlan,
   UserMealWeeklyPlan,
 } from "@/types/UserMeals";
+import type { UserProfile } from "@/types/UserProfile";
 
 type MealWithIngredients = UserMeal & {
   ingredients: UserMealIngredient[];
@@ -26,6 +33,22 @@ type MealWithIngredients = UserMeal & {
 type DayPlanWithMeals = UserMealWeeklyDayPlan & {
   week_number: number | null;
   meals: MealWithIngredients[];
+};
+
+type MealTypeForPrompt = "breakfast" | "lunch" | "dinner" | "snacks";
+
+type RegeneratedIngredientDraft = {
+  measurement: string;
+  item_name: string;
+  price: string;
+};
+
+type RegeneratedMealDraft = {
+  meal_name: string;
+  best_time_to_eat: string;
+  est_cost: number | null;
+  cooking_instructions: string[];
+  ingredients: RegeneratedIngredientDraft[];
 };
 
 const DAY_ORDER = [
@@ -93,6 +116,27 @@ const formatMoney = (value: number | null): string => {
   return `$${value.toFixed(2)}`;
 };
 
+const parseEstimatedCost = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.replace(/[^0-9.-]/g, "");
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeMealTypeForPrompt = (value?: string | null): MealTypeForPrompt => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "breakfast") return "breakfast";
+  if (normalized === "lunch") return "lunch";
+  if (normalized === "dinner") return "dinner";
+  return "snacks";
+};
+
 const formatHoursAway = (minutesAway: number): string => {
   const safeMinutes = Math.max(0, Math.ceil(minutesAway));
   const hours = Math.floor(safeMinutes / 60);
@@ -113,13 +157,31 @@ const getMealTimeBadgeClass = (mealTime?: string | null): string => {
   return "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300";
 };
 
+const compareMealsBySchedule = (
+  mealA: MealWithIngredients,
+  mealB: MealWithIngredients,
+): number => {
+  const timeA = parseClockValue(mealA.best_time_to_eat);
+  const timeB = parseClockValue(mealB.best_time_to_eat);
+  if (timeA !== timeB) return timeA - timeB;
+
+  const mealOrderA = MEAL_TIME_ORDER[mealA.meal_time || ""] ?? 99;
+  const mealOrderB = MEAL_TIME_ORDER[mealB.meal_time || ""] ?? 99;
+  if (mealOrderA !== mealOrderB) return mealOrderA - mealOrderB;
+
+  return (mealA.meal_name || "").localeCompare(mealB.meal_name || "");
+};
+
 export default function MealPlanDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
+  const { fetchUserProfile } = useUserData();
   const planId = searchParams.get("id");
   const workoutPlanId = searchParams.get("workoutPlanId");
 
   const [mealPlan, setMealPlan] = useState<UserMealPlan | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [dayPlans, setDayPlans] = useState<DayPlanWithMeals[]>([]);
   const [activeDayPlanId, setActiveDayPlanId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,6 +190,26 @@ export default function MealPlanDetailPage() {
   const [mealFilter, setMealFilter] = useState<
     "all" | "breakfast" | "lunch" | "dinner" | "snack"
   >("all");
+  const [expandedMealDetails, setExpandedMealDetails] = useState<
+    Record<string, boolean>
+  >({});
+  const [pendingMealDrafts, setPendingMealDrafts] = useState<
+    Record<string, RegeneratedMealDraft>
+  >({});
+  const [regeneratingMealIds, setRegeneratingMealIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [savingMealIds, setSavingMealIds] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [mealActionErrors, setMealActionErrors] = useState<
+    Record<string, string>
+  >({});
+  const [activeSwapMealId, setActiveSwapMealId] = useState<string | null>(null);
+  const [swapTargetDayPlanId, setSwapTargetDayPlanId] = useState("");
+  const [swapTargetMealId, setSwapTargetMealId] = useState("");
+  const [swapMealError, setSwapMealError] = useState<string | null>(null);
+  const [isSwappingMeal, setIsSwappingMeal] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
 
   const backHref = workoutPlanId
@@ -189,11 +271,505 @@ export default function MealPlanDetailPage() {
     };
   }, [activeDayPlan, clockNow]);
 
+  const loadUserProfile = useCallback(async () => {
+    if (!user?.id) {
+      setUserProfile(null);
+      return;
+    }
+
+    try {
+      const result = await fetchUserProfile(user.id);
+      if (result.success && result.data) {
+        setUserProfile(result.data);
+      }
+    } catch (error) {
+      console.warn("Unable to load user profile for meal regeneration:", error);
+    }
+  }, [fetchUserProfile, user?.id]);
+
+  useEffect(() => {
+    void loadUserProfile();
+  }, [loadUserProfile]);
+
+  useEffect(() => {
+    setActiveSwapMealId(null);
+    setSwapTargetDayPlanId("");
+    setSwapTargetMealId("");
+    setSwapMealError(null);
+  }, [activeDayPlanId]);
+
+  const getDayTotalEstimatedCost = useCallback((dayPlan: DayPlanWithMeals) => {
+    return dayPlan.meals.reduce((sum, meal) => sum + (meal.est_cost ?? 0), 0);
+  }, []);
+
+  const buildOriginalMealJson = useCallback((dayPlan: DayPlanWithMeals) => {
+    const groupedMeals: {
+      breakfast: Record<string, unknown> | null;
+      lunch: Record<string, unknown> | null;
+      dinner: Record<string, unknown> | null;
+      snacks: Record<string, unknown>[];
+    } = {
+      breakfast: null,
+      lunch: null,
+      dinner: null,
+      snacks: [],
+    };
+
+    dayPlan.meals.forEach((meal) => {
+      const mealPayload = {
+        id: meal.id,
+        meal_time: meal.meal_time ?? null,
+        meal_name: meal.meal_name ?? null,
+        best_time_to_eat: meal.best_time_to_eat ?? null,
+        est_cost: meal.est_cost ?? null,
+        cooking_instructions: meal.cooking_instructions ?? [],
+        ingredients: meal.ingredients.map((ingredient) => ({
+          item_name: ingredient.item_name ?? null,
+          measurement: ingredient.measurement ?? null,
+          price: ingredient.price ?? null,
+        })),
+      };
+
+      const mealType = normalizeMealTypeForPrompt(meal.meal_time);
+      if (mealType === "snacks") {
+        groupedMeals.snacks.push(mealPayload);
+        return;
+      }
+
+      if (mealType === "breakfast") {
+        groupedMeals.breakfast = mealPayload;
+      }
+      if (mealType === "lunch") {
+        groupedMeals.lunch = mealPayload;
+      }
+      if (mealType === "dinner") {
+        groupedMeals.dinner = mealPayload;
+      }
+    });
+
+    return JSON.stringify(groupedMeals);
+  }, []);
+
+  const handleRegenerateMeal = useCallback(
+    async (meal: MealWithIngredients, dayPlan: DayPlanWithMeals) => {
+      const mealType = normalizeMealTypeForPrompt(meal.meal_time);
+      const allergies =
+        userProfile?.health_conditions && userProfile.health_conditions.length > 0
+          ? userProfile.health_conditions.join(", ")
+          : "none";
+      const totalDayCost = getDayTotalEstimatedCost(dayPlan);
+
+      setMealActionErrors((prev) => {
+        const next = { ...prev };
+        delete next[meal.id];
+        return next;
+      });
+      setRegeneratingMealIds((prev) => ({ ...prev, [meal.id]: true }));
+
+      try {
+        const response = await fetch("/api/regenerate-meal", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            variables: {
+              meal_type: mealType,
+              gender: userProfile?.gender ?? "not specified",
+              goal: userProfile?.fitness_goal ?? "not specified",
+              dietary_preference:
+                userProfile?.dietary_preference ?? "not specified",
+              allergies,
+              daily_budget: dayPlan.daily_budget ?? "not specified",
+              current_cost: formatMoney(totalDayCost),
+              original_meal_json: buildOriginalMealJson(dayPlan),
+            },
+          }),
+        });
+
+        const payload = (await response.json()) as {
+          error?: string;
+          meal?: {
+            meal_name?: string;
+            best_time_to_eat?: string;
+            estimated_meal_cost?: string;
+            cooking_instructions?: string[];
+            ingredients?: Array<{
+              item_name?: string;
+              measurement?: string;
+              price?: string;
+            }>;
+          };
+        };
+
+        if (!response.ok || !payload?.meal) {
+          throw new Error(payload?.error || "Failed to regenerate meal.");
+        }
+
+        const regeneratedMeal = payload.meal;
+        const draft: RegeneratedMealDraft = {
+          meal_name: (regeneratedMeal.meal_name || meal.meal_name || "Meal").trim(),
+          best_time_to_eat:
+            (regeneratedMeal.best_time_to_eat || meal.best_time_to_eat || "Time not set").trim(),
+          est_cost: parseEstimatedCost(
+            regeneratedMeal.estimated_meal_cost ?? meal.est_cost,
+          ),
+          cooking_instructions: Array.isArray(regeneratedMeal.cooking_instructions)
+            ? regeneratedMeal.cooking_instructions
+                .map((instruction) => instruction.trim())
+                .filter((instruction) => instruction.length > 0)
+            : [],
+          ingredients: Array.isArray(regeneratedMeal.ingredients)
+            ? regeneratedMeal.ingredients
+                .map((ingredient) => ({
+                  item_name: (ingredient.item_name ?? "").trim(),
+                  measurement: (ingredient.measurement ?? "-").trim() || "-",
+                  price: (ingredient.price ?? "-").trim() || "-",
+                }))
+                .filter((ingredient) => ingredient.item_name.length > 0)
+            : [],
+        };
+
+        setPendingMealDrafts((prev) => ({
+          ...prev,
+          [meal.id]: draft,
+        }));
+      } catch (error: unknown) {
+        setMealActionErrors((prev) => ({
+          ...prev,
+          [meal.id]:
+            error instanceof Error ? error.message : "Failed to regenerate meal.",
+        }));
+      } finally {
+        setRegeneratingMealIds((prev) => ({
+          ...prev,
+          [meal.id]: false,
+        }));
+      }
+    },
+    [buildOriginalMealJson, getDayTotalEstimatedCost, userProfile],
+  );
+
+  const handleCancelRegeneratedMeal = useCallback((mealId: string) => {
+    setPendingMealDrafts((prev) => {
+      const next = { ...prev };
+      delete next[mealId];
+      return next;
+    });
+    setMealActionErrors((prev) => {
+      const next = { ...prev };
+      delete next[mealId];
+      return next;
+    });
+  }, []);
+
+  const handleSaveRegeneratedMeal = useCallback(
+    async (meal: MealWithIngredients) => {
+      const draft = pendingMealDrafts[meal.id];
+      if (!draft) return;
+
+      setMealActionErrors((prev) => {
+        const next = { ...prev };
+        delete next[meal.id];
+        return next;
+      });
+      setSavingMealIds((prev) => ({ ...prev, [meal.id]: true }));
+
+      try {
+        const updatePayload = {
+          meal_name: draft.meal_name || meal.meal_name || null,
+          best_time_to_eat: draft.best_time_to_eat || meal.best_time_to_eat || null,
+          est_cost: draft.est_cost,
+          cooking_instructions:
+            draft.cooking_instructions.length > 0
+              ? draft.cooking_instructions
+              : null,
+        };
+
+        const { error: updateMealError } = await supabase
+          .from("user_meals")
+          .update(updatePayload)
+          .eq("id", meal.id);
+
+        if (updateMealError) {
+          throw new Error(updateMealError.message || "Failed to update meal.");
+        }
+
+        const { data: existingLinksData, error: existingLinksError } =
+          await supabase
+            .from("user_meal_ingredients_link")
+            .select("ingredient_id")
+            .eq("meal_id", meal.id);
+
+        if (existingLinksError) {
+          throw new Error(
+            existingLinksError.message || "Failed to load existing ingredient links.",
+          );
+        }
+
+        const previousIngredientIds = Array.from(
+          new Set(
+            (existingLinksData ?? [])
+              .map((row) => row.ingredient_id)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        );
+
+        const { error: deleteLinksError } = await supabase
+          .from("user_meal_ingredients_link")
+          .delete()
+          .eq("meal_id", meal.id);
+
+        if (deleteLinksError) {
+          throw new Error(
+            deleteLinksError.message || "Failed to reset ingredient links.",
+          );
+        }
+
+        if (previousIngredientIds.length > 0) {
+          const { data: remainingLinksData, error: remainingLinksError } =
+            await supabase
+              .from("user_meal_ingredients_link")
+              .select("ingredient_id")
+              .in("ingredient_id", previousIngredientIds);
+
+          if (remainingLinksError) {
+            throw new Error(
+              remainingLinksError.message ||
+                "Failed to validate remaining ingredient links.",
+            );
+          }
+
+          const stillLinkedIngredientIds = new Set(
+            (remainingLinksData ?? [])
+              .map((row) => row.ingredient_id)
+              .filter((id): id is string => Boolean(id)),
+          );
+          const removableIngredientIds = previousIngredientIds.filter(
+            (ingredientId) => !stillLinkedIngredientIds.has(ingredientId),
+          );
+
+          if (removableIngredientIds.length > 0) {
+            const { error: deleteIngredientsError } = await supabase
+              .from("user_meals_ingredients")
+              .delete()
+              .in("id", removableIngredientIds);
+
+            if (deleteIngredientsError) {
+              throw new Error(
+                deleteIngredientsError.message ||
+                  "Failed to remove previous ingredients.",
+              );
+            }
+          }
+        }
+
+        let insertedIngredients: UserMealIngredient[] = [];
+        const ingredientInsertPayload = draft.ingredients
+          .map((ingredient) => ({
+            item_name: ingredient.item_name || null,
+            measurement: ingredient.measurement || null,
+            price: ingredient.price || null,
+          }))
+          .filter(
+            (ingredient) =>
+              !!ingredient.item_name || !!ingredient.measurement || !!ingredient.price,
+          );
+
+        if (ingredientInsertPayload.length > 0) {
+          const { data: insertedIngredientsData, error: insertIngredientsError } =
+            await supabase
+              .from("user_meals_ingredients")
+              .insert(ingredientInsertPayload)
+              .select("*");
+
+          if (insertIngredientsError) {
+            throw new Error(
+              insertIngredientsError.message || "Failed to save regenerated ingredients.",
+            );
+          }
+
+          insertedIngredients = (insertedIngredientsData ?? []) as UserMealIngredient[];
+
+          if (insertedIngredients.length > 0) {
+            const ingredientLinksPayload = insertedIngredients.map((ingredient) => ({
+              meal_id: meal.id,
+              ingredient_id: ingredient.id,
+            }));
+
+            const { error: insertIngredientLinksError } = await supabase
+              .from("user_meal_ingredients_link")
+              .insert(ingredientLinksPayload);
+
+            if (insertIngredientLinksError) {
+              throw new Error(
+                insertIngredientLinksError.message ||
+                  "Failed to save regenerated ingredient links.",
+              );
+            }
+          }
+        }
+
+        setDayPlans((prev) =>
+          prev.map((dayPlan) => ({
+            ...dayPlan,
+            meals: dayPlan.meals.map((existingMeal) =>
+              existingMeal.id === meal.id
+                ? {
+                    ...existingMeal,
+                    meal_name: updatePayload.meal_name,
+                    best_time_to_eat: updatePayload.best_time_to_eat,
+                    est_cost: updatePayload.est_cost,
+                    cooking_instructions: updatePayload.cooking_instructions,
+                    ingredients: insertedIngredients,
+                  }
+                : existingMeal,
+            ),
+          })),
+        );
+
+        setPendingMealDrafts((prev) => {
+          const next = { ...prev };
+          delete next[meal.id];
+          return next;
+        });
+      } catch (error: unknown) {
+        setMealActionErrors((prev) => ({
+          ...prev,
+          [meal.id]:
+            error instanceof Error
+              ? error.message
+              : "Failed to save regenerated meal.",
+        }));
+      } finally {
+        setSavingMealIds((prev) => ({ ...prev, [meal.id]: false }));
+      }
+    },
+    [pendingMealDrafts],
+  );
+
+  const handleConfirmSwapMeal = useCallback(
+    async (sourceMeal: MealWithIngredients, sourceDayPlanId: string) => {
+      if (!swapTargetDayPlanId || !swapTargetMealId) {
+        setSwapMealError("Please choose a target day and meal to swap.");
+        return;
+      }
+
+      if (swapTargetDayPlanId === sourceDayPlanId) {
+        setSwapMealError("Please choose a different day to swap with.");
+        return;
+      }
+
+      const targetDayPlan = dayPlans.find(
+        (dayPlan) => dayPlan.id === swapTargetDayPlanId,
+      );
+      const targetMeal = targetDayPlan?.meals.find(
+        (meal) => meal.id === swapTargetMealId,
+      );
+
+      if (!targetDayPlan || !targetMeal) {
+        setSwapMealError("Selected target meal no longer exists. Please retry.");
+        return;
+      }
+
+      setSwapMealError(null);
+      setIsSwappingMeal(true);
+
+      try {
+        const { error: moveSourceMealError } = await supabase
+          .from("user_meals")
+          .update({ meal_day_plan_id: swapTargetDayPlanId })
+          .eq("id", sourceMeal.id);
+
+        if (moveSourceMealError) {
+          throw new Error(moveSourceMealError.message || "Failed to move source meal.");
+        }
+
+        const { error: moveTargetMealError } = await supabase
+          .from("user_meals")
+          .update({ meal_day_plan_id: sourceDayPlanId })
+          .eq("id", targetMeal.id);
+
+        if (moveTargetMealError) {
+          await supabase
+            .from("user_meals")
+            .update({ meal_day_plan_id: sourceDayPlanId })
+            .eq("id", sourceMeal.id);
+          throw new Error(moveTargetMealError.message || "Failed to move target meal.");
+        }
+
+        setDayPlans((prev) => {
+          const sourceDayPlan = prev.find((dayPlan) => dayPlan.id === sourceDayPlanId);
+          const targetDayPlanLocal = prev.find(
+            (dayPlan) => dayPlan.id === swapTargetDayPlanId,
+          );
+          if (!sourceDayPlan || !targetDayPlanLocal) {
+            return prev;
+          }
+
+          const sourceMealLocal = sourceDayPlan.meals.find(
+            (meal) => meal.id === sourceMeal.id,
+          );
+          const targetMealLocal = targetDayPlanLocal.meals.find(
+            (meal) => meal.id === targetMeal.id,
+          );
+          if (!sourceMealLocal || !targetMealLocal) {
+            return prev;
+          }
+
+          const nextSourceMeals = sourceDayPlan.meals
+            .filter((meal) => meal.id !== sourceMealLocal.id)
+            .concat({
+              ...targetMealLocal,
+              meal_day_plan_id: sourceDayPlanId,
+            })
+            .sort(compareMealsBySchedule);
+
+          const nextTargetMeals = targetDayPlanLocal.meals
+            .filter((meal) => meal.id !== targetMealLocal.id)
+            .concat({
+              ...sourceMealLocal,
+              meal_day_plan_id: swapTargetDayPlanId,
+            })
+            .sort(compareMealsBySchedule);
+
+          return prev.map((dayPlan) => {
+            if (dayPlan.id === sourceDayPlanId) {
+              return { ...dayPlan, meals: nextSourceMeals };
+            }
+            if (dayPlan.id === swapTargetDayPlanId) {
+              return { ...dayPlan, meals: nextTargetMeals };
+            }
+            return dayPlan;
+          });
+        });
+
+        setActiveSwapMealId(null);
+        setSwapTargetDayPlanId("");
+        setSwapTargetMealId("");
+        setSwapMealError(null);
+      } catch (error: unknown) {
+        setSwapMealError(
+          error instanceof Error ? error.message : "Failed to swap meals.",
+        );
+      } finally {
+        setIsSwappingMeal(false);
+      }
+    },
+    [dayPlans, swapTargetDayPlanId, swapTargetMealId],
+  );
+
   const loadMealPlanDetails = useCallback(async () => {
     if (!planId) return;
 
     setErrorMessage(null);
     setIsLoading(true);
+    setPendingMealDrafts({});
+    setMealActionErrors({});
+    setActiveSwapMealId(null);
+    setSwapTargetDayPlanId("");
+    setSwapTargetMealId("");
+    setSwapMealError(null);
 
     try {
       const { data: planData, error: planError } = await supabase
@@ -359,19 +935,7 @@ export default function MealPlanDetailPage() {
       const composedDayPlans: DayPlanWithMeals[] = sortedDayPlans.map(
         (dayPlan) => {
           const mealsForDay = (mealsByDayPlanId.get(dayPlan.id) ?? []).sort(
-            (mealA, mealB) => {
-              const timeA = parseClockValue(mealA.best_time_to_eat);
-              const timeB = parseClockValue(mealB.best_time_to_eat);
-              if (timeA !== timeB) return timeA - timeB;
-
-              const mealOrderA = MEAL_TIME_ORDER[mealA.meal_time || ""] ?? 99;
-              const mealOrderB = MEAL_TIME_ORDER[mealB.meal_time || ""] ?? 99;
-              if (mealOrderA !== mealOrderB) return mealOrderA - mealOrderB;
-
-              return (mealA.meal_name || "").localeCompare(
-                mealB.meal_name || "",
-              );
-            },
+            compareMealsBySchedule,
           );
 
           return {
@@ -713,91 +1277,447 @@ export default function MealPlanDetailPage() {
                             }
                             return key === mealFilter;
                           })
-                          .map((meal) => (
-                            <div
-                              key={meal.id}
-                              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 shadow-sm dark:shadow-black/30"
-                            >
-                              <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
-                                <div>
-                                  <p
-                                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${getMealTimeBadgeClass(meal.meal_time)}`}
-                                  >
-                                    {meal.meal_time || "Meal"}
-                                  </p>
-                                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
-                                    {meal.meal_name || "Unnamed Meal"}
-                                  </h3>
-                                </div>
-                                <div className="text-right">
-                                  <p className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                    <MdSchedule className="w-3.5 h-3.5" />
-                                    {meal.best_time_to_eat || "Time not set"}
-                                  </p>
-                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mt-1">
-                                    Est. Cost: {formatMoney(meal.est_cost)}
-                                  </p>
-                                </div>
-                              </div>
+                          .map((meal) => {
+                            const pendingDraft = pendingMealDrafts[meal.id];
+                            const isRegenerating = Boolean(regeneratingMealIds[meal.id]);
+                            const isSavingMeal = Boolean(savingMealIds[meal.id]);
+                            const mealActionError = mealActionErrors[meal.id];
 
-                              <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-3">
-                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
-                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
-                                    Ingredients
-                                  </p>
-                                  {meal.ingredients.length === 0 ? (
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                      No ingredient data.
+                            const displayMealName =
+                              pendingDraft?.meal_name || meal.meal_name || "Unnamed Meal";
+                            const displayBestTimeToEat =
+                              pendingDraft?.best_time_to_eat ||
+                              meal.best_time_to_eat ||
+                              "Time not set";
+                            const displayEstimatedCost =
+                              pendingDraft?.est_cost ?? meal.est_cost;
+                            const displayIngredients = pendingDraft
+                              ? pendingDraft.ingredients.map((ingredient, index) => ({
+                                  id: `draft-${meal.id}-${index}`,
+                                  created_at: "",
+                                  item_name: ingredient.item_name || null,
+                                  measurement: ingredient.measurement || null,
+                                  price: ingredient.price || null,
+                                }))
+                              : meal.ingredients;
+                            const displayCookingInstructions = pendingDraft
+                              ? pendingDraft.cooking_instructions
+                              : Array.isArray(meal.cooking_instructions)
+                                ? meal.cooking_instructions
+                                : [];
+                            const sourceMealType = normalizeMealTypeForPrompt(
+                              meal.meal_time,
+                            );
+                            const candidateDayPlans = dayPlans
+                              .filter((dayPlan) => dayPlan.id !== activeDayPlan.id)
+                              .map((dayPlan) => ({
+                                dayPlan,
+                                meals: dayPlan.meals.filter(
+                                  (candidateMeal) =>
+                                    normalizeMealTypeForPrompt(
+                                      candidateMeal.meal_time,
+                                    ) === sourceMealType && candidateMeal.id !== meal.id,
+                                ),
+                              }))
+                              .filter((entry) => entry.meals.length > 0);
+                            const selectedCandidateDay =
+                              candidateDayPlans.find(
+                                (entry) => entry.dayPlan.id === swapTargetDayPlanId,
+                              ) ?? candidateDayPlans[0] ?? null;
+                            const selectedCandidateMeals =
+                              selectedCandidateDay?.meals ?? [];
+                            const selectedTargetMeal =
+                              selectedCandidateMeals.find(
+                                (candidateMeal) => candidateMeal.id === swapTargetMealId,
+                              ) ?? selectedCandidateMeals[0] ?? null;
+                            const canSwapMeal = candidateDayPlans.length > 0;
+
+                            return (
+                              <div
+                                key={meal.id}
+                                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 shadow-sm dark:shadow-black/30"
+                              >
+                                <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
+                                  <div>
+                                    <p
+                                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${getMealTimeBadgeClass(meal.meal_time)}`}
+                                    >
+                                      {meal.meal_time || "Meal"}
                                     </p>
-                                  ) : (
-                                    <div className="space-y-2">
-                                      <div className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                        <span>Qty</span>
-                                        <span>Item</span>
-                                        <span>Price</span>
-                                      </div>
-                                      {meal.ingredients.map((ingredient) => (
-                                        <div
-                                          key={ingredient.id}
-                                          className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-xs text-slate-700 dark:text-slate-200"
-                                        >
-                                          <span>
-                                            {ingredient.measurement || "-"}
-                                          </span>
-                                          <span>
-                                            {ingredient.item_name || "-"}
-                                          </span>
-                                          <span>{ingredient.price || "-"}</span>
+                                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
+                                      {displayMealName}
+                                    </h3>
+                                    {pendingDraft && (
+                                      <p className="mt-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                                        Regenerated preview ready. Save to apply.
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                      <MdSchedule className="w-3.5 h-3.5" />
+                                      {displayBestTimeToEat}
+                                    </p>
+                                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mt-1">
+                                      Est. Cost: {formatMoney(displayEstimatedCost)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mb-2 flex flex-wrap items-center gap-2">
+                                  {pendingDraft && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void handleSaveRegeneratedMeal(meal);
+                                        }}
+                                        disabled={isSavingMeal || isRegenerating}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors disabled:opacity-60"
+                                      >
+                                        <MdSave className="w-3.5 h-3.5" />
+                                        {isSavingMeal ? "Saving..." : "Save meal"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleCancelRegeneratedMeal(meal.id)
+                                        }
+                                        disabled={isSavingMeal || isRegenerating}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-60"
+                                      >
+                                        <MdClose className="w-3.5 h-3.5" />
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+
+                                {activeSwapMealId === meal.id && (
+                                  <div className="mb-2 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-900/20 p-2.5">
+                                    <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-2">
+                                      Swap this {sourceMealType === "snacks" ? "snack" : sourceMealType} with another day
+                                    </p>
+                                    {canSwapMeal ? (
+                                      <>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <label className="flex flex-col gap-1">
+                                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                                              Target day
+                                            </span>
+                                            <select
+                                              value={swapTargetDayPlanId}
+                                              onChange={(event) => {
+                                                const nextDayPlanId = event.target.value;
+                                                setSwapTargetDayPlanId(nextDayPlanId);
+                                                const nextDay = candidateDayPlans.find(
+                                                  (entry) => entry.dayPlan.id === nextDayPlanId,
+                                                );
+                                                setSwapTargetMealId(nextDay?.meals[0]?.id ?? "");
+                                              }}
+                                              className="rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-100"
+                                            >
+                                              {candidateDayPlans.map((entry) => (
+                                                <option
+                                                  key={`${meal.id}-swap-day-${entry.dayPlan.id}`}
+                                                  value={entry.dayPlan.id}
+                                                >
+                                                  {toDayLabel(entry.dayPlan.day_name)}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                          <label className="flex flex-col gap-1">
+                                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                                              Target meal
+                                            </span>
+                                            <select
+                                              value={selectedTargetMeal?.id ?? ""}
+                                              onChange={(event) =>
+                                                setSwapTargetMealId(event.target.value)
+                                              }
+                                              className="rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-100"
+                                            >
+                                              {selectedCandidateMeals.map((candidateMeal) => (
+                                                <option
+                                                  key={`${meal.id}-swap-meal-${candidateMeal.id}`}
+                                                  value={candidateMeal.id}
+                                                >
+                                                  {(candidateMeal.meal_name || "Unnamed Meal").trim()}
+                                                  {candidateMeal.best_time_to_eat
+                                                    ? ` (${candidateMeal.best_time_to_eat})`
+                                                    : ""}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
                                         </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                        {selectedTargetMeal && (
+                                          <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 p-2.5">
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                              <div>
+                                                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                                  Selected meal from{" "}
+                                                  {toDayLabel(
+                                                    selectedCandidateDay?.dayPlan.day_name,
+                                                  )}
+                                                </p>
+                                                <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                                  {selectedTargetMeal.meal_name || "Unnamed Meal"}
+                                                </p>
+                                              </div>
+                                              <div className="text-right">
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                  {selectedTargetMeal.best_time_to_eat ||
+                                                    "Time not set"}
+                                                </p>
+                                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                  Est. Cost:{" "}
+                                                  {formatMoney(selectedTargetMeal.est_cost)}
+                                                </p>
+                                              </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                              <div>
+                                                <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                                                  Ingredients
+                                                </p>
+                                                {selectedTargetMeal.ingredients.length > 0 ? (
+                                                  <div className="space-y-1">
+                                                    <div className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                                      <span>Qty</span>
+                                                      <span>Item</span>
+                                                      <span>Price</span>
+                                                    </div>
+                                                    {selectedTargetMeal.ingredients.map(
+                                                      (ingredient) => (
+                                                        <div
+                                                          key={`${selectedTargetMeal.id}-swap-preview-ingredient-${ingredient.id}`}
+                                                          className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-2 text-[11px] text-slate-700 dark:text-slate-200"
+                                                        >
+                                                          <span>
+                                                            {ingredient.measurement || "-"}
+                                                          </span>
+                                                          <span>
+                                                            {ingredient.item_name || "-"}
+                                                          </span>
+                                                          <span>{ingredient.price || "-"}</span>
+                                                        </div>
+                                                      ),
+                                                    )}
+                                                  </div>
+                                                ) : (
+                                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                    No ingredient data.
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <div>
+                                                <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                                                  Cooking Instructions
+                                                </p>
+                                                {Array.isArray(
+                                                  selectedTargetMeal.cooking_instructions,
+                                                ) &&
+                                                selectedTargetMeal.cooking_instructions.length >
+                                                  0 ? (
+                                                  <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-slate-700 dark:text-slate-200">
+                                                    {selectedTargetMeal.cooking_instructions.map(
+                                                      (instruction, index) => (
+                                                        <li
+                                                          key={`${selectedTargetMeal.id}-swap-preview-step-${index}`}
+                                                        >
+                                                          {instruction}
+                                                        </li>
+                                                      ),
+                                                    )}
+                                                  </ol>
+                                                ) : (
+                                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                    No instruction data.
+                                                  </p>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              void handleConfirmSwapMeal(
+                                                meal,
+                                                activeDayPlan.id,
+                                              );
+                                            }}
+                                            disabled={isSwappingMeal}
+                                            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 dark:bg-indigo-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-colors disabled:opacity-60"
+                                          >
+                                            <MdSwapHoriz className="w-3.5 h-3.5" />
+                                            {isSwappingMeal ? "Swapping..." : "Confirm swap"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setActiveSwapMealId(null);
+                                              setSwapTargetDayPlanId("");
+                                              setSwapTargetMealId("");
+                                              setSwapMealError(null);
+                                            }}
+                                            disabled={isSwappingMeal}
+                                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-60"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                                        No compatible {sourceMealType === "snacks" ? "snacks" : sourceMealType} found on other days.
+                                      </p>
+                                    )}
+                                    {swapMealError && (
+                                      <p className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">
+                                        {swapMealError}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                                {mealActionError && (
+                                  <p className="mb-2 text-xs font-medium text-red-600 dark:text-red-400">
+                                    {mealActionError}
+                                  </p>
+                                )}
+
+                                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedMealDetails((prev) => ({
+                                        ...prev,
+                                        [meal.id]: !prev[meal.id],
+                                      }))
+                                    }
+                                    className="text-xs font-semibold text-teal-700 dark:text-teal-400 hover:text-teal-800 dark:hover:text-teal-300 transition-colors"
+                                  >
+                                    {expandedMealDetails[meal.id]
+                                      ? "Hide Full details"
+                                      : "View Full details"}
+                                  </button>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void handleRegenerateMeal(meal, activeDayPlan);
+                                      }}
+                                      disabled={isRegenerating || isSavingMeal}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30 px-2.5 py-1 text-xs font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors disabled:opacity-60"
+                                    >
+                                      <MdAutorenew
+                                        className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`}
+                                      />
+                                      {isRegenerating
+                                        ? "Regenerating..."
+                                        : "Regenerate"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (activeSwapMealId === meal.id) {
+                                          setActiveSwapMealId(null);
+                                          setSwapTargetDayPlanId("");
+                                          setSwapTargetMealId("");
+                                          setSwapMealError(null);
+                                          return;
+                                        }
+
+                                        setActiveSwapMealId(meal.id);
+                                        if (candidateDayPlans.length > 0) {
+                                          const [firstCandidate] = candidateDayPlans;
+                                          setSwapTargetDayPlanId(
+                                            firstCandidate.dayPlan.id,
+                                          );
+                                          setSwapTargetMealId(
+                                            firstCandidate.meals[0]?.id ?? "",
+                                          );
+                                        } else {
+                                          setSwapTargetDayPlanId("");
+                                          setSwapTargetMealId("");
+                                        }
+                                        setSwapMealError(null);
+                                      }}
+                                      disabled={
+                                        isSwappingMeal || isRegenerating || isSavingMeal
+                                      }
+                                      className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors disabled:opacity-60"
+                                    >
+                                      <MdSwapHoriz className="w-3.5 h-3.5" />
+                                      {activeSwapMealId === meal.id
+                                        ? "Close swap"
+                                        : "Swap meal"}
+                                    </button>
+                                  </div>
                                 </div>
 
-                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
-                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
-                                    Cooking Instructions
-                                  </p>
-                                  {Array.isArray(meal.cooking_instructions) &&
-                                  meal.cooking_instructions.length > 0 ? (
-                                    <ol className="space-y-1 text-xs text-slate-700 dark:text-slate-200 list-decimal list-inside">
-                                      {meal.cooking_instructions.map(
-                                        (instruction, index) => (
-                                          <li key={`${meal.id}-step-${index}`}>
-                                            {instruction}
-                                          </li>
-                                        ),
+                                {expandedMealDetails[meal.id] && (
+                                  <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-3">
+                                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                                        Ingredients
+                                      </p>
+                                      {displayIngredients.length === 0 ? (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                          No ingredient data.
+                                        </p>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          <div className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                            <span>Qty</span>
+                                            <span>Item</span>
+                                            <span>Price</span>
+                                          </div>
+                                          {displayIngredients.map((ingredient) => (
+                                            <div
+                                              key={ingredient.id}
+                                              className="grid grid-cols-[0.9fr_1.8fr_0.8fr] gap-3 text-xs text-slate-700 dark:text-slate-200"
+                                            >
+                                              <span>
+                                                {ingredient.measurement || "-"}
+                                              </span>
+                                              <span>{ingredient.item_name || "-"}</span>
+                                              <span>{ingredient.price || "-"}</span>
+                                            </div>
+                                          ))}
+                                        </div>
                                       )}
-                                    </ol>
-                                  ) : (
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                      No instruction data.
-                                    </p>
-                                  )}
-                                </div>
+                                    </div>
+
+                                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                                        Cooking Instructions
+                                      </p>
+                                      {displayCookingInstructions.length > 0 ? (
+                                        <ol className="space-y-1 text-xs text-slate-700 dark:text-slate-200 list-decimal list-inside">
+                                          {displayCookingInstructions.map(
+                                            (instruction, index) => (
+                                              <li key={`${meal.id}-step-${index}`}>
+                                                {instruction}
+                                              </li>
+                                            ),
+                                          )}
+                                        </ol>
+                                      ) : (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                          No instruction data.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
 
                         <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 text-right">
                           <p className="text-xs text-slate-500 dark:text-slate-400">

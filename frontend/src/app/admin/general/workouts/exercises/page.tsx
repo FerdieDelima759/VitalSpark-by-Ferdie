@@ -5,11 +5,16 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useAdminSupabase } from "@/hooks/useAdminSupabase";
-import Image from "next/image";
 import Loader from "@/components/Loader";
 import Dialog from "@/components/Dialog";
 import Toast, { ToastProps } from "@/components/Toast";
-import { HiArrowLeft, HiPencil, HiTrash, HiPlus } from "react-icons/hi2";
+import {
+  HiArrowLeft,
+  HiPencil,
+  HiTrash,
+  HiPlus,
+  HiPhoto,
+} from "react-icons/hi2";
 import { WorkoutPlanExerciseDetails } from "@/types/Workout";
 
 interface ToastState extends Omit<ToastProps, "onDismiss"> {
@@ -25,6 +30,12 @@ interface ExerciseFormData {
   image_slug: string | null;
   section: string;
 }
+
+type ExerciseImageGender = "male" | "female";
+type ExerciseSectionKey = "warmup" | "main" | "cooldown";
+
+const EXERCISE_IMAGE_BASE_URL =
+  "https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises";
 
 export default function ExercisesPage() {
   const router = useRouter();
@@ -53,6 +64,10 @@ export default function ExercisesPage() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [selectedExercises, setSelectedExercises] = useState<string[]>([]);
+  const [activeSectionView, setActiveSectionView] = useState<
+    ExerciseSectionKey | "all"
+  >("all");
+  const [sectionSearch, setSectionSearch] = useState("");
   const [formData, setFormData] = useState<ExerciseFormData>({
     name: "",
     default_safety_tip: null,
@@ -63,6 +78,23 @@ export default function ExercisesPage() {
     section: "warmup",
   });
   const [dialogSection, setDialogSection] = useState<string>("warmup");
+  const [tableImageLoadErrors, setTableImageLoadErrors] = useState<
+    Record<string, boolean>
+  >({});
+  const [dialogImageLoadErrors, setDialogImageLoadErrors] = useState<
+    Record<string, boolean>
+  >({});
+  const [dialogImageVersions, setDialogImageVersions] = useState<
+    Record<string, number>
+  >({});
+  const [imageUploadState, setImageUploadState] = useState<
+    Record<ExerciseImageGender, boolean>
+  >({
+    male: false,
+    female: false,
+  });
+  const maleImageInputRef = useRef<HTMLInputElement | null>(null);
+  const femaleImageInputRef = useRef<HTMLInputElement | null>(null);
   const hasCheckedAuth = useRef(false);
 
   useEffect(() => {
@@ -116,6 +148,11 @@ export default function ExercisesPage() {
       fetchData();
     }
   }, [adminClient, isAdmin]);
+
+  useEffect(() => {
+    if (!showCreateDialog) return;
+    setDialogImageLoadErrors({});
+  }, [showCreateDialog, formData.image_slug, formData.section]);
 
   const showToast = (
     type: "success" | "error",
@@ -229,6 +266,7 @@ export default function ExercisesPage() {
 
     try {
       setIsSaving(true);
+      setError(null);
 
       if (editingExercise) {
         // Update existing exercise
@@ -248,8 +286,6 @@ export default function ExercisesPage() {
         if (updateError) {
           throw updateError;
         }
-
-        showToast("success", "Success", "Exercise updated successfully");
       } else {
         // Create new exercise
         const { error: insertError } = await adminClient
@@ -267,11 +303,9 @@ export default function ExercisesPage() {
         if (insertError) {
           throw insertError;
         }
-
-        showToast("success", "Success", "Exercise created successfully");
       }
 
-      // Refresh data
+      // Refresh content only
       const { data: exercisesData, error: exercisesError } = await adminClient
         .from("workout_plan_exercises_details")
         .select("*")
@@ -282,43 +316,17 @@ export default function ExercisesPage() {
       }
 
       setExercises(exercisesData || []);
-      // Store editing state before closing dialog
-      const wasEditing = !!editingExercise;
+      // Clear stale image-error cache so newly updated image rows render immediately
+      setTableImageLoadErrors({});
 
-      // Close dialog first
       setShowCreateDialog(false);
       setEditingExercise(null);
-
-      // Show success toast after dialog closes fully
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          if (wasEditing) {
-            showToast("success", "Success", "Exercise updated successfully");
-          } else {
-            showToast("success", "Success", "Exercise created successfully");
-          }
-        }, 500);
-      });
     } catch (err: any) {
       console.error("Error saving exercise:", err);
       const errorMessage =
         err?.message || err?.details || err?.hint || "Failed to save exercise";
-
-      // Close dialog first if it's still open
-      if (showCreateDialog) {
-        setShowCreateDialog(false);
-        setEditingExercise(null);
-
-        // Show error toast after dialog closes fully
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            showToast("error", "Error", errorMessage);
-          }, 500);
-        });
-      } else {
-        // Dialog already closed, show toast immediately
-        showToast("error", "Error", errorMessage);
-      }
+      setError(errorMessage);
+      showToast("error", "Error", errorMessage);
     } finally {
       setIsSaving(false);
     }
@@ -406,7 +414,22 @@ export default function ExercisesPage() {
   };
 
   const getExercisesBySection = (section: string) => {
-    return exercises.filter((exercise) => exercise.section === section);
+    const query = sectionSearch.trim().toLowerCase();
+    return exercises.filter((exercise) => {
+      if (exercise.section !== section) return false;
+      if (!query) return true;
+
+      const searchPool = [
+        exercise.name,
+        exercise.default_safety_tip || "",
+        exercise.primary_muscle || "",
+        exercise.image_slug || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchPool.includes(query);
+    });
   };
 
   const formatConstraintError = (err: any, entityName: string): string => {
@@ -453,6 +476,142 @@ export default function ExercisesPage() {
         return "Cool Down";
       default:
         return section;
+    }
+  };
+
+  const normalizeSectionKey = (
+    section: string | null | undefined
+  ): ExerciseSectionKey => {
+    const normalized = (section || "").toLowerCase().trim();
+    if (
+      normalized === "warmup" ||
+      normalized === "main" ||
+      normalized === "cooldown"
+    ) {
+      return normalized;
+    }
+    return "main";
+  };
+
+  const getImageFileSlug = (imageSlug: string | null | undefined) => {
+    if (!imageSlug) return null;
+    const normalized = imageSlug.trim().replace(/^\/+|\/+$/g, "");
+    if (!normalized) return null;
+    const segments = normalized.split("/").filter(Boolean);
+    return segments[segments.length - 1] || null;
+  };
+
+  const getExerciseImageUrl = (
+    imageSlug: string | null | undefined,
+    section: string | null | undefined,
+    gender: ExerciseImageGender = "male"
+  ): string | null => {
+    const fileSlug = getImageFileSlug(imageSlug);
+    if (!fileSlug) return null;
+    const normalizedSection = normalizeSectionKey(section);
+    return `${EXERCISE_IMAGE_BASE_URL}/${gender}/${normalizedSection}/${fileSlug}.png`;
+  };
+
+  const getAutoGeneratedMaleImagePath = (
+    imageSlug: string | null | undefined,
+    section: string | null | undefined
+  ): string | null => {
+    return getExerciseImageUrl(imageSlug, section, "male");
+  };
+
+  const getVersionedDialogImageUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    const version = dialogImageVersions[url];
+    return version ? `${url}?v=${version}` : url;
+  };
+
+  const handleTableImageError = (url: string | null) => {
+    if (!url) return;
+    setTableImageLoadErrors((prev) =>
+      prev[url] ? prev : { ...prev, [url]: true }
+    );
+  };
+
+  const handleDialogImageError = (url: string | null) => {
+    if (!url) return;
+    setDialogImageLoadErrors((prev) =>
+      prev[url] ? prev : { ...prev, [url]: true }
+    );
+  };
+
+  const triggerImageUpload = (gender: ExerciseImageGender) => {
+    if (gender === "male") {
+      maleImageInputRef.current?.click();
+      return;
+    }
+    femaleImageInputRef.current?.click();
+  };
+
+  const handleExerciseImageUpload = async (
+    gender: ExerciseImageGender,
+    file: File | null
+  ) => {
+    if (!file) return;
+    if (!adminClient) {
+      showToast("error", "Upload Failed", "Admin client not available.");
+      return;
+    }
+
+    const fileSlug = getImageFileSlug(formData.image_slug);
+    if (!fileSlug) {
+      showToast(
+        "error",
+        "Upload Failed",
+        "Image slug is required. Please add an exercise name first."
+      );
+      return;
+    }
+
+    const normalizedSection = normalizeSectionKey(formData.section);
+    const storagePath = `exercises/${gender}/${normalizedSection}/${fileSlug}.png`;
+    const publicUrl = `${EXERCISE_IMAGE_BASE_URL}/${gender}/${normalizedSection}/${fileSlug}.png`;
+
+    try {
+      setImageUploadState((prev) => ({ ...prev, [gender]: true }));
+
+      const { error: uploadError } = await adminClient.storage
+        .from("workouts")
+        .upload(storagePath, file, {
+          contentType: file.type || "image/png",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      setDialogImageLoadErrors((prev) => ({ ...prev, [publicUrl]: false }));
+      setDialogImageVersions((prev) => ({ ...prev, [publicUrl]: Date.now() }));
+
+      if (gender === "male") {
+        setFormData((prev) => ({
+          ...prev,
+          image_path: publicUrl,
+          image_alt:
+            prev.image_alt ||
+            `${prev.name.trim() || "Exercise"} exercise demonstration`,
+        }));
+      }
+
+      showToast(
+        "success",
+        "Upload Complete",
+        `${gender === "male" ? "Male" : "Female"} image uploaded successfully.`
+      );
+    } catch (err: any) {
+      console.error("Error uploading exercise image:", err);
+      showToast(
+        "error",
+        "Upload Failed",
+        err?.message || "Failed to upload image."
+      );
+    } finally {
+      setImageUploadState((prev) => ({ ...prev, [gender]: false }));
     }
   };
 
@@ -523,10 +682,52 @@ export default function ExercisesPage() {
               </div>
             )}
 
+            {/* Section Selector */}
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { key: "all", label: "View All" },
+                    { key: "warmup", label: "Warm Up" },
+                    { key: "main", label: "Main" },
+                    { key: "cooldown", label: "Cool Down" },
+                  ] as const).map((section) => (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => setActiveSectionView(section.key)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                        activeSectionView === section.key
+                          ? "bg-teal-600 text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="w-full sm:w-72 ml-auto">
+                  <input
+                    type="text"
+                    value={sectionSearch}
+                    onChange={(e) => setSectionSearch(e.target.value)}
+                    placeholder="Search exercises..."
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Exercises by Section */}
             <div className="space-y-8">
               {/* Warm Up Section */}
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <div
+                className={`bg-white rounded-2xl shadow-lg overflow-hidden ${
+                  activeSectionView === "warmup" || activeSectionView === "all"
+                    ? ""
+                    : "hidden"
+                }`}
+              >
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-900">Warm Up</h3>
                   <div className="flex gap-2">
@@ -564,6 +765,22 @@ export default function ExercisesPage() {
                   <table className="w-full">
                     <thead className="bg-slate-50">
                       <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider w-12">
+                          <input
+                            type="checkbox"
+                            checked={
+                              getExercisesBySection("warmup").length > 0 &&
+                              getExercisesBySection("warmup").every((ex) =>
+                                selectedExercises.includes(ex.id)
+                              )
+                            }
+                            onChange={() => toggleSelectAll("warmup")}
+                            className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
+                          />
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                          Image
+                        </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
                           Name
                         </th>
@@ -582,7 +799,7 @@ export default function ExercisesPage() {
                       {getExercisesBySection("warmup").length === 0 ? (
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={6}
                             className="px-6 py-12 text-center text-slate-500"
                           >
                             No warm up exercises found. Create your first one!
@@ -602,6 +819,34 @@ export default function ExercisesPage() {
                                 }
                                 className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
                               />
+                            </td>
+                            <td className="px-6 py-4">
+                              {(() => {
+                                const imageUrl = getExerciseImageUrl(
+                                  exercise.image_slug,
+                                  exercise.section,
+                                  "male"
+                                );
+                                if (!imageUrl || tableImageLoadErrors[imageUrl]) {
+                                  return (
+                                    <div className="h-14 w-20 rounded-lg border border-slate-200 bg-slate-100 animate-pulse flex items-center justify-center">
+                                      <HiPhoto className="h-5 w-5 text-slate-400" />
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <img
+                                    src={imageUrl}
+                                    alt={
+                                      exercise.image_alt ||
+                                      `${exercise.name} demonstration`
+                                    }
+                                    className="h-14 w-20 rounded-lg border border-slate-200 object-cover"
+                                    loading="lazy"
+                                    onError={() => handleTableImageError(imageUrl)}
+                                  />
+                                );
+                              })()}
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-medium text-slate-900">
@@ -645,7 +890,13 @@ export default function ExercisesPage() {
               </div>
 
               {/* Main Section */}
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <div
+                className={`bg-white rounded-2xl shadow-lg overflow-hidden ${
+                  activeSectionView === "main" || activeSectionView === "all"
+                    ? ""
+                    : "hidden"
+                }`}
+              >
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-900">Main</h3>
                   <div className="flex gap-2">
@@ -697,6 +948,9 @@ export default function ExercisesPage() {
                           />
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                          Image
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
                           Name
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
@@ -714,7 +968,7 @@ export default function ExercisesPage() {
                       {getExercisesBySection("main").length === 0 ? (
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={6}
                             className="px-6 py-12 text-center text-slate-500"
                           >
                             No main exercises found. Create your first one!
@@ -734,6 +988,34 @@ export default function ExercisesPage() {
                                 }
                                 className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
                               />
+                            </td>
+                            <td className="px-6 py-4">
+                              {(() => {
+                                const imageUrl = getExerciseImageUrl(
+                                  exercise.image_slug,
+                                  exercise.section,
+                                  "male"
+                                );
+                                if (!imageUrl || tableImageLoadErrors[imageUrl]) {
+                                  return (
+                                    <div className="h-14 w-20 rounded-lg border border-slate-200 bg-slate-100 animate-pulse flex items-center justify-center">
+                                      <HiPhoto className="h-5 w-5 text-slate-400" />
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <img
+                                    src={imageUrl}
+                                    alt={
+                                      exercise.image_alt ||
+                                      `${exercise.name} demonstration`
+                                    }
+                                    className="h-14 w-20 rounded-lg border border-slate-200 object-cover"
+                                    loading="lazy"
+                                    onError={() => handleTableImageError(imageUrl)}
+                                  />
+                                );
+                              })()}
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-medium text-slate-900">
@@ -777,7 +1059,13 @@ export default function ExercisesPage() {
               </div>
 
               {/* Cool Down Section */}
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <div
+                className={`bg-white rounded-2xl shadow-lg overflow-hidden ${
+                  activeSectionView === "cooldown" || activeSectionView === "all"
+                    ? ""
+                    : "hidden"
+                }`}
+              >
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-900">
                     Cool Down
@@ -833,6 +1121,9 @@ export default function ExercisesPage() {
                           />
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                          Image
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
                           Name
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
@@ -850,7 +1141,7 @@ export default function ExercisesPage() {
                       {getExercisesBySection("cooldown").length === 0 ? (
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={6}
                             className="px-6 py-12 text-center text-slate-500"
                           >
                             No cool down exercises found. Create your first one!
@@ -870,6 +1161,34 @@ export default function ExercisesPage() {
                                 }
                                 className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
                               />
+                            </td>
+                            <td className="px-6 py-4">
+                              {(() => {
+                                const imageUrl = getExerciseImageUrl(
+                                  exercise.image_slug,
+                                  exercise.section,
+                                  "male"
+                                );
+                                if (!imageUrl || tableImageLoadErrors[imageUrl]) {
+                                  return (
+                                    <div className="h-14 w-20 rounded-lg border border-slate-200 bg-slate-100 animate-pulse flex items-center justify-center">
+                                      <HiPhoto className="h-5 w-5 text-slate-400" />
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <img
+                                    src={imageUrl}
+                                    alt={
+                                      exercise.image_alt ||
+                                      `${exercise.name} demonstration`
+                                    }
+                                    className="h-14 w-20 rounded-lg border border-slate-200 object-cover"
+                                    loading="lazy"
+                                    onError={() => handleTableImageError(imageUrl)}
+                                  />
+                                );
+                              })()}
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-medium text-slate-900">
@@ -926,27 +1245,35 @@ export default function ExercisesPage() {
           }
         }}
         dismissible={!isSaving}
-        maxWidth="80vw"
+        maxWidth="clamp(20rem, 68vw, 74rem)"
       >
-        <div>
-          <h3 className="text-2xl font-bold text-slate-900 mb-4">
+        <div className="text-[clamp(0.72rem,0.78vw,0.9rem)]">
+          <h3 className="text-[clamp(1rem,1.2vw,1.5rem)] font-bold text-slate-900 mb-3 sm:mb-4">
             {editingExercise
               ? "Edit Exercise"
               : `Add New ${getSectionDisplayName(dialogSection)} Exercise`}
           </h3>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {/* Section (read-only when editing) */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                 Section <span className="text-red-500">*</span>
               </label>
               <select
                 value={formData.section}
-                onChange={(e) =>
-                  setFormData({ ...formData, section: e.target.value })
-                }
+                onChange={(e) => {
+                  const nextSection = e.target.value;
+                  const nextSlug = formData.image_slug;
+                  setFormData({
+                    ...formData,
+                    section: nextSection,
+                    image_path: editingExercise
+                      ? formData.image_path
+                      : getAutoGeneratedMaleImagePath(nextSlug, nextSection),
+                  });
+                }}
                 disabled={isSaving || !!editingExercise}
-                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl bg-white text-slate-700 font-medium shadow-sm hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:ring-offset-2 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 transition-all cursor-pointer"
+                className="w-full px-3 sm:px-3.5 py-2 sm:py-2.5 border border-slate-300 rounded-lg sm:rounded-xl bg-white text-slate-700 text-[clamp(0.72rem,0.78vw,0.9rem)] font-medium shadow-sm hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:ring-offset-2 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 transition-all cursor-pointer"
               >
                 <option value="warmup">Warm Up</option>
                 <option value="main">Main</option>
@@ -956,7 +1283,7 @@ export default function ExercisesPage() {
 
             {/* Name */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                 Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -965,21 +1292,28 @@ export default function ExercisesPage() {
                 onChange={(e) => {
                   const newName = e.target.value;
                   const newSlug = generateImageSlug(newName);
+                  const trimmedName = newName.trim();
                   setFormData({
                     ...formData,
                     name: newName,
                     image_slug: newSlug || null,
+                    image_path: editingExercise
+                      ? formData.image_path
+                      : getAutoGeneratedMaleImagePath(newSlug || null, formData.section),
+                    image_alt: editingExercise
+                      ? formData.image_alt
+                      : trimmedName || null,
                   });
                 }}
                 disabled={isSaving}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
+                className="w-full px-3 sm:px-3.5 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-[clamp(0.72rem,0.78vw,0.9rem)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
                 placeholder="Enter exercise name"
               />
             </div>
 
             {/* Default Safety Tip */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                 Default Safety Tip
               </label>
               <textarea
@@ -992,14 +1326,14 @@ export default function ExercisesPage() {
                 }
                 disabled={isSaving}
                 rows={3}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
+                className="w-full px-3 sm:px-3.5 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-[clamp(0.72rem,0.78vw,0.9rem)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
                 placeholder="Enter default safety tip"
               />
             </div>
 
             {/* Primary Muscle */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                 Primary Muscle
               </label>
               <input
@@ -1012,16 +1346,21 @@ export default function ExercisesPage() {
                   })
                 }
                 disabled={isSaving}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
+                className="w-full px-3 sm:px-3.5 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-[clamp(0.72rem,0.78vw,0.9rem)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
                 placeholder="Enter primary muscle"
               />
             </div>
 
             {/* Row: Image Path, Image Alt, Image Slug */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                   Image Path
+                  {!editingExercise && (
+                    <span className="text-[clamp(0.62rem,0.68vw,0.74rem)] font-normal text-slate-500 ml-2">
+                      (Auto-generated)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -1032,14 +1371,19 @@ export default function ExercisesPage() {
                       image_path: e.target.value || null,
                     })
                   }
-                  disabled={isSaving}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
+                  disabled={isSaving || !editingExercise}
+                  className="w-full px-3 sm:px-3.5 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-[clamp(0.72rem,0.78vw,0.9rem)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
                   placeholder="Enter image path"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                   Image Alt Text
+                  {!editingExercise && (
+                    <span className="text-[clamp(0.62rem,0.68vw,0.74rem)] font-normal text-slate-500 ml-2">
+                      (Auto-generated)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -1050,15 +1394,15 @@ export default function ExercisesPage() {
                       image_alt: e.target.value || null,
                     })
                   }
-                  disabled={isSaving}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
+                  disabled={isSaving || !editingExercise}
+                  className="w-full px-3 sm:px-3.5 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-[clamp(0.72rem,0.78vw,0.9rem)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:bg-gray-100"
                   placeholder="Enter image alt text"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
                   Image Slug
-                  <span className="text-xs font-normal text-slate-500 ml-2">
+                  <span className="text-[clamp(0.62rem,0.68vw,0.74rem)] font-normal text-slate-500 ml-2">
                     (Auto-generated)
                   </span>
                 </label>
@@ -1067,14 +1411,101 @@ export default function ExercisesPage() {
                   value={formData.image_slug || ""}
                   readOnly
                   disabled
-                  className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl bg-gray-50 text-slate-600 font-medium cursor-not-allowed"
+                  className="w-full px-3 sm:px-3.5 py-2 sm:py-2.5 border border-slate-300 rounded-lg sm:rounded-xl bg-gray-50 text-slate-600 text-[clamp(0.7rem,0.76vw,0.86rem)] font-medium cursor-not-allowed"
                   placeholder="Auto-generated from name"
                 />
               </div>
             </div>
+
+            <div>
+              <div className="mb-2">
+                <label className="block text-[clamp(0.68rem,0.76vw,0.86rem)] font-semibold text-slate-700">
+                  Exercise Images
+                </label>
+                <p className="text-[clamp(0.62rem,0.68vw,0.74rem)] text-slate-500">
+                  Upload to:
+                  {" "}
+                  <span className="font-semibold">
+                    workouts/exercises/[gender]/[section]/[image_slug].png
+                  </span>
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                {(["male", "female"] as ExerciseImageGender[]).map((gender) => {
+                  const imageUrl = getExerciseImageUrl(
+                    formData.image_slug,
+                    formData.section,
+                    gender
+                  );
+                  const hasImage =
+                    !!imageUrl && !dialogImageLoadErrors[imageUrl];
+                  const previewUrl = getVersionedDialogImageUrl(imageUrl);
+                  const isUploading = imageUploadState[gender];
+                  const label = gender === "male" ? "Male" : "Female";
+
+                  return (
+                    <div
+                      key={gender}
+                      className="rounded-lg sm:rounded-xl border border-slate-200 p-2.5 sm:p-3 bg-slate-50"
+                    >
+                      <p className="text-[clamp(0.7rem,0.76vw,0.86rem)] font-semibold text-slate-700 mb-1.5 sm:mb-2">
+                        {label} Image
+                      </p>
+                      {hasImage && previewUrl ? (
+                        <img
+                          src={previewUrl}
+                          alt={`${formData.name || "Exercise"} ${label} preview`}
+                          className="h-32 sm:h-36 lg:h-40 xl:h-44 w-full rounded-md sm:rounded-lg border border-slate-200 object-cover bg-white"
+                          onError={() => handleDialogImageError(imageUrl)}
+                        />
+                      ) : (
+                        <div className="h-32 sm:h-36 lg:h-40 xl:h-44 w-full rounded-md sm:rounded-lg border border-slate-200 bg-slate-100 animate-pulse flex items-center justify-center">
+                          <HiPhoto className="h-7 w-7 sm:h-8 sm:w-8 lg:h-9 lg:w-9 text-slate-400" />
+                        </div>
+                      )}
+                      <div className="mt-2 sm:mt-3">
+                        <button
+                          type="button"
+                          onClick={() => triggerImageUpload(gender)}
+                          disabled={isSaving || isUploading || !formData.image_slug}
+                          className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-[clamp(0.66rem,0.72vw,0.8rem)] font-semibold rounded-md sm:rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isUploading
+                            ? "Uploading..."
+                            : hasImage
+                              ? `Replace ${label} Image`
+                              : `Upload ${label} Image`}
+                        </button>
+                        {!formData.image_slug && (
+                          <p className="mt-1.5 text-[clamp(0.6rem,0.66vw,0.72rem)] text-amber-700">
+                            Add exercise name first to generate image slug.
+                          </p>
+                        )}
+                        <input
+                          ref={
+                            gender === "male"
+                              ? maleImageInputRef
+                              : femaleImageInputRef
+                          }
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            void handleExerciseImageUpload(gender, file);
+                            e.currentTarget.value = "";
+                          }}
+                          disabled={isSaving || isUploading}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+          <div className="flex justify-end gap-2.5 sm:gap-3 mt-5 sm:mt-6 pt-3 sm:pt-4 border-t border-slate-200">
             <button
               type="button"
               onClick={() => {
@@ -1082,7 +1513,7 @@ export default function ExercisesPage() {
                 setEditingExercise(null);
               }}
               disabled={isSaving}
-              className="px-4 py-2 text-slate-700 hover:text-slate-900 font-medium transition-colors disabled:opacity-50"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 text-[clamp(0.68rem,0.74vw,0.84rem)] text-slate-700 hover:text-slate-900 font-medium transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -1090,7 +1521,7 @@ export default function ExercisesPage() {
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white text-[clamp(0.68rem,0.74vw,0.84rem)] rounded-lg font-medium transition-all shadow-md disabled:opacity-50 flex items-center gap-1.5 sm:gap-2"
             >
               {isSaving ? (
                 <>

@@ -1508,13 +1508,38 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
       imageSlug: string
     ): Promise<UserWorkoutDataResponse<string>> => {
       try {
+        void exerciseDescription;
         console.log(`🎨 Step 1: Generating image for: ${exerciseName} (${gender})`);
         console.log(`📍 Target path: workouts/exercises/${gender}/${imageSlug}.png`);
+
+        const storagePath = `exercises/${gender}/${imageSlug}.png`;
+        const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
+        const { data: descriptionRows, error: descriptionError } = await supabase
+          .from("user_workout_plan_exercises")
+          .select("description")
+          .eq("image_path", publicUrl)
+          .not("description", "is", null)
+          .limit(1);
+
+        if (descriptionError) {
+          return {
+            success: false,
+            error: `Failed to read user_workout_plan_exercises.description: ${descriptionError.message}`,
+          };
+        }
+
+        const description = descriptionRows?.[0]?.description;
+        if (typeof description !== "string" || description.trim().length === 0) {
+          return {
+            success: false,
+            error: "Missing description in user_workout_plan_exercises.description",
+          };
+        }
 
         // Build the prompt for image generation
         const prompt = buildExerciseImagePrompt(
           exerciseName,
-          exerciseDescription || `Performing the ${exerciseName} exercise with proper form`,
+          description.trim(),
           gender
         );
 
@@ -1523,6 +1548,7 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         // Generate the image using Gemini/Imagen API
         const imageResult = await generateImage({
           prompt,
+          model: "imagen-4.0-generate-001",
           aspectRatio: "16:9",
           numberOfImages: 1,
           personGeneration: "allow_all",
@@ -1579,7 +1605,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         // Upload to Supabase Storage
         // Path: workouts/exercises/[gender]/[section]/[name].png
         // imageSlug format: section/name-kebab (e.g., "warmup/jumping-jacks")
-        const storagePath = `exercises/${gender}/${imageSlug}.png`;
 
         console.log(`📤 Step 3: Uploading to Supabase Storage...`);
         console.log(`📁 Bucket: workouts`);
@@ -1604,9 +1629,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
             error: `Failed to upload image: ${uploadError.message}`,
           };
         }
-
-        // Get the public URL
-        const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
 
         console.log(`✅ Step 4: Image uploaded successfully!`);
         console.log(`🔗 Public URL: ${publicUrl}`);

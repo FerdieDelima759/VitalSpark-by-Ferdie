@@ -10,7 +10,7 @@ import React, {
   ReactNode,
 } from "react";
 import { supabase } from "@/lib/api/supabase";
-import { generateExerciseImage } from "@/lib/gemini";
+import { generateExerciseImage, isImageQuotaExceededError } from "@/lib/gemini";
 import type { DayWorkoutResponse } from "@/lib/openai-prompt";
 
 // ============================================================================
@@ -203,6 +203,35 @@ const fetchPlanExerciseImageStatus = async (
   } catch (err) {
     console.warn("[ImageGenContext] is_image_generated check failed:", err);
     return { hasRecords: false, shouldProcess: true };
+  }
+};
+
+const fetchPlanExerciseDescription = async (
+  imagePath: string,
+): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from("user_workout_plan_exercises")
+      .select("description")
+      .eq("image_path", imagePath)
+      .not("description", "is", null)
+      .limit(1);
+
+    if (error) {
+      console.warn(
+        "[ImageGenContext] Failed to read description:",
+        error.message,
+      );
+      return null;
+    }
+
+    const description = data?.[0]?.description;
+    if (typeof description !== "string") return null;
+    const trimmed = description.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch (err) {
+    console.warn("[ImageGenContext] description read failed:", err);
+    return null;
   }
 };
 
@@ -544,6 +573,7 @@ export function ImageGenerationProvider({
 
     try {
       let currentState = state;
+      let quotaExceeded = false;
       for (const dayName of currentState.dayOrder) {
         if (processingAbortedRef.current) {
           console.log("[ImageGenContext] ⏹️ Processing aborted");
@@ -662,10 +692,32 @@ export function ImageGenerationProvider({
             } else {
               // Generate image
               console.log(`${progress} 🎨 Generating (timeout: 60s)...`);
+              const description =
+                (await fetchPlanExerciseDescription(storageUrl)) ?? "";
+              if (!description) {
+                console.warn(
+                  `${progress} ⚠️ Missing description in user_workout_plan_exercises.description`,
+                );
+                currentState = updateExerciseStatus(
+                  currentState,
+                  exercise.dayName,
+                  exercise.section,
+                  exercise.index,
+                  "failed",
+                  {
+                    error:
+                      "Missing description in user_workout_plan_exercises.description",
+                  },
+                );
+                dayFailed++;
+                consecutiveErrors++;
+                continue;
+              }
+
               const generateStartTime = Date.now();
               const result = await generateExerciseImage(
                 exercise.exerciseName,
-                exercise.exerciseDescription,
+                description,
                 currentState.gender,
                 60000,
               );
@@ -739,6 +791,13 @@ export function ImageGenerationProvider({
                 );
                 consecutiveErrors++;
                 dayFailed++;
+                if (isImageQuotaExceededError(result.error)) {
+                  quotaExceeded = true;
+                  processingAbortedRef.current = true;
+                  console.warn(
+                    "[ImageGenContext] Quota reached. Pausing image generation.",
+                  );
+                }
               }
             }
           } catch (err: any) {
@@ -756,6 +815,13 @@ export function ImageGenerationProvider({
             );
             dayFailed++;
             consecutiveErrors++;
+            if (isImageQuotaExceededError(err?.message)) {
+              quotaExceeded = true;
+              processingAbortedRef.current = true;
+              console.warn(
+                "[ImageGenContext] Quota reached. Pausing image generation.",
+              );
+            }
           } finally {
             setGeneratingImages((prev) => {
               const next = new Set(prev);
@@ -766,11 +832,23 @@ export function ImageGenerationProvider({
 
           saveImageGenState(currentState);
           setImageGenStats(currentState.stats);
+          setImageGenState(currentState);
+
+          if (quotaExceeded) {
+            break;
+          }
 
           // Delay between exercises
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
           exercise = getNextPendingExercise(currentState, dayName);
+        }
+
+        if (quotaExceeded) {
+          console.warn(
+            `[ImageGenContext] Paused ${dayName} due to quota exhaustion.`,
+          );
+          break;
         }
 
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {

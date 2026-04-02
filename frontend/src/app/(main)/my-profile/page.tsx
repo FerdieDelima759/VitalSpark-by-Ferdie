@@ -621,7 +621,7 @@ export default function MyProfilePage() {
         visible={bmiModalOpen}
         onDismiss={() => setBmiModalOpen(false)}
         dismissible={true}
-        maxWidth={500}
+        maxWidth="clamp(26rem, 58vw, 56rem)"
         showCloseButton={false}
       >
         <div>
@@ -637,10 +637,10 @@ export default function MyProfilePage() {
               />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100">
+              <h3 className="text-[clamp(1rem,1.2vw,1.5rem)] font-extrabold text-slate-900 dark:text-slate-100">
                 BMI Result
               </h3>
-              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 mt-0.5">
+              <p className="text-[clamp(0.75rem,0.8vw,1rem)] text-gray-600 dark:text-slate-300 mt-0.5">
                 Body Mass Index
               </p>
             </div>
@@ -648,34 +648,38 @@ export default function MyProfilePage() {
 
           {/* Content */}
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-            {/* BMI Score */}
-            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-6 text-center">
-              <p
-                className="text-5xl sm:text-6xl font-black mb-1"
-                style={{ color: bmiClassification?.color || "#6b7280" }}
-              >
-                {bmiValue}
-              </p>
-              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
-                BMI Score
-              </p>
-            </div>
-
-            {/* Classification */}
-            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-6 text-center">
-              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 mb-2">
-                Classification
-              </p>
-              <div
-                className="inline-block px-4 py-2 rounded-full"
-                style={{ backgroundColor: bmiClassification?.bgColor || "#f3f4f6" }}
-              >
-                <p
-                  className="text-sm sm:text-base font-extrabold tracking-wide"
-                  style={{ color: bmiClassification?.color || "#6b7280" }}
-                >
-                  {bmiClassification?.label || "N/A"}
-                </p>
+            {/* BMI Score + Classification */}
+            <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-4 sm:p-6">
+              <div className="grid grid-cols-2 gap-4 items-center text-center">
+                <div>
+                  <p className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 font-semibold mb-1">
+                    BMI Score
+                  </p>
+                  <p
+                    className="text-[clamp(2.25rem,4vw,3.75rem)] font-black mb-1"
+                    style={{ color: bmiClassification?.color || "#6b7280" }}
+                  >
+                    {bmiValue}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[clamp(0.75rem,0.8vw,1rem)] text-gray-600 dark:text-slate-300 mb-2">
+                    Classification
+                  </p>
+                  <div
+                    className="inline-block px-4 py-2 rounded-full"
+                    style={{
+                      backgroundColor: bmiClassification?.bgColor || "#f3f4f6",
+                    }}
+                  >
+                    <p
+                      className="text-[clamp(0.75rem,0.85vw,1rem)] font-extrabold tracking-wide"
+                      style={{ color: bmiClassification?.color || "#6b7280" }}
+                    >
+                      {bmiClassification?.label || "N/A"}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -686,11 +690,11 @@ export default function MyProfilePage() {
                   className="w-5 h-5 mr-2"
                   style={{ color: bmiClassification?.color || "#6b7280" }}
                 />
-                <p className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                <p className="text-[clamp(0.8rem,0.85vw,1rem)] font-bold text-slate-900 dark:text-slate-100">
                   Health Tip
                 </p>
               </div>
-              <p className="text-sm sm:text-base text-gray-600 dark:text-slate-300 leading-relaxed">
+              <p className="text-[clamp(0.65rem,0.72vw,0.82rem)] text-gray-600 dark:text-slate-300 whitespace-nowrap">
                 BMI is a screening tool. Consult with a healthcare professional
                 for personalized health advice.
               </p>
@@ -698,43 +702,43 @@ export default function MyProfilePage() {
 
             {/* BMI Ranges */}
             <div>
-              <p className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 mb-3">
+              <p className="text-[clamp(0.8rem,0.9vw,1rem)] font-extrabold text-slate-900 dark:text-slate-100 mb-3">
                 BMI Ranges
               </p>
               <div className="space-y-2">
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#3b82f6] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 flex-1">
                     Underweight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 font-semibold">
                     &lt; 18.5
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#10b981] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 flex-1">
                     Healthy Weight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 font-semibold">
                     18.5 - 24.9
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#f59e0b] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 flex-1">
                     Overweight
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 font-semibold">
                     25.0 - 29.9
                   </span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-3 h-3 rounded-full bg-[#ef4444] mr-3" />
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 flex-1">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 flex-1">
                     Obesity
                   </span>
-                  <span className="text-sm sm:text-base text-gray-600 dark:text-slate-300 font-semibold">
+                  <span className="text-[clamp(0.75rem,0.85vw,1rem)] text-gray-600 dark:text-slate-300 font-semibold">
                     ≥ 30.0
                   </span>
                 </div>
@@ -746,7 +750,7 @@ export default function MyProfilePage() {
           <div className="flex justify-end pt-4 mt-4 border-t border-gray-200 dark:border-slate-700">
             <button
               onClick={() => setBmiModalOpen(false)}
-              className="px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0f766e] hover:bg-[#0d6b63] text-white rounded-xl font-bold text-sm sm:text-base transition-colors"
+              className="px-5 sm:px-6 py-2.5 sm:py-3 bg-[#0f766e] hover:bg-[#0d6b63] text-white rounded-xl font-bold text-[clamp(0.75rem,0.85vw,1rem)] transition-colors"
             >
               Got it
             </button>
@@ -884,3 +888,4 @@ export default function MyProfilePage() {
     </div>
   );
 }
+

@@ -624,8 +624,11 @@ export default function WorkoutMealPlanPage({
         (mealRecord?.cooking_instructions as unknown[]) || [];
       const mealKey = `${title}-${mealName}-${index ?? 0}`;
       const isExpanded = !!expandedMeals[mealKey];
+      const hasIngredients =
+        Array.isArray(ingredients) && ingredients.length > 0;
       const hasInstructions =
         Array.isArray(instructions) && instructions.length > 0;
+      const hasFullDetails = hasIngredients || hasInstructions;
 
       return (
         <div className="rounded-xl border border-slate-200 dark:border-teal-600 bg-white dark:bg-teal-500/80 px-3 py-4 shadow-sm">
@@ -642,7 +645,7 @@ export default function WorkoutMealPlanPage({
               {mealName}
             </p>
           </div>
-          {hasInstructions && (
+          {hasFullDetails && (
             <button
               type="button"
               onClick={() =>
@@ -653,79 +656,92 @@ export default function WorkoutMealPlanPage({
               }
               className="text-xs font-semibold text-teal-700 dark:text-teal-400 hover:text-teal-800 dark:hover:text-teal-300 transition-colors mb-3"
             >
-              {isExpanded ? "Hide instructions" : "View instructions"}
+              {isExpanded ? "Hide Full details" : "View Full details"}
             </button>
           )}
-          {isExpanded && hasInstructions && (
-            <ol className="mb-3 space-y-1 text-xs text-slate-600 dark:text-slate-300 list-decimal list-inside">
-              {instructions.map((step, stepIndex) => (
-                <li key={`${mealKey}-step-${stepIndex}`}>{String(step)}</li>
-              ))}
-            </ol>
-          )}
-          <div className="text-sm text-slate-700 dark:text-slate-300">
-            <p className="font-semibold text-slate-600 dark:text-slate-400 mb-2">
-              Ingredients
-            </p>
-            {Array.isArray(ingredients) && ingredients.length > 0 ? (
-              <div className="space-y-2">
-                <div className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  <span>Qty</span>
-                  <span>Item name</span>
-                  <span>Price</span>
-                </div>
-                {ingredients.map((ingredient, ingredientIndex) => {
-                  if (typeof ingredient === "string") {
-                    return (
-                      <div
-                        key={`${mealName}-ingredient-${ingredientIndex}`}
-                        className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-sm text-slate-700 dark:text-slate-300"
-                      >
-                        <span className="text-slate-500 dark:text-slate-400">
-                          -
-                        </span>
-                        <span>{ingredient}</span>
-                        <span className="text-slate-500 dark:text-slate-400">
-                          -
-                        </span>
-                      </div>
-                    );
-                  }
-                  const ingredientRecord = ingredient as Record<
-                    string,
-                    unknown
-                  >;
-                  return (
-                    <div
-                      key={`${mealName}-ingredient-${ingredientIndex}`}
-                      className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-sm text-slate-700 dark:text-slate-300"
-                    >
-                      <span className="text-slate-600 dark:text-slate-400">
-                        {(ingredientRecord.measurement as string) || "-"}
-                      </span>
-                      <span>
-                        {(() => {
-                          const rawItem =
-                            (ingredientRecord.item_name as string) ||
-                            (ingredientRecord.item as string) ||
-                            (ingredientRecord.name as string) ||
-                            "";
-                          return rawItem ? toTitleCase(rawItem) : "-";
-                        })()}
-                      </span>
-                      <span className="text-slate-600 dark:text-slate-400">
-                        {(ingredientRecord.price as string) || "-"}
-                      </span>
+          {isExpanded && (
+            <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+              <div>
+                <p className="font-semibold text-slate-600 dark:text-slate-400 mb-2">
+                  Ingredients
+                </p>
+                {hasIngredients ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <span>Qty</span>
+                      <span>Item name</span>
+                      <span>Price</span>
                     </div>
-                  );
-                })}
+                    {ingredients.map((ingredient, ingredientIndex) => {
+                      if (typeof ingredient === "string") {
+                        return (
+                          <div
+                            key={`${mealName}-ingredient-${ingredientIndex}`}
+                            className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-sm text-slate-700 dark:text-slate-300"
+                          >
+                            <span className="text-slate-500 dark:text-slate-400">
+                              -
+                            </span>
+                            <span>{ingredient}</span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                              -
+                            </span>
+                          </div>
+                        );
+                      }
+                      const ingredientRecord = ingredient as Record<
+                        string,
+                        unknown
+                      >;
+                      return (
+                        <div
+                          key={`${mealName}-ingredient-${ingredientIndex}`}
+                          className="grid grid-cols-[0.8fr_1.6fr_0.6fr] gap-4 text-sm text-slate-700 dark:text-slate-300"
+                        >
+                          <span className="text-slate-600 dark:text-slate-400">
+                            {(ingredientRecord.measurement as string) || "-"}
+                          </span>
+                          <span>
+                            {(() => {
+                              const rawItem =
+                                (ingredientRecord.item_name as string) ||
+                                (ingredientRecord.item as string) ||
+                                (ingredientRecord.name as string) ||
+                                "";
+                              return rawItem ? toTitleCase(rawItem) : "-";
+                            })()}
+                          </span>
+                          <span className="text-slate-600 dark:text-slate-400">
+                            {(ingredientRecord.price as string) || "-"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No ingredient details provided.
+                  </p>
+                )}
               </div>
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                No ingredient details provided.
-              </p>
-            )}
-          </div>
+              <div>
+                <p className="font-semibold text-slate-600 dark:text-slate-400 mb-2">
+                  Cooking Instructions
+                </p>
+                {hasInstructions ? (
+                  <ol className="space-y-1 text-xs text-slate-600 dark:text-slate-300 list-decimal list-inside">
+                    {instructions.map((step, stepIndex) => (
+                      <li key={`${mealKey}-step-${stepIndex}`}>{String(step)}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No cooking instructions provided.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       );
     },

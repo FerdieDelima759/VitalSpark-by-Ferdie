@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
 const DAY_WORKOUT_PROMPT_ID = "pmpt_696b4c297ebc8193ab67088cd5e034c10a70cda92773d275";
-const DAY_WORKOUT_PROMPT_VERSION = "14";
+const DAY_WORKOUT_PROMPT_VERSION = "16";
 
 type DayWorkoutPromptVariables = {
   gender?: string;

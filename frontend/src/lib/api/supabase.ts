@@ -20,7 +20,7 @@ export const getRedirectUri = (route: string = 'auth/callback'): string => {
 
 // Custom fetch with timeout to prevent hanging requests
 const fetchWithTimeout = (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
-    const timeout = 12000; // 12 second timeout
+    const timeout = 25000; // 25 second timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
         console.warn(`⏰ Supabase fetch timeout after ${timeout}ms:`, url);

@@ -1,69 +1,15 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GoogleGenAI } from "@google/genai";
-
-// Read API key from Next.js public env (safe for client distribution per user's request).
-// Note: For production secrecy, prefer server-side API route or proxy.
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-if (!GEMINI_API_KEY) {
-    console.warn(
-        "Missing NEXT_PUBLIC_GEMINI_API_KEY. Set it in your .env.local file to use Gemini services."
-    );
-}
-
-// Initialize Gemini client
-export const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
-
-// Check if Gemini service is available and working
-export async function isGeminiAvailable(): Promise<boolean> {
-    if (!genAI) {
-        console.warn("Gemini client is not initialized. Please set NEXT_PUBLIC_GEMINI_API_KEY in .env.local");
-        return false;
-    }
-    try {
-        // Test with a simple API call by getting a model and making a minimal request
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        const result = await model.generateContent("test");
-        return result !== null;
-    } catch (error) {
-        console.error("Gemini API test failed:", error);
-        return false;
-    }
-}
-
-// Test Gemini connection with a simple generation
-export async function testGeminiConnection(): Promise<{ success: boolean; message?: string; error?: string }> {
-    if (!genAI) {
-        return {
-            success: false,
-            error: "Gemini client is not initialized. Please set NEXT_PUBLIC_GEMINI_API_KEY in .env.local"
-        };
-    }
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        const result = await model.generateContent("Say 'Hello, Gemini connection successful!' and nothing else.");
-        const response = await result.response;
-        const text = response.text();
-        return {
-            success: true,
-            message: text.trim()
-        };
-    } catch (error: any) {
-        return {
-            success: false,
-            error: error?.message || "Unknown error occurred"
-        };
-    }
-}
-
 // Interface for image generation options
 export interface ImageGenerationOptions {
     prompt: string;
-    model?: "gemini-2.5-flash-image" | "gemini-3-pro-image-preview"; // Nano Banana models
+    model?: string;
     numberOfImages?: number;
     aspectRatio?: "1:1" | "9:16" | "16:9" | "4:3" | "3:4";
     safetyFilterLevel?: "block_some" | "block_most" | "block_few" | "none";
-    personGeneration?: "allow_all" | "dont_allow_adult" | "dont_allow";
+    personGeneration?: "allow_all" | "allow_adult" | "dont_allow_adult" | "dont_allow";
+    negativePrompt?: string;
+    enhancePrompt?: boolean;
+    outputMimeType?: "image/png" | "image/jpeg";
+    imageSize?: "1K" | "2K";
 }
 
 // Interface for image generation response
@@ -73,12 +19,152 @@ export interface ImageGenerationResponse {
     error?: string;
 }
 
+const IMAGE_GEN_QUOTA_PAUSE_KEY = "vitalspark_image_quota_pause_until";
+const IMAGE_GEN_QUOTA_PAUSE_MS = 12 * 60 * 60 * 1000;
+const QUOTA_ERROR_PATTERN =
+    /(resource_exhausted|quota|exceeded your current quota|429)/i;
+
+type ErrorRecord = Record<string, unknown>;
+
+function parseMaybeJson(value: unknown): unknown {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
+    try {
+        return JSON.parse(trimmed);
+    } catch {
+        return value;
+    }
+}
+
+function asRecord(value: unknown): ErrorRecord | undefined {
+    if (typeof value === "object" && value !== null) {
+        return value as ErrorRecord;
+    }
+    return undefined;
+}
+
+function normalizeImageGenerationError(
+    status: number | undefined,
+    errorData: unknown,
+): { message: string; isQuotaExceeded: boolean } {
+    const queue: unknown[] = [errorData];
+    const visited = new Set<unknown>();
+    let message: string | undefined;
+    let isQuotaExceeded = status === 429;
+
+    while (queue.length > 0) {
+        const current = queue.shift();
+        if (current === undefined || current === null || visited.has(current)) {
+            continue;
+        }
+        visited.add(current);
+
+        const parsed = parseMaybeJson(current);
+        if (parsed !== current && !visited.has(parsed)) {
+            queue.push(parsed);
+        }
+
+        if (typeof parsed === "string") {
+            const trimmed = parsed.trim();
+            if (!message && trimmed.length > 0) {
+                message = trimmed;
+            }
+            if (QUOTA_ERROR_PATTERN.test(trimmed)) {
+                isQuotaExceeded = true;
+            }
+            continue;
+        }
+
+        const record = asRecord(parsed);
+        if (!record) continue;
+
+        const code = record.code;
+        if (code === 429 || code === "429") {
+            isQuotaExceeded = true;
+        }
+
+        const statusText =
+            typeof record.status === "string"
+                ? record.status
+                : typeof record.code === "string"
+                    ? record.code
+                    : "";
+        if (/RESOURCE_EXHAUSTED/i.test(statusText)) {
+            isQuotaExceeded = true;
+        }
+
+        const rawMessage = record.message;
+        if (typeof rawMessage === "string" && !message) {
+            message = rawMessage;
+        }
+
+        if (record.error !== undefined) queue.push(record.error);
+        if (rawMessage !== undefined) queue.push(rawMessage);
+
+        const details = record.details;
+        if (Array.isArray(details)) {
+            for (const detail of details) {
+                queue.push(detail);
+            }
+        }
+    }
+
+    return {
+        message: message || (status ? `API request failed with status ${status}` : "Image generation failed"),
+        isQuotaExceeded,
+    };
+}
+
+function getImageQuotaPauseUntil(): number {
+    if (typeof window === "undefined") return 0;
+    try {
+        const raw = window.localStorage.getItem(IMAGE_GEN_QUOTA_PAUSE_KEY);
+        if (!raw) return 0;
+        const until = Number(raw);
+        if (!Number.isFinite(until) || until <= Date.now()) {
+            window.localStorage.removeItem(IMAGE_GEN_QUOTA_PAUSE_KEY);
+            return 0;
+        }
+        return until;
+    } catch {
+        return 0;
+    }
+}
+
+function setImageQuotaPause(): number {
+    const until = Date.now() + IMAGE_GEN_QUOTA_PAUSE_MS;
+    if (typeof window === "undefined") return until;
+    try {
+        window.localStorage.setItem(IMAGE_GEN_QUOTA_PAUSE_KEY, String(until));
+    } catch {
+        // Ignore storage errors; caller still gets pause-until timestamp.
+    }
+    return until;
+}
+
+function formatPauseUntil(timestamp: number): string {
+    try {
+        return new Date(timestamp).toLocaleString();
+    } catch {
+        return new Date(timestamp).toISOString();
+    }
+}
+
+export function isImageQuotaExceededError(errorMessage: string | undefined): boolean {
+    if (!errorMessage) return false;
+    return QUOTA_ERROR_PATTERN.test(errorMessage);
+}
+
+function normalizeModelId(model: string): string {
+    return model.startsWith("models/") ? model.slice("models/".length) : model;
+}
+
 /**
- * Generate images using Gemini/Imagen API
- * 
- * Note: Google's Imagen API for image generation typically requires server-side implementation
- * through Vertex AI. This function attempts client-side access, but for production use,
- * consider creating a Next.js API route at /api/generate-image that proxies the request.
+ * Generate images through the server-side API route.
+ *
+ * This keeps credentials on the server and lets the route use Vertex auth
+ * (ADC in local/dev or service-account credentials in deployment).
  * 
  * @param options - Image generation options including prompt and model settings
  * @returns Promise with generated images (base64 or URLs)
@@ -86,126 +172,71 @@ export interface ImageGenerationResponse {
 export async function generateImage(
     options: ImageGenerationOptions
 ): Promise<ImageGenerationResponse> {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const normalizedOptions: ImageGenerationOptions = {
+        ...options,
+        model: normalizeModelId(options.model || "imagen-4.0-generate-001"),
+    };
+    const quotaPauseUntil = getImageQuotaPauseUntil();
 
-    if (!apiKey) {
+    if (quotaPauseUntil > Date.now()) {
         return {
             success: false,
-            error: "Gemini API key is not initialized. Please set NEXT_PUBLIC_GEMINI_API_KEY in .env.local"
+            error: `Image generation paused due to quota limits until ${formatPauseUntil(quotaPauseUntil)}.`
         };
     }
 
     try {
-        // Try using Next.js API route first (recommended for production)
-        // If the route doesn't exist, fall back to direct client-side call
-        const useApiRoute = true; // Set to false to use direct client-side call
-
-        if (useApiRoute) {
-            try {
-                const response = await fetch("/api/generate-image", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify(options),
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    return {
-                        success: false,
-                        error: errorData.error || `API request failed with status ${response.status}`
-                    };
-                }
-
-                const data = await response.json();
-                return {
-                    success: true,
-                    images: data.images || []
-                };
-            } catch (apiRouteError) {
-                console.warn("API route not available, falling back to direct call:", apiRouteError);
-                // Fall through to direct client-side call
-            }
-        }
-
-        // Direct client-side call (may not work for all Imagen models)
-        // Note: Imagen API typically requires Vertex AI authentication
-        const model = options.model || "imagen-3.0-generate-001";
-        const numberOfImages = options.numberOfImages || 1;
-        const aspectRatio = options.aspectRatio || "1:1";
-
-        // Attempt direct API call
-        // This may require the API key to have Imagen access enabled
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages?key=${apiKey}`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    prompt: options.prompt,
-                    number_of_images: numberOfImages,
-                    aspect_ratio: aspectRatio,
-                    safety_filter_level: options.safetyFilterLevel || "block_some",
-                    person_generation: options.personGeneration || "allow_all",
-                }),
-            }
-        );
+        const response = await fetch("/api/generate-image", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(normalizedOptions),
+        });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
+            const normalizedError = normalizeImageGenerationError(response.status, errorData);
+            if (normalizedError.isQuotaExceeded) {
+                const pauseUntil = setImageQuotaPause();
+                return {
+                    success: false,
+                    error: `Image generation quota exceeded. Paused retries until ${formatPauseUntil(pauseUntil)}.`
+                };
+            }
             return {
                 success: false,
-                error: errorData.error?.message || `API request failed with status ${response.status}. Consider creating a server-side API route for better security and compatibility.`
+                error: normalizedError.message
             };
         }
 
         const data = await response.json();
-
-        // Extract images from response
-        // The response structure may vary, so we handle multiple formats
-        let images: string[] = [];
-
-        if (data.images && Array.isArray(data.images)) {
-            images = data.images.map((img: any) => {
-                if (typeof img === "string") return img;
-                if (img.base64) return `data:image/png;base64,${img.base64}`;
-                if (img.url) return img.url;
-                if (img.bytesBase64Encoded) return `data:image/png;base64,${img.bytesBase64Encoded}`;
-                return String(img);
-            });
-        } else if (data.generatedImages && Array.isArray(data.generatedImages)) {
-            images = data.generatedImages.map((img: any) => {
-                if (typeof img === "string") return img;
-                if (img.base64) return `data:image/png;base64,${img.base64}`;
-                if (img.url) return img.url;
-                if (img.bytesBase64Encoded) return `data:image/png;base64,${img.bytesBase64Encoded}`;
-                return String(img);
-            });
-        } else if (data.image && typeof data.image === "string") {
-            images = [data.image];
-        } else if (data.base64) {
-            images = [`data:image/png;base64,${data.base64}`];
-        }
-
-        if (images.length === 0) {
+        if (!Array.isArray(data?.images) || data.images.length === 0) {
             return {
                 success: false,
-                error: "No images were generated in the response"
+                error: "No images were generated in the API response"
             };
         }
 
+        const images = data.images.filter((image: unknown): image is string => typeof image === "string");
+
         return {
             success: true,
-            images: images
+            images
         };
     } catch (error: any) {
-        console.error("Error generating image with Gemini:", error);
+        console.error("Error generating image via /api/generate-image:", error);
+        const normalizedError = normalizeImageGenerationError(undefined, error);
+        if (normalizedError.isQuotaExceeded) {
+            const pauseUntil = setImageQuotaPause();
+            return {
+                success: false,
+                error: `Image generation quota exceeded. Paused retries until ${formatPauseUntil(pauseUntil)}.`
+            };
+        }
         return {
             success: false,
-            error: error?.message || "Unknown error occurred while generating image"
+            error: normalizedError.message || "Unknown error occurred while generating image"
         };
     }
 }
@@ -253,25 +284,23 @@ export function buildExerciseImagePrompt(
     exerciseDescription: string,
     gender: "female" | "male"
 ): string {
+    const cleanedDescription = exerciseDescription.trim().replace(/\.+$/, "");
+    const baseStyle =
+        "2D flat vector fitness illustration, non-photorealistic, clean geometric shapes, smooth shading, sharp outlines.";
+    const framing =
+        "Full body visible from head to shoes, centered composition, side profile when helpful for form clarity, pure seamless white background only.";
+    const constraints =
+        "No photo look, no real-person skin texture, no environment scene, no props other than a blue yoga mat, absolutely no text or characters anywhere (background, mat, clothing, or foreground), no icons, no logo, no watermark.";
+
     if (gender.toLowerCase() === "female") {
-        return `Style & Medium: A digital illustration in a smooth and clean vector art style, no visible outlines or seam lines on the shirt and leggings; form is defined solely by smooth gradient shading.
-Subject: A young athletic woman with light skin and long dark brown hair tied back in a ponytail. She has a calm, neutral facial expression.
-Attire: She is wearing a bright orange athletic t-shirt, navy blue leggings, and grey sneakers with white rubber soles.
-Action: She is performing "${exerciseName}" exercise. ${exerciseDescription}
-Environment: She is centered on a medium blue yoga mat against a pure white background.
-Composition: Square frame (1:1 aspect ratio). Her full body is fully contained within the image borders, with no cropping.`;
+        return `${baseStyle} Subject: young athletic woman performing ${exerciseName}. Appearance: dark brown hair in a high ponytail, bright orange short-sleeve athletic shirt, navy blue leggings, grey running sneakers with white soles. Pose requirement: ${cleanedDescription}. She is on a blue yoga mat. ${framing} ${constraints}`;
     } else {
-        return `Style & Medium: A digital illustration in a smooth and clean vector art style, no visible outlines or seam lines on the shirt and shorts; form is defined solely by smooth gradient shading.
-Subject: A young athletic man with light skin and short dark brown hair. He has a calm, neutral facial expression.
-Attire: He is wearing a bright orange athletic t-shirt, navy blue shorts, and grey sneakers with white rubber soles.
-Action: He is performing "${exerciseName}" exercise. ${exerciseDescription}
-Environment: He is centered on a medium blue yoga mat against a pure white background.
-Composition: Square frame (1:1 aspect ratio). His full body is fully contained within the image borders, with no cropping.`;
+        return `${baseStyle} Subject: young athletic man performing ${exerciseName}. Appearance: short dark brown hair, bright orange short-sleeve athletic shirt, navy blue shorts, grey running sneakers with white soles. Pose requirement: ${cleanedDescription}. He is on a blue yoga mat. ${framing} ${constraints}`;
     }
 }
 
 /**
- * Generate exercise image using Gemini 2.5 Flash Image model
+ * Generate exercise image using Imagen 4 model
  * 
  * @param exerciseName - Name of the exercise
  * @param exerciseDescription - Description of the exercise
@@ -285,17 +314,7 @@ export async function generateExerciseImage(
     gender: "female" | "male",
     timeoutMs: number = 60000
 ): Promise<{ success: boolean; image?: string; error?: string }> {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-    if (!apiKey) {
-        return {
-            success: false,
-            error: "Gemini API key is not initialized. Please set NEXT_PUBLIC_GEMINI_API_KEY in .env.local"
-        };
-    }
-
-    // Create a promise that rejects after timeout
-    const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => {
+    const timeoutPromise = new Promise<{ success: boolean; image?: string; error?: string }>((resolve) => {
         setTimeout(() => {
             resolve({
                 success: false,
@@ -304,67 +323,35 @@ export async function generateExerciseImage(
         }, timeoutMs);
     });
 
-    // The actual generation logic
     const generatePromise = async (): Promise<{ success: boolean; image?: string; error?: string }> => {
         try {
-            const ai = new GoogleGenAI({
-                apiKey: apiKey,
-            });
-
             const prompt = buildExerciseImagePrompt(exerciseName, exerciseDescription, gender);
+            console.log(`Generating image for: ${exerciseName} (model: imagen-4.0-generate-001)`);
 
-            const config = {
-                responseModalities: ['IMAGE', 'TEXT'],
-                imageConfig: {
-                    aspectRatio: '1:1',
-                },
-            };
-
-            const model = 'gemini-2.5-flash-image';
-            const contents = [
-                {
-                    role: 'user',
-                    parts: [
-                        {
-                            text: prompt,
-                        },
-                    ],
-                },
-            ];
-
-            console.log(`🎨 Generating image for: ${exerciseName}`);
-
-            const response = await ai.models.generateContentStream({
-                model,
-                config,
-                contents,
+            const result = await generateImage({
+                prompt,
+                model: "models/imagen-4.0-generate-001",
+                numberOfImages: 1,
+                aspectRatio: "4:3",
+                personGeneration: "allow_adult",
+                negativePrompt:
+                    "text, letters, words, typography, captions, labels, logo, watermark, signature, symbols, numbers, signage, banner, poster, UI overlay",
+                enhancePrompt: false,
+                outputMimeType: "image/jpeg",
+                imageSize: "1K",
             });
 
-            // Process the stream to extract the image
-            for await (const chunk of response) {
-                if (!chunk.candidates || !chunk.candidates[0]?.content?.parts) {
-                    continue;
-                }
-
-                const part = chunk.candidates[0].content.parts[0];
-
-                if (part.inlineData) {
-                    const mimeType = part.inlineData.mimeType || 'image/png';
-                    const base64Data = part.inlineData.data || '';
-
-                    if (base64Data) {
-                        console.log(`✅ Image generated for: ${exerciseName}`);
-                        return {
-                            success: true,
-                            image: `data:${mimeType};base64,${base64Data}`
-                        };
-                    }
-                }
+            if (!result.success || !result.images || result.images.length === 0) {
+                return {
+                    success: false,
+                    error: result.error || "No image was generated in the response"
+                };
             }
 
+            console.log(`Image generated for: ${exerciseName}`);
             return {
-                success: false,
-                error: "No image was generated in the response"
+                success: true,
+                image: result.images[0]
             };
         } catch (error: any) {
             console.error("Error generating exercise image:", error);
@@ -375,6 +362,5 @@ export async function generateExerciseImage(
         }
     };
 
-    // Race between generation and timeout
     return Promise.race([generatePromise(), timeoutPromise]);
 }
