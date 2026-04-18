@@ -1507,7 +1507,7 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         const { data, error: insertError } = await supabase
           .from("user_workout_plan_exercises")
           .insert(insertPayloads)
-          .select("id");
+          .select("*");
 
         if (insertError) {
           console.error("❌ Plan exercises insert error:", insertError);

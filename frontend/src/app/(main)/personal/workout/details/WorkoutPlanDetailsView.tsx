@@ -4340,7 +4340,7 @@ export function WorkoutPlanDetailsView({
                                             if (!dayPlanId) return;
                                             void savePendingRegeneratedDay({
                                               dayPlanId,
-                                              dayName: day.day,
+                                              dayName: selectedDay.day,
                                             });
                                           }}
                                           disabled={isSelectedDaySaving}
