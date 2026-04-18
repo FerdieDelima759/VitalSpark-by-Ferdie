@@ -3,13 +3,32 @@ export interface ImageGenerationOptions {
     prompt: string;
     model?: string;
     numberOfImages?: number;
+    sampleCount?: number;
     aspectRatio?: "1:1" | "9:16" | "16:9" | "4:3" | "3:4";
-    safetyFilterLevel?: "block_some" | "block_most" | "block_few" | "none";
+    safetyFilterLevel?:
+        | "block_low_and_above"
+        | "block_medium_and_above"
+        | "block_only_high"
+        | "block_none"
+        | "block_some"
+        | "block_most"
+        | "block_few"
+        | "none";
+    safetySetting?: ImageGenerationOptions["safetyFilterLevel"];
     personGeneration?: "allow_all" | "allow_adult" | "dont_allow_adult" | "dont_allow";
     negativePrompt?: string;
     enhancePrompt?: boolean;
     outputMimeType?: "image/png" | "image/jpeg";
+    outputCompressionQuality?: number;
     imageSize?: "1K" | "2K";
+    sampleImageSize?: "1K" | "2K" | "1k" | "2k";
+    addWatermark?: boolean;
+    includeRaiReason?: boolean;
+    language?: "auto";
+    outputOptions?: {
+        mimeType?: "image/png" | "image/jpeg";
+        compressionQuality?: number;
+    };
 }
 
 // Interface for image generation response
@@ -160,6 +179,35 @@ function normalizeModelId(model: string): string {
     return model.startsWith("models/") ? model.slice("models/".length) : model;
 }
 
+function normalizeSafetyFilterLevel(
+    value: ImageGenerationOptions["safetyFilterLevel"] | undefined,
+): "block_low_and_above" | "block_medium_and_above" | "block_only_high" | "block_none" | undefined {
+    switch (value) {
+        case "block_most":
+        case "block_low_and_above":
+            return "block_low_and_above";
+        case "block_some":
+        case "block_medium_and_above":
+            return "block_medium_and_above";
+        case "block_few":
+        case "block_only_high":
+            return "block_only_high";
+        case "none":
+        case "block_none":
+            return "block_none";
+        default:
+            return undefined;
+    }
+}
+
+function normalizeImageSize(
+    value: ImageGenerationOptions["imageSize"] | ImageGenerationOptions["sampleImageSize"] | undefined,
+): "1K" | "2K" | undefined {
+    if (value === "1k" || value === "1K") return "1K";
+    if (value === "2k" || value === "2K") return "2K";
+    return undefined;
+}
+
 /**
  * Generate images through the server-side API route.
  *
@@ -172,9 +220,21 @@ function normalizeModelId(model: string): string {
 export async function generateImage(
     options: ImageGenerationOptions
 ): Promise<ImageGenerationResponse> {
+    const normalizedSafetyFilterLevel = normalizeSafetyFilterLevel(
+        options.safetySetting || options.safetyFilterLevel,
+    );
+    const normalizedImageSize = normalizeImageSize(
+        options.sampleImageSize || options.imageSize,
+    );
     const normalizedOptions: ImageGenerationOptions = {
         ...options,
         model: normalizeModelId(options.model || "imagen-4.0-generate-001"),
+        numberOfImages: options.numberOfImages || options.sampleCount,
+        safetyFilterLevel: normalizedSafetyFilterLevel,
+        imageSize: normalizedImageSize,
+        outputMimeType: options.outputOptions?.mimeType || options.outputMimeType,
+        outputCompressionQuality:
+            options.outputOptions?.compressionQuality ?? options.outputCompressionQuality,
     };
     const quotaPauseUntil = getImageQuotaPauseUntil();
 
@@ -284,19 +344,14 @@ export function buildExerciseImagePrompt(
     exerciseDescription: string,
     gender: "female" | "male"
 ): string {
-    const cleanedDescription = exerciseDescription.trim().replace(/\.+$/, "");
-    const baseStyle =
-        "2D flat vector fitness illustration, non-photorealistic, clean geometric shapes, smooth shading, sharp outlines.";
-    const framing =
-        "Full body visible from head to shoes, centered composition, side profile when helpful for form clarity, pure seamless white background only.";
-    const constraints =
-        "No photo look, no real-person skin texture, no environment scene, no props other than a blue yoga mat, absolutely no text or characters anywhere (background, mat, clothing, or foreground), no icons, no logo, no watermark.";
+    const cleanName = exerciseName.trim();
+    const cleanDescription = exerciseDescription.trim().replace(/\s+/g, " ");
 
-    if (gender.toLowerCase() === "female") {
-        return `${baseStyle} Subject: young athletic woman performing ${exerciseName}. Appearance: dark brown hair in a high ponytail, bright orange short-sleeve athletic shirt, navy blue leggings, grey running sneakers with white soles. Pose requirement: ${cleanedDescription}. She is on a blue yoga mat. ${framing} ${constraints}`;
-    } else {
-        return `${baseStyle} Subject: young athletic man performing ${exerciseName}. Appearance: short dark brown hair, bright orange short-sleeve athletic shirt, navy blue shorts, grey running sneakers with white soles. Pose requirement: ${cleanedDescription}. He is on a blue yoga mat. ${framing} ${constraints}`;
+    if (gender === "male") {
+        return `A realistic vector-style illustration of a young athletic man performing ${cleanName}, ${cleanDescription} He has light skin and short dark brown hair, with a calm and neutral facial expression. He is wearing a bright orange athletic t-shirt, navy blue shorts, and grey sneakers with white rubber soles. He is centered on a medium blue yoga mat placed horizontally across the frame. The background is pure white, clean, and minimal. The composition uses a 4:3 aspect ratio, centered with balanced spacing and no cropping. Rendered in a realistic vector art style with clean, visible linework and smooth gradient shading.`;
     }
+
+    return `A realistic vector-style illustration of a young athletic woman performing ${cleanName}, ${cleanDescription} She has light skin and long dark brown hair tied in a ponytail, with a calm and neutral facial expression. She is wearing a bright orange athletic t-shirt (No crop top), navy blue leggings, and grey sneakers with white rubber soles. She is centered on a medium blue yoga mat placed horizontally across the frame. The background is pure white, clean, and minimal. The composition uses a 4:3 aspect ratio, centered with balanced spacing and no cropping. Rendered in a realistic vector art style with clean, visible linework and smooth gradient shading.`;
 }
 
 /**
@@ -331,14 +386,18 @@ export async function generateExerciseImage(
             const result = await generateImage({
                 prompt,
                 model: "models/imagen-4.0-generate-001",
-                numberOfImages: 1,
                 aspectRatio: "4:3",
+                sampleCount: 1,
+                sampleImageSize: "1K",
                 personGeneration: "allow_adult",
-                negativePrompt:
-                    "text, letters, words, typography, captions, labels, logo, watermark, signature, symbols, numbers, signage, banner, poster, UI overlay",
-                enhancePrompt: false,
-                outputMimeType: "image/jpeg",
-                imageSize: "1K",
+                safetySetting: "block_few",
+                addWatermark: true,
+                includeRaiReason: true,
+                language: "auto",
+                outputOptions: {
+                    mimeType: "image/jpeg",
+                    compressionQuality: 95,
+                },
             });
 
             if (!result.success || !result.images || result.images.length === 0) {

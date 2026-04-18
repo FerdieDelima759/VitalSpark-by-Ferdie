@@ -95,6 +95,8 @@ export function setUserSessionData(data: Partial<UserSessionData>): void {
       } else {
         sessionStorage.removeItem(SESSION_STORAGE_KEYS.USER_ID);
       }
+      // Dispatch custom event for same-window updates
+      window.dispatchEvent(new Event("sessionStorageChange"));
     }
 
     if (data.userProfile !== undefined) {
@@ -122,6 +124,7 @@ export function clearUserSessionData(): void {
     Object.values(SESSION_STORAGE_KEYS).forEach((key) => {
       sessionStorage.removeItem(key);
     });
+    window.dispatchEvent(new Event("sessionStorageChange"));
   } catch (error) {
     console.error("Error clearing session storage:", error);
   }

@@ -6,9 +6,13 @@ import Image from "next/image";
 import { useWorkoutContext } from "@/contexts/WorkoutContext";
 import { useUserContext } from "@/contexts/UserContext";
 import { usePlansContext } from "@/contexts/PlansContext";
+import { useCoachWorkoutData } from "@/hooks/useCoachWorkoutData";
+import { supabase } from "@/lib/api/supabase";
 import type { WorkoutPlan } from "@/types/Workout";
+import type { CoachWorkoutPlanWithTags } from "@/types/CoachWorkout";
 import type { PlanTier } from "@/types/Plan";
 import Toast, { ToastProps } from "@/components/Toast";
+import CoachWorkoutPlanCard from "@/components/CoachWorkoutPlanCard";
 import {
   HiBolt,
   HiClock,
@@ -36,17 +40,21 @@ export default function WorkoutsPage() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [isRefreshingWorkouts, setIsRefreshingWorkouts] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const [coachWorkoutPlans, setCoachWorkoutPlans] = useState<
+    CoachWorkoutPlanWithTags[]
+  >([]);
+  const [isLoadingCoachPlans, setIsLoadingCoachPlans] = useState(false);
   const toastIdRef = useRef(0);
 
   const {
     workoutPlans,
     loadingState,
-    filterPlansByCategory,
     refreshWorkoutData,
   } = useWorkoutContext();
 
   const { userProfile } = useUserContext();
   const { showPlanDialog } = usePlansContext();
+  const { fetchCoachWorkoutPlans } = useCoachWorkoutData();
 
   const formatTime = (date: Date): string => {
     const hours: number = date.getHours();
@@ -117,14 +125,99 @@ export default function WorkoutsPage() {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   };
 
+  const loadCoachWorkoutPlans = useCallback(
+    async ({ forceRefresh = false }: { forceRefresh?: boolean } = {}) => {
+      const CACHE_KEY = "coach_workout_plans_cache";
+      const CACHE_DURATION = 60 * 60 * 1000;
+
+      if (!forceRefresh && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem(CACHE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached) as {
+              data?: CoachWorkoutPlanWithTags[];
+              timestamp?: number;
+            };
+            const cacheAge =
+              typeof parsed.timestamp === "number"
+                ? Date.now() - parsed.timestamp
+                : Number.POSITIVE_INFINITY;
+            if (cacheAge < CACHE_DURATION && Array.isArray(parsed.data)) {
+              setCoachWorkoutPlans(parsed.data);
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn("Error reading coach workout plans cache:", error);
+          localStorage.removeItem(CACHE_KEY);
+        }
+      }
+
+      setIsLoadingCoachPlans(true);
+      try {
+        const result = await fetchCoachWorkoutPlans();
+        if (!result.success || !result.data) {
+          setCoachWorkoutPlans([]);
+          return;
+        }
+
+        const { data: tagsData } = await supabase
+          .from("workout_tags")
+          .select("*")
+          .order("name", { ascending: true });
+
+        const plansWithTags = await Promise.all(
+          result.data.map(async (plan) => {
+            const { data: planTagsData } = await supabase
+              .from("coach_workout_plan_tags")
+              .select("tag_id")
+              .eq("plan_id", plan.id);
+
+            const tagIds = planTagsData?.map((pt) => pt.tag_id) || [];
+            const tags = (tagsData || []).filter((tag) => tagIds.includes(tag.id));
+
+            return { ...plan, tags };
+          }),
+        );
+
+        setCoachWorkoutPlans(plansWithTags);
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            CACHE_KEY,
+            JSON.stringify({
+              data: plansWithTags,
+              timestamp: Date.now(),
+            }),
+          );
+        }
+      } catch (error) {
+        console.error("Error loading coach workout plans:", error);
+      } finally {
+        setIsLoadingCoachPlans(false);
+      }
+    },
+    [fetchCoachWorkoutPlans],
+  );
+
   const handleRefreshWorkouts = useCallback(async () => {
     try {
       setIsRefreshingWorkouts(true);
-      await Promise.resolve(refreshWorkoutData());
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("coach_workout_plans_cache");
+      }
+      await Promise.all([
+        Promise.resolve(refreshWorkoutData()),
+        loadCoachWorkoutPlans({ forceRefresh: true }),
+      ]);
     } finally {
       setIsRefreshingWorkouts(false);
     }
-  }, [refreshWorkoutData]);
+  }, [loadCoachWorkoutPlans, refreshWorkoutData]);
+
+  useEffect(() => {
+    void loadCoachWorkoutPlans();
+  }, [loadCoachWorkoutPlans]);
 
   // Helper function to check if a plan matches a category
   const planMatchesCategory = useCallback(
@@ -176,6 +269,36 @@ export default function WorkoutsPage() {
       return false;
     },
     [getUserPlanTier],
+  );
+
+  const isCoachPlanUnlocked = useCallback(
+    (planIndex: number): boolean => {
+      const userTier = getUserPlanTier();
+      if (userTier === "premium") return true;
+      if (userTier === "pro") return planIndex === 0;
+      return false;
+    },
+    [getUserPlanTier],
+  );
+
+  const handleCoachPlanClick = useCallback(
+    (plan: CoachWorkoutPlanWithTags, planIndex: number) => {
+      const unlocked = isCoachPlanUnlocked(planIndex);
+      if (!unlocked) {
+        const userTier = getUserPlanTier();
+        showPlanDialog({
+          showAllPlans: false,
+          highlightTier: userTier === "free" ? "pro" : "premium",
+          onPlanSelect: (planCode: string, tier: PlanTier) => {
+            console.log("Selected plan:", planCode, tier);
+          },
+        });
+        return;
+      }
+
+      router.push(`/personal/coach/workout/details?id=${plan.id}`);
+    },
+    [getUserPlanTier, isCoachPlanUnlocked, router, showPlanDialog],
   );
 
   // Get unique categories from workout plans
@@ -578,6 +701,76 @@ export default function WorkoutsPage() {
               <HiArrowRight className="w-4 h-4" />
             </button>
           )}
+
+        {/* Workout Plans by Fitness Coaches */}
+        <div className="mt-8 mb-2">
+          <h3 className="text-2xl font-extrabold text-teal-800 dark:text-teal-300 mb-6">
+            Workout Plans by Fitness Coaches
+          </h3>
+
+          {isLoadingCoachPlans ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mb-4" />
+              <p className="text-base font-bold text-teal-700 dark:text-teal-300">
+                Loading workout plans...
+              </p>
+            </div>
+          ) : coachWorkoutPlans.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <p className="text-base font-medium text-slate-500 dark:text-slate-400 text-center">
+                No workout plans available from coaches yet
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="pb-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {coachWorkoutPlans.map((plan, index) => (
+                    <CoachWorkoutPlanCard
+                      key={plan.id}
+                      plan={plan}
+                      isLocked={!isCoachPlanUnlocked(index)}
+                      onClick={() => handleCoachPlanClick(plan, index)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {coachWorkoutPlans.length > 6 && (
+                <div className="mt-6 flex justify-center">
+                  {getUserPlanTier() === "premium" ? (
+                    <button
+                      onClick={() => router.push("/personal/coach/workout")}
+                      className="w-full max-w-md bg-linear-to-r from-teal-600 to-teal-500 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
+                    >
+                      <span>View all plans</span>
+                      <HiArrowRight className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const userTier = getUserPlanTier();
+                        showPlanDialog({
+                          showAllPlans: false,
+                          highlightTier:
+                            userTier === "free" ? "pro" : "premium",
+                          onPlanSelect: (planCode: string, tier: PlanTier) => {
+                            console.log("Selected plan:", planCode, tier);
+                          },
+                        });
+                      }}
+                      className="w-full max-w-md bg-linear-to-r from-amber-500 to-amber-400 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
+                    >
+                      <HiLockOpen className="w-5 h-5" />
+                      <span>Unlock all Workout Plans</span>
+                      <HiArrowRight className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Toast Notifications */}

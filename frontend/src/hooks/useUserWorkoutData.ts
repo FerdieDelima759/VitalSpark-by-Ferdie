@@ -41,6 +41,9 @@ interface UseUserWorkoutDataReturn {
   deleteUserWorkoutPlan: (
     planId: string
   ) => Promise<UserWorkoutDataResponse<boolean>>;
+  deleteUserWorkoutPlanCascade: (
+    planId: string
+  ) => Promise<UserWorkoutDataResponse<boolean>>;
 
   // Image randomization
   getRandomImagePath: (
@@ -140,7 +143,6 @@ const getUsedImageNumbers = async (
 ): Promise<number[]> => {
   // Skip database query to avoid delays - just return empty array
   // This means we might reuse image numbers, but it's better than blocking
-  console.log("📷 Skipping used image query for faster save");
   return [];
 };
 
@@ -187,6 +189,56 @@ const generateImageSlugFromName = (
     .replace(/^-|-$/g, ""); // Remove leading/trailing dashes
 
   return `${section}/${kebabName}`;
+};
+
+const EXERCISE_LOOKUP_CHUNK_SIZE = 25;
+
+const chunkArray = <T,>(items: T[], chunkSize: number): T[][] => {
+  if (chunkSize <= 0) return [items];
+
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
+const parseExerciseEquipment = (
+  equipment: string[] | string | null | undefined
+): string[] | null => {
+  if (!equipment) return null;
+
+  if (Array.isArray(equipment)) {
+    const cleaned = equipment
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
+  const cleaned = equipment
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return cleaned.length > 0 ? cleaned : null;
+};
+
+const normalizeExerciseEquipment = (
+  equipment: string[] | string | null | undefined
+): string => {
+  const parsed = parseExerciseEquipment(equipment);
+  if (!parsed || parsed.length === 0) return "";
+
+  return parsed
+    .map((item) => item.toLowerCase())
+    .sort()
+    .join(",");
+};
+
+const createExerciseLookupKey = (
+  name: string,
+  equipment: string[] | string | null | undefined
+): string => {
+  return `${name.toLowerCase().trim()}|${normalizeExerciseEquipment(equipment)}`;
 };
 
 // ===========================
@@ -381,12 +433,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
     async (
       payload: CreateUserWorkoutPlanPayload
     ): Promise<UserWorkoutDataResponse<UserWorkoutPlan>> => {
-      console.log("📝 createUserWorkoutPlan called with:", {
-        name: payload.name,
-        user_id: payload.user_id,
-        hasImagePath: !!payload.image_path,
-      });
-
       try {
         setIsLoading(true);
         setError(null);
@@ -404,7 +450,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         // Get random image path if not provided
         let imagePath = payload.image_path;
         if (!imagePath) {
-          console.log("📷 No image path provided, generating one...");
           // Use gender and location from payload, with defaults
           const imageResult = await getRandomImagePath(
             payload.user_id,
@@ -427,15 +472,10 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           user_id: payload.user_id,
         };
 
-        console.log("📤 Inserting to user_workout_plans:", JSON.stringify(insertPayload, null, 2));
-        console.log("🔌 Supabase client exists:", !!supabase);
-
         let data: any = null;
         let insertError: any = null;
 
         try {
-          console.log("🚀 Starting Supabase insert...");
-          const startTime = Date.now();
           const response = await supabase
             .from("user_workout_plans")
             .insert(insertPayload)
@@ -444,7 +484,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
 
           data = response.data;
           insertError = response.error;
-          console.log(`📡 Supabase call completed in ${Date.now() - startTime}ms`);
         } catch (supabaseException: any) {
           console.error("💥 Supabase exception:", supabaseException);
           // Check if it's an abort error (timeout)
@@ -454,13 +493,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
             insertError = supabaseException;
           }
         }
-
-        console.log("📥 Supabase response:", {
-          hasData: !!data,
-          hasError: !!insertError,
-          error: insertError,
-          dataId: data?.id
-        });
 
         if (insertError) {
           console.error("❌ Supabase insert error:", insertError);
@@ -474,7 +506,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           return { success: false, error: "No data returned from database" };
         }
 
-        console.log("✅ Plan saved successfully:", data?.id);
         return { success: true, data: data };
       } catch (err: any) {
         console.error("❌ createUserWorkoutPlan exception:", err);
@@ -551,6 +582,105 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
 
         if (deleteError) {
           const errorMsg = handleError(deleteError);
+          setError(errorMsg);
+          return { success: false, error: errorMsg };
+        }
+
+        return { success: true, data: true };
+      } catch (err: any) {
+        const errorMsg = handleError(err);
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [handleError]
+  );
+
+  const deleteUserWorkoutPlanCascade = useCallback(
+    async (planId: string): Promise<UserWorkoutDataResponse<boolean>> => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        if (!planId.trim()) {
+          return { success: false, error: "Plan ID is required" };
+        }
+
+        const { data: weekPlans, error: weekPlansError } = await supabase
+          .from("user_workout_weekly_plan")
+          .select("id")
+          .eq("plan_id", planId);
+
+        if (weekPlansError) {
+          const errorMsg = handleError(weekPlansError);
+          setError(errorMsg);
+          return { success: false, error: errorMsg };
+        }
+
+        const weekPlanIds =
+          weekPlans?.map((weekPlan) => weekPlan.id).filter(Boolean) || [];
+
+        if (weekPlanIds.length > 0) {
+          const { data: weeklyDayPlans, error: weeklyDayPlansError } =
+            await supabase
+              .from("user_workout_weekly_day_plan")
+              .select("id")
+              .in("week_plan_id", weekPlanIds);
+
+          if (weeklyDayPlansError) {
+            const errorMsg = handleError(weeklyDayPlansError);
+            setError(errorMsg);
+            return { success: false, error: errorMsg };
+          }
+
+          const weeklyDayPlanIds =
+            weeklyDayPlans?.map((dayPlan) => dayPlan.id).filter(Boolean) || [];
+
+          if (weeklyDayPlanIds.length > 0) {
+            const { error: deleteExercisesError } = await supabase
+              .from("user_workout_plan_exercises")
+              .delete()
+              .in("weekly_plan_id", weeklyDayPlanIds);
+
+            if (deleteExercisesError) {
+              const errorMsg = handleError(deleteExercisesError);
+              setError(errorMsg);
+              return { success: false, error: errorMsg };
+            }
+          }
+
+          const { error: deleteWeeklyDaysError } = await supabase
+            .from("user_workout_weekly_day_plan")
+            .delete()
+            .in("week_plan_id", weekPlanIds);
+
+          if (deleteWeeklyDaysError) {
+            const errorMsg = handleError(deleteWeeklyDaysError);
+            setError(errorMsg);
+            return { success: false, error: errorMsg };
+          }
+
+          const { error: deleteWeekPlansError } = await supabase
+            .from("user_workout_weekly_plan")
+            .delete()
+            .eq("plan_id", planId);
+
+          if (deleteWeekPlansError) {
+            const errorMsg = handleError(deleteWeekPlansError);
+            setError(errorMsg);
+            return { success: false, error: errorMsg };
+          }
+        }
+
+        const { error: deletePlanError } = await supabase
+          .from("user_workout_plans")
+          .delete()
+          .eq("id", planId);
+
+        if (deletePlanError) {
+          const errorMsg = handleError(deletePlanError);
           setError(errorMsg);
           return { success: false, error: errorMsg };
         }
@@ -683,8 +813,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           remaining_days: payload.remaining_days,
         };
 
-        console.log("📤 Creating week plan:", insertPayload);
-
         const { data, error: insertError } = await supabase
           .from("user_workout_weekly_plan")
           .insert(insertPayload)
@@ -706,7 +834,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           return { success: false, error: errorMsg };
         }
 
-        console.log("✅ Week plan created:", data.id);
         return { success: true, data: data };
       } catch (err: any) {
         console.error("❌ createUserWorkoutWeekPlan exception:", err);
@@ -849,12 +976,12 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           rpe_record: payload.rpe_record ?? null,
         }));
 
-        console.log("📤 Creating weekly daily plans:", insertPayloads.length);
-
         const { data, error: insertError } = await supabase
           .from("user_workout_weekly_day_plan")
           .insert(insertPayloads)
-          .select();
+          .select(
+            "id,day,title,focus,motivation,week_plan_id,total_calories,total_minutes,rpe_record,created_at"
+          );
 
         if (insertError) {
           console.error("❌ Weekly day plans insert error:", insertError);
@@ -871,7 +998,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           return { success: false, error: errorMsg };
         }
 
-        console.log("✅ Weekly day plans created:", data.length);
         return { success: true, data: data };
       } catch (err: any) {
         console.error("❌ createUserWorkoutWeeklyPlans exception:", err);
@@ -1054,26 +1180,55 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           return { success: true, data: [] };
         }
 
-        // Get unique exercise names (normalized)
-        const exerciseNames = [...new Set(exercises.map((e) => e.name.trim()))];
-
-        // Query all exercises and filter by case-insensitive name match
-        const { data, error: fetchError } = await supabase
-          .from("user_exercises_details")
-          .select("*");
-
-        if (fetchError) {
-          const errorMsg = handleError(fetchError);
-          return { success: false, error: errorMsg };
-        }
-
-        // Filter manually by name (case-insensitive)
-        const exerciseNamesLower = exerciseNames.map((n) => n.toLowerCase());
-        const matchingExercises = (data || []).filter((dbExercise) =>
-          exerciseNamesLower.includes(dbExercise.name.toLowerCase().trim())
+        const exerciseNames = [
+          ...new Set(
+            exercises
+              .map((exercise) => exercise.name.trim())
+              .filter((name) => name.length > 0)
+          ),
+        ];
+        const requestedKeys = new Set(
+          exercises.map((exercise) =>
+            createExerciseLookupKey(exercise.name, exercise.equipment)
+          )
         );
 
-        return { success: true, data: matchingExercises };
+        const matchedExercises: UserExerciseDetails[] = [];
+
+        for (const nameChunk of chunkArray(
+          exerciseNames,
+          EXERCISE_LOOKUP_CHUNK_SIZE
+        )) {
+          const { data, error: fetchError } = await supabase
+            .from("user_exercises_details")
+            .select("id,name,safety_cue,created_at,image_slug,section,equipment")
+            .in("name", nameChunk);
+
+          if (fetchError) {
+            const errorMsg = handleError(fetchError);
+            return { success: false, error: errorMsg };
+          }
+
+          (data || []).forEach((exercise) => {
+            const key = createExerciseLookupKey(
+              exercise.name,
+              exercise.equipment
+            );
+            if (requestedKeys.has(key)) {
+              matchedExercises.push(exercise);
+            }
+          });
+        }
+
+        const uniqueMatches = new Map<string, UserExerciseDetails>();
+        matchedExercises.forEach((exercise) => {
+          uniqueMatches.set(
+            createExerciseLookupKey(exercise.name, exercise.equipment),
+            exercise
+          );
+        });
+
+        return { success: true, data: Array.from(uniqueMatches.values()) };
       } catch (err: any) {
         const errorMsg = handleError(err);
         return { success: false, error: errorMsg };
@@ -1109,43 +1264,16 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           }
         }
 
-        // Helper to parse equipment from payload
-        const parseEquipment = (equipment: string[] | null | undefined): string[] | null => {
-          if (!equipment) return null;
-          if (Array.isArray(equipment)) {
-            return equipment;
-          } else if (typeof equipment === "string") {
-            return (equipment as string)
-              .split(",")
-              .map((e) => e.trim())
-              .filter((e) => e.length > 0);
-          }
-          return null;
-        };
-
-        // Helper to normalize equipment for comparison (sorted, lowercase, joined)
-        const normalizeEquipment = (equipment: string[] | null | undefined): string => {
-          if (!equipment || equipment.length === 0) return "";
-          return equipment
-            .map((e) => e.toLowerCase().trim())
-            .sort()
-            .join(",");
-        };
-
-        // Helper to create a unique key from name + equipment
-        const createExerciseKey = (name: string, equipment: string[] | null | undefined): string => {
-          const normalizedName = name.toLowerCase().trim();
-          const normalizedEquip = normalizeEquipment(equipment);
-          return `${normalizedName}|${normalizedEquip}`;
-        };
+        const parseEquipment = parseExerciseEquipment;
+        const createExerciseKey = createExerciseLookupKey;
 
         // Deduplicate input payloads by name + equipment (DB has unique constraint on name + equipment)
         const seenKeys = new Set<string>();
         const uniquePayloads: CreateUserExerciseDetailsPayload[] = [];
 
         payloads.forEach((payload) => {
-          const equipmentArray = parseEquipment(payload.equipment);
-          const key = createExerciseKey(payload.name, equipmentArray);
+          const equipmentArray = parseExerciseEquipment(payload.equipment);
+          const key = createExerciseLookupKey(payload.name, equipmentArray);
 
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
@@ -1153,30 +1281,23 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           }
         });
 
-        console.log("📋 Deduplicated input payloads by name+equipment:", {
-          original_count: payloads.length,
-          unique_count: uniquePayloads.length,
-        });
-
         // Prepare exercises for lookup
         const exercisesForLookup = uniquePayloads.map((p) => ({
           name: p.name.trim(),
-          equipment: parseEquipment(p.equipment),
+          equipment: parseExerciseEquipment(p.equipment),
         }));
 
         // Find existing exercises by name (we'll filter by equipment in memory)
         const existingResult = await findExistingExercises(exercisesForLookup);
-        const existingExercises = existingResult.success ? existingResult.data || [] : [];
-
-        console.log("🔍 Found existing exercises in DB:", {
-          total_found: existingExercises.length,
-          exercises: existingExercises.map((e) => ({ name: e.name, equipment: e.equipment })),
-        });
+        if (!existingResult.success) {
+          return { success: false, error: existingResult.error };
+        }
+        const existingExercises = existingResult.data || [];
 
         // Create a map of existing exercises by name + equipment key
         const existingByKey = new Map<string, UserExerciseDetails>();
         existingExercises.forEach((exercise) => {
-          const key = createExerciseKey(exercise.name, exercise.equipment);
+          const key = createExerciseLookupKey(exercise.name, exercise.equipment);
           existingByKey.set(key, exercise);
         });
 
@@ -1186,53 +1307,34 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         const newPayloads: CreateUserExerciseDetailsPayload[] = [];
 
         uniquePayloads.forEach((payload) => {
-          const equipmentArray = parseEquipment(payload.equipment);
-          const key = createExerciseKey(payload.name, equipmentArray);
+          const equipmentArray = parseExerciseEquipment(payload.equipment);
+          const key = createExerciseLookupKey(payload.name, equipmentArray);
           const existingExercise = existingByKey.get(key);
 
           if (existingExercise) {
-            // Reuse existing exercise (matched by name + equipment)
-            console.log(`♻️ Reusing existing exercise: ${payload.name} (equipment: ${normalizeEquipment(equipmentArray) || "none"})`);
             reusedExercises.push(existingExercise);
           } else {
-            // Need to create new exercise
             newPayloads.push(payload);
           }
-        });
-
-        console.log("📊 Exercise deduplication result:", {
-          total_unique: uniquePayloads.length,
-          reused_from_db: reusedExercises.length,
-          new_to_create: newPayloads.length,
         });
 
         // Create only the new exercises (already deduplicated by name)
         let newlyCreatedExercises: UserExerciseDetails[] = [];
         if (newPayloads.length > 0) {
-          const insertPayloads = newPayloads.map((payload) => {
-            const imageSlug =
-              payload.image_slug || generateImageSlugFromName(payload.section, payload.name);
-
-            const equipmentArray = parseEquipment(payload.equipment);
-
-            return {
-              name: payload.name.trim(),
-              safety_cue: payload.safety_cue ?? null,
-              image_slug: imageSlug,
-              section: payload.section,
-              equipment: equipmentArray,
-            };
-          });
-
-          console.log("📝 Inserting new exercises:", {
-            count: insertPayloads.length,
-            names: insertPayloads.map((p) => p.name),
-          });
+          const insertPayloads = newPayloads.map((payload) => ({
+            name: payload.name.trim(),
+            safety_cue: payload.safety_cue ?? null,
+            image_slug:
+              payload.image_slug ||
+              generateImageSlugFromName(payload.section, payload.name),
+            section: payload.section,
+            equipment: parseEquipment(payload.equipment),
+          }));
 
           const { data, error: insertError } = await supabase
             .from("user_exercises_details")
             .insert(insertPayloads)
-            .select();
+            .select("id,name,safety_cue,created_at,image_slug,section,equipment");
 
           if (insertError) {
             console.error("❌ Insert error:", insertError);
@@ -1242,10 +1344,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           }
 
           newlyCreatedExercises = data || [];
-          console.log("✅ Created new exercises:", {
-            count: newlyCreatedExercises.length,
-            names: newlyCreatedExercises.map((e) => e.name),
-          });
         }
 
         // Build a complete map of all exercises (reused + newly created) by name + equipment
@@ -1406,15 +1504,10 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           is_image_generated: payload.is_image_generated ?? null,
         }));
 
-        console.log("📝 Inserting plan exercises:", {
-          count: insertPayloads.length,
-          sample: insertPayloads.slice(0, 2),
-        });
-
         const { data, error: insertError } = await supabase
           .from("user_workout_plan_exercises")
           .insert(insertPayloads)
-          .select();
+          .select("id");
 
         if (insertError) {
           console.error("❌ Plan exercises insert error:", insertError);
@@ -1430,10 +1523,6 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
           setError(errorMsg);
           return { success: false, error: errorMsg };
         }
-
-        console.log("✅ Plan exercises saved:", {
-          count: data.length,
-        });
 
         return { success: true, data: data };
       } catch (err: any) {
@@ -1549,9 +1638,18 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
         const imageResult = await generateImage({
           prompt,
           model: "imagen-4.0-generate-001",
-          aspectRatio: "16:9",
-          numberOfImages: 1,
-          personGeneration: "allow_all",
+          aspectRatio: "4:3",
+          sampleCount: 1,
+          sampleImageSize: "1K",
+          personGeneration: "allow_adult",
+          safetySetting: "block_few",
+          addWatermark: true,
+          includeRaiReason: true,
+          language: "auto",
+          outputOptions: {
+            mimeType: "image/jpeg",
+            compressionQuality: 95,
+          },
         });
 
         console.log(`📊 Image generation result:`, {
@@ -1677,6 +1775,7 @@ export function useUserWorkoutData(): UseUserWorkoutDataReturn {
     createUserWorkoutPlan,
     updateUserWorkoutPlan,
     deleteUserWorkoutPlan,
+    deleteUserWorkoutPlanCascade,
     getRandomImagePath,
     fetchUserWorkoutWeekPlan,
     fetchAllUserWorkoutWeekPlans,

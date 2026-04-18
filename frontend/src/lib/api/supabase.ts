@@ -18,9 +18,18 @@ export const getRedirectUri = (route: string = 'auth/callback'): string => {
     return `http://localhost:3000/${route}`;
 };
 
+const DEFAULT_SUPABASE_FETCH_TIMEOUT_MS = 90000;
+const parsedSupabaseFetchTimeoutMs = Number(
+    process.env.NEXT_PUBLIC_SUPABASE_FETCH_TIMEOUT_MS ?? ''
+);
+const SUPABASE_FETCH_TIMEOUT_MS =
+    Number.isFinite(parsedSupabaseFetchTimeoutMs) && parsedSupabaseFetchTimeoutMs > 0
+        ? parsedSupabaseFetchTimeoutMs
+        : DEFAULT_SUPABASE_FETCH_TIMEOUT_MS;
+
 // Custom fetch with timeout to prevent hanging requests
 const fetchWithTimeout = (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
-    const timeout = 25000; // 25 second timeout
+    const timeout = SUPABASE_FETCH_TIMEOUT_MS;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
         console.warn(`⏰ Supabase fetch timeout after ${timeout}ms:`, url);

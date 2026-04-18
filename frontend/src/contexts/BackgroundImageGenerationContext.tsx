@@ -12,7 +12,6 @@ import React, {
 import { supabase } from "@/lib/api/supabase";
 import { generateExerciseImage, isImageQuotaExceededError } from "@/lib/gemini";
 import { getUserSessionData } from "@/utils/sessionStorage";
-import type { UserExerciseDetails } from "@/types/UserWorkout";
 
 // ============================================================================
 // TYPES
@@ -21,8 +20,11 @@ import type { UserExerciseDetails } from "@/types/UserWorkout";
 export interface BackgroundImageGenExercise {
   id: string;
   name: string;
+  imagePath: string;
   imageSlug: string;
   section: string;
+  description?: string | null;
+  gender?: "male" | "female";
   status:
     | "pending"
     | "checking"
@@ -89,33 +91,89 @@ const log = {
 // ============================================================================
 
 // Upload base64 image to Supabase Storage
+const decodeGeneratedImageToBlob = async (
+  imageData: string,
+): Promise<Blob> => {
+  const normalized = imageData.startsWith("data:image")
+    ? imageData
+    : `data:image/png;base64,${imageData}`;
+  const response = await fetch(normalized);
+  if (!response.ok) {
+    throw new Error("Failed to decode generated image");
+  }
+  return response.blob();
+};
+
+const convertBlobToPng = async (sourceBlob: Blob): Promise<Blob> => {
+  if (sourceBlob.type === "image/png") {
+    return sourceBlob;
+  }
+
+  const objectUrl = URL.createObjectURL(sourceBlob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () =>
+        reject(new Error("Failed to load generated image for PNG conversion"));
+      nextImage.src = objectUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to create canvas context for image upload");
+    }
+
+    context.drawImage(image, 0, 0);
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+            return;
+          }
+          reject(new Error("Failed to convert generated image to PNG"));
+        },
+        "image/png",
+        1,
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
+const checkPublicStorageUrlExists = async (publicUrl: string): Promise<boolean> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(publicUrl, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok || response.status === 206;
+  } catch {
+    return false;
+  }
+};
+
 const uploadImageToStorage = async (
   base64Image: string,
   gender: "male" | "female",
   imageSlug: string,
 ): Promise<{ success: boolean; url?: string; error?: string }> => {
   try {
-    let imageBlob: Blob;
-    if (base64Image.startsWith("data:image")) {
-      const base64Data = base64Image.split(",")[1];
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      imageBlob = new Blob([byteArray], { type: "image/png" });
-    } else {
-      const byteCharacters = atob(base64Image);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      imageBlob = new Blob([byteArray], { type: "image/png" });
-    }
+    const decodedBlob = await decodeGeneratedImageToBlob(base64Image);
+    const imageBlob = await convertBlobToPng(decodedBlob);
 
     const storagePath = `exercises/${gender}/${imageSlug}.png`;
+    const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
 
     const { error: uploadError } = await supabase.storage
       .from("workouts")
@@ -125,40 +183,34 @@ const uploadImageToStorage = async (
       });
 
     if (uploadError) {
-      return { success: false, error: uploadError.message };
+      const alreadyExists = await checkPublicStorageUrlExists(publicUrl);
+      if (alreadyExists) {
+        return { success: true, url: publicUrl };
+      }
+
+      const { error: updateError } = await supabase.storage
+        .from("workouts")
+        .update(storagePath, imageBlob, {
+          contentType: "image/png",
+          upsert: true,
+        });
+
+      if (!updateError) {
+        return { success: true, url: publicUrl };
+      }
+
+      return {
+        success: false,
+        error:
+          updateError.message !== uploadError.message
+            ? `${uploadError.message} | update fallback: ${updateError.message}`
+            : uploadError.message,
+      };
     }
 
-    const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
     return { success: true, url: publicUrl };
   } catch (err: any) {
     return { success: false, error: err?.message || "Upload failed" };
-  }
-};
-
-// Check if image exists in storage
-const checkImageExists = async (
-  gender: "male" | "female",
-  imageSlug: string,
-): Promise<boolean> => {
-  try {
-    const storagePath = `exercises/${gender}/${imageSlug}.png`;
-    const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(publicUrl, {
-      method: "GET",
-      headers: { Range: "bytes=0-0" },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    // 200 = full content, 206 = partial content (range request worked)
-    return response.ok || response.status === 206;
-  } catch {
-    return false;
   }
 };
 
@@ -182,9 +234,62 @@ const fetchPlanExerciseImageStatus = async (
     }
 
     return { hasRecords: true, shouldProcess: true };
-  } catch (err) {
+  } catch {
     log.warn("is_image_generated check failed");
     return { hasRecords: false, shouldProcess: true };
+  }
+};
+
+const parseImagePathMetadata = (
+  imagePath: string,
+): { gender: "male" | "female"; imageSlug: string } | null => {
+  const match = imagePath.match(
+    /\/exercises\/(male|female)\/(.+?)\.png(?:\?|$)/i,
+  );
+  if (!match?.[1] || !match?.[2]) return null;
+
+  return {
+    gender: match[1].toLowerCase() === "male" ? "male" : "female",
+    imageSlug: match[2],
+  };
+};
+
+const formatTitleCase = (value: string): string =>
+  value.replace(/\w\S*/g, (word) => {
+    const lower = word.toLowerCase();
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  });
+
+const parseExerciseNameFromImageAlt = (imageAlt: string | null): string | null => {
+  if (!imageAlt) return null;
+  const trimmed = imageAlt
+    .replace(/\s*exercise demonstration\s*$/i, "")
+    .trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseExerciseNameFromSlug = (imageSlug: string): string => {
+  const namePart = imageSlug.includes("/")
+    ? imageSlug.split("/").slice(1).join("/")
+    : imageSlug;
+  return formatTitleCase(namePart.replace(/-/g, " ").trim() || "Exercise");
+};
+
+const checkImageUrlExists = async (imagePath: string): Promise<boolean> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(imagePath, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    return response.ok || response.status === 206;
+  } catch {
+    return false;
   }
 };
 
@@ -371,24 +476,59 @@ export function BackgroundImageGenerationProvider({
     }
   }, []);
 
-  // Fetch all user exercise details from database
-  const fetchAllExerciseDetails = useCallback(async (): Promise<
-    UserExerciseDetails[]
+  // Fetch pending plan exercises from database
+  const fetchPendingPlanExercises = useCallback(async (): Promise<
+    BackgroundImageGenExercise[]
   > => {
     try {
       const { data, error } = await supabase
-        .from("user_exercises_details")
-        .select("*")
-        .order("created_at", { ascending: true });
+        .from("user_workout_plan_exercises")
+        .select("id,image_path,image_alt,description,section,is_image_generated")
+        .or("is_image_generated.is.null,is_image_generated.eq.false")
+        .not("image_path", "is", null)
+        .order("position", { ascending: true });
 
       if (error) {
-        log.error("Error fetching exercises", error);
+        log.error("Error fetching pending plan exercises", error);
         return [];
       }
 
-      return data || [];
+      type PendingPlanExerciseRow = {
+        id: string;
+        image_path: string | null;
+        image_alt: string | null;
+        description: string | null;
+        section: string | null;
+        is_image_generated: boolean | null;
+      };
+
+      const uniqueExercises = new Map<string, BackgroundImageGenExercise>();
+
+      ((data || []) as PendingPlanExerciseRow[]).forEach((row) => {
+        if (!row.image_path || uniqueExercises.has(row.image_path)) return;
+
+        const parsedPath = parseImagePathMetadata(row.image_path);
+        if (!parsedPath) return;
+
+        const exerciseName =
+          parseExerciseNameFromImageAlt(row.image_alt) ||
+          parseExerciseNameFromSlug(parsedPath.imageSlug);
+
+        uniqueExercises.set(row.image_path, {
+          id: row.image_path,
+          name: exerciseName,
+          imagePath: row.image_path,
+          imageSlug: parsedPath.imageSlug,
+          section: row.section || "main",
+          description: row.description?.trim() || null,
+          gender: parsedPath.gender,
+          status: "pending",
+        });
+      });
+
+      return Array.from(uniqueExercises.values());
     } catch (err) {
-      log.error("Exception fetching exercises", err);
+      log.error("Exception fetching pending plan exercises", err);
       return [];
     }
   }, []);
@@ -421,13 +561,18 @@ export function BackgroundImageGenerationProvider({
 
       const {
         id: exerciseId,
+        imagePath,
         imageSlug,
         name: exerciseName,
+        description: cachedDescription,
+        gender: queuedGender,
       } = nextExercise;
       processed++;
 
-      if (!imageSlug) {
-        updateExerciseStatus(exerciseId, "failed", { error: "No image slug" });
+      if (!imageSlug || !imagePath) {
+        updateExerciseStatus(exerciseId, "failed", {
+          error: "Missing image metadata",
+        });
         continue;
       }
 
@@ -436,7 +581,6 @@ export function BackgroundImageGenerationProvider({
       await new Promise((resolve) => setTimeout(resolve, CHECK_DELAY_MS));
 
       try {
-        const imagePath = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${gender}/${imageSlug}.png`;
         const planStatus = await fetchPlanExerciseImageStatus(imagePath);
         if (planStatus.hasRecords && !planStatus.shouldProcess) {
           updateExerciseStatus(exerciseId, "exists", { uploadedUrl: imagePath });
@@ -444,7 +588,7 @@ export function BackgroundImageGenerationProvider({
           continue;
         }
 
-        const exists = await checkImageExists(gender, imageSlug);
+        const exists = await checkImageUrlExists(imagePath);
 
         if (exists) {
           log.progress(processed, totalPending, exerciseName, "exists");
@@ -457,7 +601,8 @@ export function BackgroundImageGenerationProvider({
         log.progress(processed, totalPending, exerciseName, "generating...");
         updateExerciseStatus(exerciseId, "generating");
 
-        const description = await fetchPlanExerciseDescription(imagePath);
+        const description =
+          cachedDescription?.trim() || (await fetchPlanExerciseDescription(imagePath));
         if (!description) {
           updateExerciseStatus(exerciseId, "failed", {
             error:
@@ -473,7 +618,7 @@ export function BackgroundImageGenerationProvider({
         const result = await generateExerciseImage(
           exerciseName,
           description,
-          gender,
+          queuedGender || gender,
           60000,
         );
 
@@ -502,7 +647,7 @@ export function BackgroundImageGenerationProvider({
 
         const uploadResult = await uploadImageToStorage(
           result.image,
-          gender,
+          queuedGender || gender,
           imageSlug,
         );
 
@@ -571,7 +716,11 @@ export function BackgroundImageGenerationProvider({
       // Check for stored state with pending work
       const storedExercises = getStoredState();
       if (storedExercises?.length) {
-        const hasPendingWork = storedExercises.some(
+        const sanitizedStoredExercises = storedExercises.filter(
+          (exercise): exercise is BackgroundImageGenExercise =>
+            Boolean(exercise.imagePath && exercise.imageSlug),
+        );
+        const hasPendingWork = sanitizedStoredExercises.some(
           (ex) =>
             ex.status === "pending" ||
             ex.status === "checking" ||
@@ -579,7 +728,7 @@ export function BackgroundImageGenerationProvider({
         );
 
         if (hasPendingWork) {
-          const restored = storedExercises.map((ex) =>
+          const restored = sanitizedStoredExercises.map((ex) =>
             ex.status === "checking" || ex.status === "generating"
               ? { ...ex, status: "pending" as const }
               : ex,
@@ -596,38 +745,23 @@ export function BackgroundImageGenerationProvider({
         }
       }
 
-      // Fetch fresh exercise data
-      const dbExercises = await fetchAllExerciseDetails();
-      if (!dbExercises.length) {
+      // Fetch fresh pending plan exercises
+      const pendingPlanExercises = await fetchPendingPlanExercises();
+      if (!pendingPlanExercises.length) {
         setIsInitialized(true);
         return;
       }
 
-      const exerciseList: BackgroundImageGenExercise[] = dbExercises
-        .filter((ex) => ex.image_slug)
-        .map((ex) => ({
-          id: ex.id,
-          name: ex.name,
-          imageSlug: ex.image_slug!,
-          section: ex.section || "main",
-          status: "pending" as const,
-        }));
-
-      if (!exerciseList.length) {
-        setIsInitialized(true);
-        return;
-      }
-
-      log.info(`Found ${exerciseList.length} exercises to check`);
-      setExercises(exerciseList);
-      setStats(calculateStats(exerciseList));
-      saveState(exerciseList);
+      log.info(`Found ${pendingPlanExercises.length} pending plan exercise images`);
+      setExercises(pendingPlanExercises);
+      setStats(calculateStats(pendingPlanExercises));
+      saveState(pendingPlanExercises);
       setIsInitialized(true);
       setTimeout(() => processQueue(), 3000);
     };
 
     initialize();
-  }, [fetchUserGender, fetchAllExerciseDetails, calculateStats, processQueue]);
+  }, [fetchUserGender, fetchPendingPlanExercises, calculateStats, processQueue]);
 
   // Actions
   const startBackgroundGeneration = useCallback(() => {

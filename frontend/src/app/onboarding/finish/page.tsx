@@ -7,12 +7,13 @@ import { useUserData } from "@/hooks/useUserData";
 import { useAuth } from "@/contexts/AuthContext";
 import { auth } from "@/hooks/useAuth";
 import Loader from "@/components/Loader";
+import type { UserProfile } from "@/types/UserProfile";
 
 export default function FinishOnboarding() {
   const router = useRouter();
   const { user } = useAuth();
   const { upsertUserProfile, fetchUserProfile } = useUserData();
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [motivationalMessage, setMotivationalMessage] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,9 +67,9 @@ export default function FinishOnboarding() {
       }
 
       router.replace("/onboarding/generate-workout");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Finish onboarding error:", e);
-      setError(e?.message || "Failed to complete onboarding");
+      setError(e instanceof Error ? e.message : "Failed to complete onboarding");
     } finally {
       setBusy(false);
     }
@@ -91,10 +92,10 @@ export default function FinishOnboarding() {
               Welcome, {displayName}!
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-green-400 font-semibold mb-3 sm:mb-4">
-              You're in good hands
+              You&apos;re in good hands
             </p>
             <p className="text-gray-300 text-xs sm:text-sm md:text-base leading-relaxed max-w-xl sm:max-w-2xl mx-auto">
-              We're here to support you on your fitness and nutrition journey
+              We&apos;re here to support you on your fitness and nutrition journey
               with personalized plans and guidance.
             </p>
           </div>
@@ -125,12 +126,12 @@ export default function FinishOnboarding() {
               {busy ? (
                 <div className="flex items-center justify-center">
                   <Loader size="sm" inline />
-                  <span className="ml-2">Creating your profile...</span>
+                  <span className="ml-2">Preparing your workout plan...</span>
                 </div>
               ) : (
                 <div className="flex items-center justify-center">
                   <span className="mr-2">❤️</span>
-                  <span>It's good to go - Create my profile</span>
+                  <span>Continue to my workout plan</span>
                 </div>
               )}
             </button>

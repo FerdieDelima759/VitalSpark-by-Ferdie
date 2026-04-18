@@ -163,7 +163,7 @@ export interface UserWorkoutPlanExercise {
   per_side: boolean; // from prompt: "yes" -> true, "no" -> false
   image_path: string | null; // https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/[gender]/[image_slug].png
   image_alt: string | null; // Generated from exercise name
-  description: string | null; // From prompt pmpt_696b4c297ebc8193ab67088cd5e034c10a70cda92773d275
+  description: string | null; // From prompt pmpt_69d7d7aad26c8190ac376c8997bcf4c20f277dac9c469df0
   is_image_generated: boolean | null; // Background image generation status
 }
 
@@ -185,7 +185,7 @@ export interface CreateUserWorkoutPlanExercisePayload {
   per_side?: boolean; // from prompt: "yes" -> true, "no" -> false (default: false)
   image_path?: string | null; // Generated from gender + image_slug
   image_alt?: string | null; // Generated from exercise name
-  description?: string | null; // From prompt
+  description?: string | null; // From prompt pmpt_69d7d7aad26c8190ac376c8997bcf4c20f277dac9c469df0
   is_image_generated?: boolean | null; // Background image generation status
 }
 

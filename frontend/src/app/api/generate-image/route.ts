@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI, PersonGeneration, SafetyFilterLevel } from "@google/genai";
+import {
+  GoogleGenAI,
+  ImagePromptLanguage,
+  PersonGeneration,
+  SafetyFilterLevel,
+} from "@google/genai";
 import { existsSync } from "node:fs";
 import { ImageGenerationOptions } from "@/lib/gemini";
 
@@ -25,10 +30,21 @@ const SAFETY_FILTER_LEVEL_MAP: Record<
   NonNullable<ImageGenerationOptions["safetyFilterLevel"]>,
   SafetyFilterLevel
 > = {
+  block_low_and_above: SafetyFilterLevel.BLOCK_LOW_AND_ABOVE,
+  block_medium_and_above: SafetyFilterLevel.BLOCK_MEDIUM_AND_ABOVE,
+  block_only_high: SafetyFilterLevel.BLOCK_ONLY_HIGH,
+  block_none: SafetyFilterLevel.BLOCK_NONE,
   block_some: SafetyFilterLevel.BLOCK_LOW_AND_ABOVE,
   block_most: SafetyFilterLevel.BLOCK_MEDIUM_AND_ABOVE,
   block_few: SafetyFilterLevel.BLOCK_ONLY_HIGH,
   none: SafetyFilterLevel.BLOCK_NONE,
+};
+
+const IMAGE_PROMPT_LANGUAGE_MAP: Record<
+  NonNullable<ImageGenerationOptions["language"]>,
+  ImagePromptLanguage
+> = {
+  auto: ImagePromptLanguage.auto,
 };
 
 function normalizeModelId(model: string): string {
@@ -230,6 +246,14 @@ export async function POST(request: NextRequest) {
     });
     const model = normalizeModelId(options.model || "imagen-4.0-generate-001");
     const aspectRatio = options.aspectRatio || "1:1";
+    const numberOfImages = options.numberOfImages || options.sampleCount || 1;
+    const safetySetting = options.safetyFilterLevel || options.safetySetting;
+    const outputMimeType =
+      options.outputOptions?.mimeType || options.outputMimeType;
+    const outputCompressionQuality =
+      options.outputOptions?.compressionQuality ??
+      options.outputCompressionQuality;
+    const imageSize = options.sampleImageSize || options.imageSize;
     const isImagenModel = model.startsWith("imagen-");
     const images: string[] = [];
 
@@ -238,18 +262,24 @@ export async function POST(request: NextRequest) {
         model,
         prompt: options.prompt,
         config: {
-          numberOfImages: options.numberOfImages || 1,
+          numberOfImages,
           aspectRatio,
           personGeneration: options.personGeneration
             ? PERSON_GENERATION_MAP[options.personGeneration]
             : PersonGeneration.ALLOW_ADULT,
-          safetyFilterLevel: options.safetyFilterLevel
-            ? SAFETY_FILTER_LEVEL_MAP[options.safetyFilterLevel]
+          safetyFilterLevel: safetySetting
+            ? SAFETY_FILTER_LEVEL_MAP[safetySetting]
             : SafetyFilterLevel.BLOCK_LOW_AND_ABOVE,
+          includeRaiReason: options.includeRaiReason,
+          language: options.language
+            ? IMAGE_PROMPT_LANGUAGE_MAP[options.language]
+            : undefined,
           negativePrompt: options.negativePrompt,
           enhancePrompt: options.enhancePrompt ?? false,
-          outputMimeType: options.outputMimeType,
-          imageSize: options.imageSize,
+          outputMimeType,
+          outputCompressionQuality,
+          addWatermark: options.addWatermark,
+          imageSize,
         },
       });
 

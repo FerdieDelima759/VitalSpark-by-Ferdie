@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import {
   HiSparkles,
-  HiLockOpen,
   HiArrowRight,
   HiArrowPath,
   HiArrowLeft,
@@ -17,6 +14,7 @@ import { testOpenAIConnectionFull } from "@/utils/test_openai_connection";
 import {
   generateWorkoutWithPrompt,
   generateDayWorkoutWithPrompt,
+  enrichDayWorkoutWithExerciseDescriptions,
   generatePlanMetadataWithPrompt,
   convertUserProfileToVariables,
   parseExerciseMetrics,
@@ -33,12 +31,7 @@ import {
   DailyWorkout,
 } from "@/utils/parseWorkoutResponse";
 import WorkoutCard from "@/components/WorkoutCard";
-import { useCoachWorkoutData } from "@/hooks/useCoachWorkoutData";
-import { CoachWorkoutPlanWithTags } from "@/types/CoachWorkout";
-import CoachWorkoutPlanCard from "@/components/CoachWorkoutPlanCard";
-import { usePlansContext } from "@/contexts/PlansContext";
 import { useUserContext } from "@/contexts/UserContext";
-import type { PlanTier } from "@/types/Plan";
 import Dialog from "@/components/Dialog";
 import { useUserWorkoutData } from "@/hooks/useUserWorkoutData";
 import type {
@@ -47,7 +40,7 @@ import type {
   ExerciseSection,
 } from "@/types/UserWorkout";
 import { supabase } from "@/lib/api/supabase";
-import { HiMoon, HiSun, HiArrowRightOnRectangle } from "react-icons/hi2";
+import { WorkoutPlanDetailsView } from "@/app/(main)/personal/workout/details/WorkoutPlanDetailsView";
 
 // Helper function to format text in title case
 const formatTitleCase = (text: string): string => {
@@ -167,8 +160,9 @@ const uploadImageToStorage = async (
 
     const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
     return { success: true, url: publicUrl };
-  } catch (err: any) {
-    return { success: false, error: err?.message || "Upload failed" };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return { success: false, error: message };
   }
 };
 
@@ -380,11 +374,9 @@ const parsePlanExerciseMetricsForSave = (value: string | undefined) => {
 };
 
 export default function PersonalPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const { fetchUserProfile } = useUserData();
   const { userProfile: userContextProfile, refreshUserData } = useUserContext();
-  const { showPlanDialog } = usePlansContext();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(
     userContextProfile ?? null,
   );
@@ -427,7 +419,8 @@ export default function PersonalPage() {
   >({});
 
   // Image generation from context (persists across navigation)
-  const { clearImageGeneration, setExerciseImage } = useImageGeneration();
+  const { clearImageGeneration, setExerciseImage, queueDayForImageGeneration } =
+    useImageGeneration();
 
   // Dialog state for workout plan
   const [showWorkoutPlanDialog, setShowWorkoutPlanDialog] = useState(false);
@@ -456,13 +449,6 @@ export default function PersonalPage() {
     setDayCardsCanScrollRight(container.scrollLeft < maxScrollLeft - 1);
   }, []);
 
-  // Coach workout plans state
-  const { fetchCoachWorkoutPlans } = useCoachWorkoutData();
-  const [coachWorkoutPlans, setCoachWorkoutPlans] = useState<
-    CoachWorkoutPlanWithTags[]
-  >([]);
-  const [isLoadingCoachPlans, setIsLoadingCoachPlans] = useState(false);
-
   // User workout plans state
   const {
     createUserWorkoutPlan,
@@ -474,9 +460,6 @@ export default function PersonalPage() {
     getExercisePosition,
     getExerciseImagePath,
     generateImageSlug,
-    generateAndUploadExerciseImage,
-    checkExerciseImageExists,
-    fetchAllUserExerciseDetails,
     fetchUserWorkoutPlans,
   } = useUserWorkoutData();
   const [isSavingPlan, setIsSavingPlan] = useState(false);
@@ -554,61 +537,12 @@ export default function PersonalPage() {
 
     try {
       if (typeof window !== "undefined") {
-        localStorage.removeItem("coach_workout_plans_cache");
         if (user?.id) {
           localStorage.removeItem(`my_workout_plans_cache_${user.id}`);
         }
       }
 
       const tasks: Promise<void>[] = [];
-
-      tasks.push(
-        (async () => {
-          setIsLoadingCoachPlans(true);
-          try {
-            const result = await fetchCoachWorkoutPlans();
-            if (result.success && result.data) {
-              const { supabase } = await import("@/lib/api/supabase");
-              const { data: tagsData } = await supabase
-                .from("workout_tags")
-                .select("*")
-                .order("name", { ascending: true });
-
-              const plansWithTags = await Promise.all(
-                result.data.map(async (plan) => {
-                  const { data: planTagsData } = await supabase
-                    .from("coach_workout_plan_tags")
-                    .select("tag_id")
-                    .eq("plan_id", plan.id);
-
-                  const tagIds = planTagsData?.map((pt) => pt.tag_id) || [];
-                  const tags = (tagsData || []).filter((tag) =>
-                    tagIds.includes(tag.id),
-                  );
-
-                  return { ...plan, tags };
-                }),
-              );
-
-              setCoachWorkoutPlans(plansWithTags);
-
-              if (typeof window !== "undefined") {
-                localStorage.setItem(
-                  "coach_workout_plans_cache",
-                  JSON.stringify({
-                    data: plansWithTags,
-                    timestamp: Date.now(),
-                  }),
-                );
-              }
-            }
-          } catch (error) {
-            console.error("Error refreshing coach workout plans:", error);
-          } finally {
-            setIsLoadingCoachPlans(false);
-          }
-        })(),
-      );
 
       if (user?.id) {
         tasks.push(
@@ -661,59 +595,11 @@ export default function PersonalPage() {
   }, [
     isRefreshingPage,
     user?.id,
-    fetchCoachWorkoutPlans,
     fetchUserProfile,
     fetchUserWorkoutPlans,
     refreshUserData,
     updateMyWorkoutPlansCache,
   ]);
-
-  // Get user's plan tier
-  const getUserPlanTier = (): "free" | "pro" | "premium" => {
-    const planCode = userContextProfile?.plan_code?.toLowerCase() || "free";
-    if (planCode === "premium") return "premium";
-    if (planCode === "pro") return "pro";
-    return "free";
-  };
-
-  // Check if a plan is unlocked based on user tier and plan index
-  const isPlanUnlocked = (planIndex: number): boolean => {
-    const userTier = getUserPlanTier();
-
-    // Premium users can access everything
-    if (userTier === "premium") return true;
-
-    // Pro users can access only the first plan (index 0)
-    if (userTier === "pro") return planIndex === 0;
-
-    // Free users can access nothing
-    return false;
-  };
-
-  // Handle plan click
-  const handlePlanClick = (
-    plan: CoachWorkoutPlanWithTags,
-    planIndex: number,
-  ) => {
-    const unlocked = isPlanUnlocked(planIndex);
-
-    if (!unlocked) {
-      // Show plan dialog to upgrade
-      const userTier = getUserPlanTier();
-      showPlanDialog({
-        showAllPlans: false,
-        highlightTier: userTier === "free" ? "pro" : "premium",
-        onPlanSelect: (planCode: string, tier: PlanTier) => {
-          console.log("Selected plan:", planCode, tier);
-          // TODO: Navigate to payment/subscription page
-        },
-      });
-      return;
-    }
-
-    // Navigate to coach workout details page
-    router.push(`/personal/coach/workout/details?id=${plan.id}`);
-  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -798,89 +684,6 @@ export default function PersonalPage() {
       window.removeEventListener("resize", updateDayCardsScrollState);
     };
   }, [updateDayCardsScrollState, workoutPlanJSON]);
-
-  // Fetch coach workout plans on mount with localStorage caching
-  useEffect(() => {
-    const CACHE_KEY = "coach_workout_plans_cache";
-    const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
-
-    async function loadCoachWorkoutPlans() {
-      // Check cache first
-      if (typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem(CACHE_KEY);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            const age = Date.now() - parsed.timestamp;
-
-            // Use cached data if it's still fresh
-            if (age < CACHE_DURATION && parsed.data) {
-              setCoachWorkoutPlans(parsed.data);
-              setIsLoadingCoachPlans(false);
-              return;
-            }
-          }
-        } catch (error) {
-          console.warn("Error reading cache:", error);
-          // Clear invalid cache
-          localStorage.removeItem(CACHE_KEY);
-        }
-      }
-
-      // Fetch fresh data
-      setIsLoadingCoachPlans(true);
-      try {
-        const result = await fetchCoachWorkoutPlans();
-        if (result.success && result.data) {
-          // Fetch tags for each plan
-          const { supabase } = await import("@/lib/api/supabase");
-          const { data: tagsData } = await supabase
-            .from("workout_tags")
-            .select("*")
-            .order("name", { ascending: true });
-
-          const plansWithTags = await Promise.all(
-            result.data.map(async (plan) => {
-              const { data: planTagsData } = await supabase
-                .from("coach_workout_plan_tags")
-                .select("tag_id")
-                .eq("plan_id", plan.id);
-
-              const tagIds = planTagsData?.map((pt) => pt.tag_id) || [];
-              const tags = (tagsData || []).filter((tag) =>
-                tagIds.includes(tag.id),
-              );
-
-              return { ...plan, tags };
-            }),
-          );
-
-          setCoachWorkoutPlans(plansWithTags);
-
-          // Cache the data
-          if (typeof window !== "undefined") {
-            try {
-              localStorage.setItem(
-                CACHE_KEY,
-                JSON.stringify({
-                  data: plansWithTags,
-                  timestamp: Date.now(),
-                }),
-              );
-            } catch (error) {
-              console.warn("Error caching data:", error);
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error loading coach workout plans:", error);
-      } finally {
-        setIsLoadingCoachPlans(false);
-      }
-    }
-    loadCoachWorkoutPlans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Fetch user's saved workout plans on mount with localStorage caching
   useEffect(() => {
@@ -971,6 +774,12 @@ export default function PersonalPage() {
       }
 
       // Prepare user data for prompts
+      const weeklyFrequencyValue =
+        Array.isArray(userProfile.weekly_frequency) &&
+        userProfile.weekly_frequency.length > 0
+          ? userProfile.weekly_frequency.join(", ")
+          : "not specified";
+
       const userData = {
         gender: userProfile.gender || "not specified",
         goal: userProfile.fitness_goal || "not specified",
@@ -979,9 +788,8 @@ export default function PersonalPage() {
           ? userProfile.equipment_list.join(", ")
           : "not specified",
         level: userProfile.fitness_level || "not specified",
-        schedule: userProfile.weekly_frequency?.length
-          ? userProfile.weekly_frequency.join(", ")
-          : "not specified",
+        weekly_frequency: weeklyFrequencyValue,
+        schedule: weeklyFrequencyValue,
         age: userProfile.age_range || "not specified",
         duration: userProfile.workout_duration_minutes
           ? userProfile.workout_duration_minutes.toString()
@@ -1005,6 +813,7 @@ export default function PersonalPage() {
         location: userData.location,
         equipments: userData.equipments,
         level: userData.level,
+        weekly_frequency: userData.weekly_frequency,
         schedule: userData.schedule,
         age: userData.age,
         duration: userData.duration,
@@ -1054,6 +863,7 @@ export default function PersonalPage() {
         location: userData.location,
         equipments: userData.equipments,
         level: userData.level,
+        weekly_frequency: userData.weekly_frequency,
         schedule: userData.schedule,
         age: userData.age,
         duration: userData.duration,
@@ -1462,6 +1272,11 @@ export default function PersonalPage() {
       }
 
       // Prepare validated user data for day workout prompt
+      const weeklyFrequencyValue =
+        userProfile.weekly_frequency?.length
+          ? userProfile.weekly_frequency.join(", ")
+          : "not specified";
+
       const userData = {
         gender: userProfile.gender || "not specified",
         goal: userProfile.fitness_goal || "not specified",
@@ -1470,9 +1285,8 @@ export default function PersonalPage() {
           ? userProfile.equipment_list.join(", ")
           : "not specified",
         level: userProfile.fitness_level || "not specified",
-        schedule: userProfile.weekly_frequency?.length
-          ? userProfile.weekly_frequency.join(", ")
-          : "not specified",
+        weekly_frequency: weeklyFrequencyValue,
+        schedule: weeklyFrequencyValue,
         age: userProfile.age_range || "not specified",
         duration: userProfile.workout_duration_minutes
           ? userProfile.workout_duration_minutes.toString()
@@ -1489,6 +1303,7 @@ export default function PersonalPage() {
         location: userData.location,
         equipments: userData.equipments,
         level: userData.level,
+        weekly_frequency: userData.weekly_frequency,
         schedule: userData.schedule,
         age: userData.age,
         duration: userData.duration,
@@ -1544,9 +1359,15 @@ export default function PersonalPage() {
       }
 
       if (result.success && result.response) {
+        const dayResultWithDescriptions =
+          await enrichDayWorkoutWithExerciseDescriptions(
+            result.response,
+            userData.gender,
+          );
+
         setDayWorkoutResults((prev) => ({
           ...prev,
-          [dayName]: result.response!,
+          [dayName]: dayResultWithDescriptions,
         }));
         // Set default view to Warm Up
         setSelectedSection((prev) => ({
@@ -1554,10 +1375,8 @@ export default function PersonalPage() {
           [dayName]: "warm_up",
         }));
 
-        // DON'T start image generation here - wait for ALL exercises to be generated first
-        // Image generation will be triggered by the useEffect that monitors exercise completion
         aiLog(
-          ` ${dayName}: Exercises generated. Waiting for all days to complete before image generation.`,
+          ` ${dayName}: Exercises generated. Image queue will start after successful plan save.`,
         );
 
         return true; // Success
@@ -1764,12 +1583,10 @@ export default function PersonalPage() {
       !isGeneratingWorkout &&
       !showGenerationModal
     ) {
-      // If plan was just saved, start background image checking instead of clearing everything
+      // Keep context image queue running after save; only clear local UI state.
       if (planJustSavedRef.current) {
-        aiLog(
-          " Plan saved - starting background image check for saved exercises...",
-        );
-        planJustSavedRef.current = false; // Reset the flag
+        aiLog(" Plan saved - keeping background image generation queue running.");
+        planJustSavedRef.current = false;
 
         // Refresh the My Workout Plans list
         if (user?.id) {
@@ -1779,104 +1596,6 @@ export default function PersonalPage() {
             }
           });
         }
-
-        // Start background image checking for saved exercises
-        (async () => {
-          try {
-            if (!userProfile?.gender) {
-              aiWarn(" Cannot check images: user gender not available");
-              return;
-            }
-
-            const gender =
-              userProfile.gender.toLowerCase() === "female" ||
-              userProfile.gender.toLowerCase() === "f"
-                ? "female"
-                : "male";
-
-            aiLog(` Fetching saved exercise details...`);
-            const result = await fetchAllUserExerciseDetails();
-
-            if (!result.success || !result.data) {
-              aiWarn(" Failed to fetch exercise details:", result.error);
-              return;
-            }
-
-            const exercises = result.data;
-            aiLog(` Found ${exercises.length} saved exercises`);
-
-            let checkedCount = 0;
-            let existingCount = 0;
-            let generatedCount = 0;
-            let failedCount = 0;
-
-            for (const exercise of exercises) {
-              if (!exercise.image_slug) {
-                aiLog(` Skipping ${exercise.name}: no image_slug`);
-                continue;
-              }
-
-              checkedCount++;
-              const storageUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${gender}/${exercise.image_slug}.png`;
-
-              // Check if image exists
-              let imageExists = false;
-              try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-                const response = await fetch(storageUrl, {
-                  method: "GET",
-                  headers: { Range: "bytes=0-0" },
-                  signal: controller.signal,
-                });
-                clearTimeout(timeoutId);
-                imageExists = response.ok || response.status === 206;
-              } catch {
-                imageExists = false;
-              }
-
-              if (imageExists) {
-                existingCount++;
-                aiLog(` [${checkedCount}] ${exercise.name}: EXISTS`);
-              } else {
-                aiLog(` [${checkedCount}] ${exercise.name}: GENERATING...`);
-
-                // Generate and upload the image
-                const genResult = await generateAndUploadExerciseImage(
-                  exercise.name,
-                  exercise.safety_cue || "A fitness exercise",
-                  gender as "male" | "female",
-                  exercise.image_slug,
-                );
-
-                if (genResult.success) {
-                  generatedCount++;
-                  aiLog(` [${checkedCount}] ${exercise.name}: UPLOADED`);
-                } else {
-                  failedCount++;
-                  aiWarn(
-                    ` [${checkedCount}] ${exercise.name}: FAILED - ${genResult.error}`,
-                  );
-                }
-
-                // Small delay between generations to avoid rate limiting
-                await new Promise((resolve) => setTimeout(resolve, 1500));
-              }
-            }
-
-            aiLog(`\n${"".repeat(50)}`);
-            aiLog(` BACKGROUND IMAGE CHECK COMPLETE`);
-            aiLog(`${"".repeat(50)}`);
-            aiLog(` Results:`);
-            aiLog(`   Checked: ${checkedCount}`);
-            aiLog(`   Already existed: ${existingCount}`);
-            aiLog(`   Generated: ${generatedCount}`);
-            aiLog(`   Failed: ${failedCount}`);
-            aiLog(`${"".repeat(50)}\n`);
-          } catch (error) {
-            console.error(" Background image check error:", error);
-          }
-        })();
 
         // Clear UI states but NOT image generation context
         autoGenerationStartedRef.current = false;
@@ -1891,7 +1610,7 @@ export default function PersonalPage() {
         setIsGeneratingWorkout(false);
         setSelectedSection({});
 
-        aiLog(" UI states cleaned up, background image check running");
+        aiLog(" UI states cleaned up; image queue continues in background.");
         return;
       }
 
@@ -1912,8 +1631,8 @@ export default function PersonalPage() {
       // Clear day workout results
       setDayWorkoutResults({});
 
-      // Clear image generation state via context
-      clearImageGeneration();
+      // Keep the global image-generation queue intact so processing can
+      // continue across routes/tabs even after this page resets its local UI.
 
       // Clear generation states
       setGeneratingDays({});
@@ -2049,6 +1768,271 @@ export default function PersonalPage() {
       const rawLocation =
         userProfile?.workout_location?.toLowerCase().trim() || "gym";
       const userLocation = rawLocation === "home" ? "home" : "gym";
+
+      const queuePendingImagesForSavedPlan = async (
+        savedPlanId: string,
+        authenticatedUserId: string,
+      ) => {
+        type PlanOwnerRow = { id: string; user_id: string };
+        type WeekRow = { id: string; week_number: number | null; plan_id: string };
+        type DayRow = { id: string; day: string | null; week_plan_id: string };
+        type ExerciseRow = {
+          id: string;
+          weekly_plan_id: string;
+          section: ExerciseSection | null;
+          position: number | null;
+          image_path: string | null;
+          image_alt: string | null;
+          description: string | null;
+          is_image_generated: boolean | null;
+        };
+
+        const daySortRank = (day: string | null): number => {
+          if (!day) return 99;
+          const normalized = day.toLowerCase().trim();
+          const rankMap: Record<string, number> = {
+            monday: 1,
+            tuesday: 2,
+            wednesday: 3,
+            thursday: 4,
+            friday: 5,
+            saturday: 6,
+            sunday: 7,
+          };
+          if (rankMap[normalized]) return rankMap[normalized];
+          const numericMatch = normalized.match(/\d+/);
+          if (numericMatch?.[0]) return Number(numericMatch[0]);
+          return 99;
+        };
+
+        const mapStoredSectionToQueueSection = (
+          section: ExerciseSection | null,
+        ): "warm_up" | "main_workout" | "cooldown" => {
+          if (section === "warmup") return "warm_up";
+          if (section === "cooldown") return "cooldown";
+          return "main_workout";
+        };
+
+        const parseExerciseNameFromImageAlt = (
+          imageAlt: string | null,
+        ): string | null => {
+          if (!imageAlt) return null;
+          const trimmed = imageAlt
+            .replace(/\s*exercise demonstration\s*$/i, "")
+            .trim();
+          return trimmed.length > 0 ? trimmed : null;
+        };
+
+        const parseExerciseNameFromImagePath = (
+          imagePath: string | null,
+        ): string | null => {
+          if (!imagePath) return null;
+          const imageSlugMatch = imagePath.match(
+            /\/exercises\/(?:male|female)\/(.+?)\.png(?:\?|$)/i,
+          );
+          const rawSlug = imageSlugMatch?.[1];
+          if (!rawSlug) return null;
+          const namePart = rawSlug.includes("/")
+            ? rawSlug.split("/").slice(1).join("/")
+            : rawSlug;
+          const cleaned = namePart.replace(/-/g, " ").trim();
+          return cleaned.length > 0 ? formatTitleCase(cleaned) : null;
+        };
+
+        const { data: planOwnerData, error: planOwnerError } = await supabase
+          .from("user_workout_plans")
+          .select("id,user_id")
+          .eq("id", savedPlanId)
+          .eq("user_id", authenticatedUserId)
+          .maybeSingle();
+
+        if (planOwnerError || !planOwnerData) {
+          aiWarn(" Skipping image queue bind: saved plan not owned by user.", {
+            savedPlanId,
+            authenticatedUserId,
+            error: planOwnerError?.message,
+          });
+          return;
+        }
+
+        const ownedPlan = planOwnerData as PlanOwnerRow;
+
+        const { data: weekRowsData, error: weekRowsError } = await supabase
+          .from("user_workout_weekly_plan")
+          .select("id,plan_id,week_number")
+          .eq("plan_id", ownedPlan.id)
+          .order("week_number", { ascending: true });
+        if (weekRowsError) {
+          aiWarn(" Failed to fetch week plans for image queue bind:", {
+            savedPlanId,
+            error: weekRowsError.message,
+          });
+          return;
+        }
+
+        const weekRows = (weekRowsData || []) as WeekRow[];
+        if (weekRows.length === 0) {
+          aiWarn(" No week plans found after save; skipping image queue bind.", {
+            savedPlanId,
+          });
+          return;
+        }
+
+        const weekPlanIds = weekRows.map((row) => row.id);
+
+        const { data: dayRowsData, error: dayRowsError } = await supabase
+          .from("user_workout_weekly_day_plan")
+          .select("id,day,week_plan_id")
+          .in("week_plan_id", weekPlanIds);
+        if (dayRowsError) {
+          aiWarn(" Failed to fetch daily plans for image queue bind:", {
+            savedPlanId,
+            error: dayRowsError.message,
+          });
+          return;
+        }
+
+        const dayRows = (dayRowsData || []) as DayRow[];
+        if (dayRows.length === 0) {
+          aiWarn(" No daily plans found after save; skipping image queue bind.", {
+            savedPlanId,
+          });
+          return;
+        }
+
+        const dayPlanIds = dayRows.map((row) => row.id);
+
+        const { data: exerciseRowsData, error: exerciseRowsError } = await supabase
+          .from("user_workout_plan_exercises")
+          .select(
+            "id,weekly_plan_id,section,position,image_path,image_alt,description,is_image_generated",
+          )
+          .in("weekly_plan_id", dayPlanIds)
+          .or("is_image_generated.is.null,is_image_generated.eq.false")
+          .order("weekly_plan_id", { ascending: true })
+          .order("position", { ascending: true });
+        if (exerciseRowsError) {
+          aiWarn(" Failed to fetch pending exercises for image queue bind:", {
+            savedPlanId,
+            error: exerciseRowsError.message,
+          });
+          return;
+        }
+
+        const exerciseRows = (exerciseRowsData || []) as ExerciseRow[];
+        if (exerciseRows.length === 0) {
+          aiLog(
+            ` No pending is_image_generated rows found for plan ${savedPlanId}; image queue not updated.`,
+          );
+          return;
+        }
+
+        const weekById = new Map<string, WeekRow>();
+        weekRows.forEach((row) => weekById.set(row.id, row));
+
+        const dayById = new Map<string, DayRow>();
+        dayRows.forEach((row) => dayById.set(row.id, row));
+
+        type QueueDayEntry = {
+          dayName: string;
+          weekNumber: number;
+          dayRank: number;
+          dayResult: DayWorkoutResponse;
+        };
+
+        const queuedDaysByName = new Map<string, QueueDayEntry>();
+
+        exerciseRows.forEach((exerciseRow) => {
+          const dayRow = dayById.get(exerciseRow.weekly_plan_id);
+          if (!dayRow) return;
+          const weekRow = weekById.get(dayRow.week_plan_id);
+          if (!weekRow) return;
+
+          const weekNumber = weekRow.week_number ?? 1;
+          const rawDayName = dayRow.day?.trim() || "day";
+          const dayLabel = formatTitleCase(rawDayName);
+          const dayNameForQueue = `${dayLabel} (Week ${weekNumber})`;
+
+          let dayEntry = queuedDaysByName.get(dayNameForQueue);
+          if (!dayEntry) {
+            dayEntry = {
+              dayName: dayNameForQueue,
+              weekNumber,
+              dayRank: daySortRank(dayRow.day),
+              dayResult: {
+                day: dayLabel,
+                warm_up: [],
+                main_workout: [],
+                cooldown: [],
+              },
+            };
+            queuedDaysByName.set(dayNameForQueue, dayEntry);
+          }
+
+          const sectionKey = mapStoredSectionToQueueSection(exerciseRow.section);
+          const exerciseName =
+            parseExerciseNameFromImageAlt(exerciseRow.image_alt) ||
+            parseExerciseNameFromImagePath(exerciseRow.image_path) ||
+            `Exercise ${exerciseRow.id.slice(0, 6)}`;
+          const exerciseDescription =
+            exerciseRow.description?.trim() ||
+            `Exercise demonstration for ${exerciseName}`;
+
+          const queueExercise: ExerciseItem = {
+            name: exerciseName,
+            description: exerciseDescription,
+          };
+
+          if (sectionKey === "warm_up") {
+            dayEntry.dayResult.warm_up!.push(queueExercise);
+          } else if (sectionKey === "cooldown") {
+            dayEntry.dayResult.cooldown!.push(queueExercise);
+          } else {
+            dayEntry.dayResult.main_workout!.push(queueExercise);
+          }
+        });
+
+        const orderedQueuedDays = Array.from(queuedDaysByName.values())
+          .filter((entry) => {
+            const totalExercises =
+              (entry.dayResult.warm_up?.length || 0) +
+              (entry.dayResult.main_workout?.length || 0) +
+              (entry.dayResult.cooldown?.length || 0);
+            return totalExercises > 0;
+          })
+          .sort((a, b) => {
+            if (a.weekNumber !== b.weekNumber) {
+              return a.weekNumber - b.weekNumber;
+            }
+            if (a.dayRank !== b.dayRank) {
+              return a.dayRank - b.dayRank;
+            }
+            return a.dayName.localeCompare(b.dayName);
+          });
+
+        if (orderedQueuedDays.length === 0) {
+          aiLog(
+            ` Pending exercise rows for ${savedPlanId} produced no valid day queue entries.`,
+          );
+          return;
+        }
+
+        const dayOrderForQueue = orderedQueuedDays.map((entry) => entry.dayName);
+
+        orderedQueuedDays.forEach((entry) => {
+          queueDayForImageGeneration(
+            entry.dayName,
+            entry.dayResult,
+            userGender,
+            dayOrderForQueue,
+            savedPlanId,
+          );
+        });
+
+        aiLog(
+          ` Image queue bound from DB for saved plan ${savedPlanId}: ${orderedQueuedDays.length} day(s), ${exerciseRows.length} pending exercise row(s).`,
+        );
+      };
 
       // Get random image path based on user's gender and location (with timeout)
       console.log(" Getting random image path...");
@@ -2209,7 +2193,6 @@ export default function PersonalPage() {
           name: result.data?.name,
           created_at: result.data?.created_at,
         });
-
         // Now save the weekly plan data from workoutPlanJSON (pmpt_696b1cbae2748190b762941e94daf9ca04d42161af28312a)
         if (workoutPlanJSON) {
           const weekNumber = parseInt(workoutPlanJSON.week_number) || 1;
@@ -2676,216 +2659,36 @@ export default function PersonalPage() {
                       records_saved: planExercisesResult.data?.length,
                     });
 
-                    // Capture data for background processing - these are copied
-                    // so the background task can continue even if dialog is closed
-                    const exercisesToProcess = [...(exerciseResult.data || [])];
-                    const genderForImages = userGender as "male" | "female";
-                    const generateImageFn = generateAndUploadExerciseImage;
+                    try {
+                      const refreshedPlansResult = await fetchUserWorkoutPlans(
+                        authenticatedUserId,
+                      );
+                      if (refreshedPlansResult.success && refreshedPlansResult.data) {
+                        updateMyWorkoutPlansCache(
+                          refreshedPlansResult.data,
+                          authenticatedUserId,
+                        );
+                        aiLog(
+                          ` Reloaded saved workout plans from DB for user ${authenticatedUserId}.`,
+                        );
+                      } else {
+                        aiWarn(
+                          " Unable to refresh workout plans after save:",
+                          refreshedPlansResult.error,
+                        );
+                      }
+                    } catch (refreshError) {
+                      aiWarn(" Error refreshing workout plans after save:", refreshError);
+                    }
 
-                    // Start background image generation (non-blocking)
-                    // This runs independently of dialog state - data is captured above
-                    console.log(
-                      " Scheduling background image processing (will continue even if dialog closes)...",
+                    await queuePendingImagesForSavedPlan(
+                      planId,
+                      authenticatedUserId,
                     );
-                    setTimeout(() => {
-                      (async () => {
-                        console.log(
-                          " Background task started - dialog state independent",
-                        );
-                        const totalExercises = exercisesToProcess.length;
-                        console.log("");
-                        console.log(` BACKGROUND IMAGE PROCESSING STARTED`);
-                        console.log(
-                          ` Total exercises to check: ${totalExercises}`,
-                        );
-                        console.log(` Gender for images: ${genderForImages}`);
-                        console.log("");
 
-                        // Group exercises by section for reporting
-                        const bySection = {
-                          warmup: exercisesToProcess.filter(
-                            (e) => e.section === "warmup",
-                          ),
-                          main: exercisesToProcess.filter(
-                            (e) => e.section === "main",
-                          ),
-                          cooldown: exercisesToProcess.filter(
-                            (e) => e.section === "cooldown",
-                          ),
-                        };
-                        console.log(` Exercises by section:`, {
-                          warmup: bySection.warmup.length,
-                          main: bySection.main.length,
-                          cooldown: bySection.cooldown.length,
-                        });
-
-                        let generatedCount = 0;
-                        let skippedCount = 0;
-                        let failedCount = 0;
-                        let noSlugCount = 0;
-                        let currentIndex = 0;
-
-                        for (const exercise of exercisesToProcess) {
-                          currentIndex++;
-                          const progress = `[${currentIndex}/${totalExercises}]`;
-
-                          if (!exercise.image_slug) {
-                            console.log(
-                              `${progress}  SKIP (no slug): ${exercise.name}`,
-                            );
-                            noSlugCount++;
-                            continue;
-                          }
-
-                          // Build full image URL
-                          const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${genderForImages}/${exercise.image_slug}.png`;
-
-                          console.log(
-                            `${progress}  Checking: ${exercise.name}`,
-                          );
-                          console.log(`     Section: ${exercise.section}`);
-                          console.log(`     URL: ${publicUrl}`);
-
-                          try {
-                            // Prioritize DB flag check before storage lookup
-                            try {
-                              const { data: pendingRows, error: pendingError } =
-                                await supabase
-                                  .from("user_workout_plan_exercises")
-                                  .select("id")
-                                  .eq("image_path", publicUrl)
-                                  .or(
-                                    "is_image_generated.is.null,is_image_generated.eq.false",
-                                  );
-
-                              if (
-                                !pendingError &&
-                                (!pendingRows || pendingRows.length === 0)
-                              ) {
-                                skippedCount++;
-                                continue;
-                              }
-                            } catch (dbErr) {
-                              console.log(
-                                "    WARN: DB check failed (continuing with storage check):",
-                                dbErr,
-                              );
-                            }
-
-                            // Quick check if image exists via GET request with range header
-                            let imageExists = false;
-                            try {
-                              const controller = new AbortController();
-                              const timeoutId = setTimeout(
-                                () => controller.abort(),
-                                5000,
-                              );
-                              const response = await fetch(publicUrl, {
-                                method: "GET",
-                                headers: {
-                                  Range: "bytes=0-0",
-                                },
-                                signal: controller.signal,
-                              });
-                              clearTimeout(timeoutId);
-                              // 200 = full content, 206 = partial content (range request worked)
-                              imageExists =
-                                response.ok || response.status === 206;
-                              console.log(
-                                `     Response: ${response.status} (exists: ${imageExists})`,
-                              );
-                            } catch (fetchErr) {
-                              console.log(
-                                `     Fetch error (assuming not exists):`,
-                                fetchErr,
-                              );
-                              imageExists = false;
-                            }
-
-                            if (imageExists) {
-                              await supabase
-                                .from("user_workout_plan_exercises")
-                                .update({ is_image_generated: true })
-                                .eq("image_path", publicUrl)
-                                .or(
-                                  "is_image_generated.is.null,is_image_generated.eq.false",
-                                );
-                              console.log(
-                                `${progress}  EXISTS: ${exercise.name}`,
-                              );
-                              skippedCount++;
-                              continue;
-                            }
-
-                            // Generate and upload (using captured function reference)
-                            console.log(
-                              `${progress}  GENERATING: ${exercise.name}...`,
-                            );
-                            const imageResult = await generateImageFn(
-                              exercise.name,
-                              exercise.safety_cue ||
-                                `Performing ${exercise.name} with proper form`,
-                              genderForImages,
-                              exercise.image_slug,
-                            );
-
-                            if (imageResult.success) {
-                              await supabase
-                                .from("user_workout_plan_exercises")
-                                .update({ is_image_generated: true })
-                                .eq("image_path", publicUrl)
-                                .or(
-                                  "is_image_generated.is.null,is_image_generated.eq.false",
-                                );
-                              console.log(
-                                `${progress}  UPLOADED: ${exercise.name}`,
-                              );
-                              console.log(
-                                `     URL: ${imageResult.data || "N/A"}`,
-                              );
-                              generatedCount++;
-                            } else {
-                              console.warn(
-                                `${progress}  FAILED: ${exercise.name}`,
-                              );
-                              console.warn(`    Error: ${imageResult.error}`);
-                              failedCount++;
-                            }
-                          } catch (err) {
-                            console.error(
-                              `${progress}  ERROR: ${exercise.name}`,
-                              err,
-                            );
-                            failedCount++;
-                          }
-                        }
-
-                        console.log("");
-                        console.log(
-                          ` BACKGROUND IMAGE PROCESSING COMPLETE (ran independently of dialog)`,
-                        );
-                        console.log("");
-                        console.log(` SUMMARY:`);
-                        console.log(`    Total exercises: ${totalExercises}`);
-                        console.log(
-                          `     Already existed (skipped): ${skippedCount}`,
-                        );
-                        console.log(
-                          `     Generated & uploaded: ${generatedCount}`,
-                        );
-                        console.log(`     Failed: ${failedCount}`);
-                        console.log(`     No image slug: ${noSlugCount}`);
-                        console.log("");
-
-                        // Log completion notification that user can see in console
-                        if (generatedCount > 0) {
-                          console.log(
-                            `%c ${generatedCount} exercise images generated successfully!`,
-                            "color: green; font-weight: bold; font-size: 14px;",
-                          );
-                        }
-                      })();
-                    }, 100);
+                    console.log(
+                      " Plan exercises saved. Image generation continues via ImageGenerationContext queue.",
+                    );
 
                     // Show success toast and close dialog
                     planJustSavedRef.current = true; // Mark that plan was saved for background processing
@@ -2959,10 +2762,12 @@ export default function PersonalPage() {
           "error",
         );
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       console.error(" Error saving workout plan:", error);
       showToast(
-        `An error occurred while saving: ${error?.message || "Unknown error"}`,
+        `An error occurred while saving: ${errorMessage}`,
         "error",
       );
     } finally {
@@ -2971,1335 +2776,56 @@ export default function PersonalPage() {
     }
   };
 
-  // Use real profile data only (no fallback)
-  const profile = userProfile;
+  const featuredPlan = useMemo(() => {
+    if (myWorkoutPlans.length === 0) return null;
+    return [...myWorkoutPlans].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+  }, [myWorkoutPlans]);
+
+  if (isLoadingMyPlans && !featuredPlan) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-teal-600" />
+            <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
+              Loading workout plan...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (featuredPlan?.id) {
+    return <WorkoutPlanDetailsView planId={featuredPlan.id} embedded />;
+  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
-      <div className="max-w-3xl mx-auto px-4 sm:px-5 py-5">
-        {/* App Header */}
-        <div className="mb-4 -ml-1">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Image
-                src="/images/Logo_VitalSpark.png"
-                alt="VitalSpark"
-                width={28}
-                height={28}
-                className="object-contain"
-              />
-              <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-slate-300">
-                VitalSpark by Ferdie
-              </span>
-            </div>
-            <div className="flex items-center gap-2 -pr-8">
-              <button
-                type="button"
-                onClick={handleThemeToggle}
-                aria-label={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
-                title={isDarkTheme ? "Switch to light mode" : "Switch to dark mode"}
-                className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                {isDarkTheme ? (
-                  <HiSun className="w-4 h-4" />
-                ) : (
-                  <HiMoon className="w-4 h-4" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.replace("/auth/logout")}
-                className="inline-flex items-center justify-center px-3 h-8 rounded-full bg-white text-slate-600 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                <HiArrowRightOnRectangle className="w-4 h-4 mr-1" />
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
+      <div className="mx-auto flex min-h-screen max-w-xl items-center px-6 py-10">
+        <div className="w-full rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+            No workout plan to display
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            This page now shows your workout plan directly. Save or refresh your
+            plans to load the latest one here.
+          </p>
+          <button
+            type="button"
+            onClick={handleRefreshPage}
+            disabled={isRefreshingPage}
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-teal-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-60 dark:bg-teal-500 dark:hover:bg-teal-400"
+          >
+            <HiArrowPath
+              className={`h-4 w-4 ${isRefreshingPage ? "animate-spin" : ""}`}
+            />
+            Refresh plans
+          </button>
         </div>
-
-        {/* Clean Header */}
-        <div className="mb-5 mt-3">
-          <div className="flex items-start justify-between mb-2">
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-                <h1 className="text-2xl sm:text-3xl text-teal-700 dark:text-teal-300 font-extrabold">
-                  Spark AI
-                </h1>
-                <button
-                  type="button"
-                  onClick={handleRefreshPage}
-                  disabled={isRefreshingPage}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-teal-200 bg-white text-xs font-semibold text-teal-700 hover:bg-teal-50 transition-colors disabled:opacity-60 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
-                >
-                  <HiArrowPath
-                    className={`w-3.5 h-3.5 ${isRefreshingPage ? "animate-spin" : ""}`}
-                  />
-                  Refresh
-                </button>
-              </div>
-              <p className="text-sm text-neutral-500 dark:text-slate-400">
-                Your personalized AI workout companion
-              </p>
-            </div>
-          </div>
-
-          {/* Decorative Line */}
-          <div className="h-1 bg-amber-500 rounded w-16 mt-1" />
-        </div>
-
-        {/* Simplified Fitness Profile Card */}
-        {profile && (
-          <div className="bg-white dark:bg-slate-800/80 rounded-xl p-4 border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-black/30 mb-5">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-3.5">
-              <div className="flex-1">
-                <h2 className="text-base sm:text-lg font-extrabold text-teal-800 dark:text-teal-300 mb-1">
-                  Fitness Profile
-                </h2>
-                <p className="text-xs text-gray-600 dark:text-slate-400 font-medium">
-                  Your current fitness details and preferences
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => router.push("/manage-profile")}
-                className="bg-teal-600 px-2 py-0.5 rounded-lg transition hover:bg-teal-700"
-              >
-                <span className="text-white text-[9px] tracking-wide">
-                  Edit Profile
-                </span>
-              </button>
-            </div>
-
-            {/* Main Stats Row */}
-            <div className="flex gap-3 mb-3.5 pb-3.5 border-b border-gray-100 dark:border-slate-700">
-              {/* Physical Stats */}
-              <div className="flex-1">
-                <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide mb-2">
-                  Physical
-                </p>
-                <div className="space-y-2">
-                  {profile.height && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-teal-600">{"\uD83D\uDCCF"}</span>
-                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
-                        {profile.height}{" "}
-                        {formatTitleCase(profile.height_unit || "cm")}
-                      </span>
-                    </div>
-                  )}
-                  {profile.weight && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-teal-600">{"\u2696\uFE0F"}</span>
-                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
-                        {profile.weight}{" "}
-                        {formatTitleCase(profile.weight_unit || "kg")}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Fitness Stats */}
-              <div className="flex-1">
-                <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide mb-2">
-                  Goals
-                </p>
-                <div className="space-y-2">
-                  {profile.fitness_goal && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-teal-600">{"\uD83C\uDFAF"}</span>
-                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
-                        {formatTitleCase(profile.fitness_goal)}
-                      </span>
-                    </div>
-                  )}
-                  {profile.fitness_level && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-teal-600">{"\uD83D\uDCC8"}</span>
-                      <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">
-                        {formatTitleCase(profile.fitness_level)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Workout Preferences */}
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-gray-600 dark:text-slate-400 uppercase tracking-wide">
-                Workout Preferences
-              </p>
-
-              <div className="flex gap-3 flex-wrap">
-                {profile.workout_duration_minutes && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 dark:text-slate-400">{"\u23F1\uFE0F"}</span>
-                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
-                      {profile.workout_duration_minutes} Min Sessions
-                    </span>
-                  </div>
-                )}
-
-                {profile.workout_location && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 dark:text-slate-400">{"\uD83D\uDCCD"}</span>
-                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
-                      {formatTitleCase(profile.workout_location)}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {profile.weekly_frequency &&
-                profile.weekly_frequency.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 dark:text-slate-400">{"\uD83D\uDCC5"}</span>
-                    <span className="text-xs text-gray-700 dark:text-slate-300 font-medium">
-                      {profile.weekly_frequency
-                        .map((day) => formatTitleCase(day))
-                        .join(", ")}
-                    </span>
-                  </div>
-                )}
-
-              {profile.equipment_list && profile.equipment_list.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-500 dark:text-slate-400">{"\uD83C\uDFCB\uFE0F"}</span>
-                  <div className="flex flex-wrap gap-1.5 flex-1">
-                    {profile.equipment_list
-                      .slice(0, 4)
-                      .map((equipment, index) => (
-                        <span
-                          key={index}
-                          className="bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[11px] font-semibold text-teal-700 dark:text-teal-300"
-                        >
-                          {formatTitleCase(equipment)}
-                        </span>
-                      ))}
-                    {profile.equipment_list.length > 4 && (
-                      <span className="bg-teal-50 dark:bg-teal-900/40 px-2 py-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[11px] font-semibold text-teal-700 dark:text-teal-300">
-                        +{profile.equipment_list.length - 4}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* AI Generator Card */}
-        {profile && (
-          <div className="mb-5">
-            <div className="relative rounded-xl overflow-hidden shadow-lg dark:shadow-black/40 bg-linear-to-br from-amber-500 via-amber-400 to-amber-300 dark:from-amber-600 dark:via-orange-500 dark:to-rose-500">
-              {/* Decorative Elements */}
-              <div className="absolute -top-7 -right-7 w-16 h-16 rounded-full bg-white/15" />
-              <div className="absolute -bottom-4 -left-4 w-14 h-14 rounded-full bg-white/10" />
-              <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/8" />
-
-              <div className="relative p-4 z-10">
-                {/* Badge */}
-                <div className="inline-flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/80 px-2.5 py-1 rounded-full mb-2.5 shadow-sm">
-                  <HiSparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-[10px] font-bold text-amber-500 dark:text-amber-300 uppercase tracking-wide">
-                    AI Powered
-                  </span>
-                </div>
-
-                {/* Title */}
-                <h2 className="text-base sm:text-lg font-extrabold text-white mb-1.5 tracking-tight">
-                  Generate Your Perfect Workout
-                </h2>
-
-                {/* Subtitle */}
-                <p className="text-[11px] leading-relaxed text-white/90 font-medium mb-3">
-                  Our AI analyzes your profile, fitness goals, and preferences
-                  to create a customized workout plan tailored just for you. Get
-                  started with a plan that adapts to your schedule and
-                  equipment.
-                </p>
-
-                {/* Generated Workout Display - Show raw text if parsing failed */}
-                {generatedWorkout && parsedWorkouts.length === 0 && (
-                  <div className="bg-white/15 rounded-lg p-3 mb-3 border border-white/20 max-h-56 overflow-y-auto">
-                    <p className="text-xs sm:text-sm leading-relaxed text-white font-medium whitespace-pre-wrap">
-                      {typeof generatedWorkout === "string"
-                        ? generatedWorkout
-                        : JSON.stringify(generatedWorkout, null, 2)}
-                    </p>
-                  </div>
-                )}
-
-                {/* Generate Button */}
-                <button
-                  onClick={handleAICardClick}
-                  disabled={isGeneratingWorkout}
-                  aria-busy={isGeneratingWorkout}
-                  className={`w-full rounded-xl py-2.5 px-4 flex items-center justify-center gap-2 bg-white/95 shadow-xs transition-opacity ${
-                    isGeneratingWorkout
-                      ? "opacity-70 cursor-not-allowed"
-                      : "hover:opacity-90"
-                  }`}
-                >
-                  <HiSparkles className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-bold text-amber-500">
-                    Generate Workout Plan
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* My Workout Plans Section */}
-        <div className="mb-6">
-          <h3 className="text-xl font-extrabold text-teal-800 dark:text-teal-300 mb-4">
-            My Workout Plans
-          </h3>
-          {isLoadingMyPlans ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-600 mb-3" />
-              <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
-                Loading your workout plans...
-              </p>
-            </div>
-          ) : myWorkoutPlans.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 bg-slate-50 dark:bg-slate-800/70 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-              <div className="text-4xl mb-3"></div>
-              <p className="text-base font-medium text-slate-500 dark:text-slate-300 text-center mb-1">
-                No saved workout plans yet
-              </p>
-              <p className="text-sm text-slate-400 dark:text-slate-400 text-center">
-                Generate a workout above to get started!
-              </p>
-            </div>
-          ) : (
-            <div className="px-1.5 pt-1.5">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {myWorkoutPlans.map((plan) => {
-                  // Clean plan name (remove timestamp)
-                  const cleanName = plan.name.replace(
-                    / - \d{4}-\d{2}-\d{2}.*$/,
-                    "",
-                  );
-                  const totalWeeks = plan.duration_days
-                    ? Math.ceil(plan.duration_days / 7)
-                    : null;
-                  return (
-                    <div
-                      key={plan.id}
-                      onClick={() =>
-                        router.push(`/personal/workout/details?id=${plan.id}`)
-                      }
-                      className="w-full bg-white dark:bg-slate-800/80 rounded-xl shadow-xs border border-slate-100 dark:border-slate-700 overflow-hidden cursor-pointer hover:border-teal-300 dark:hover:border-teal-500 hover:scale-[1.015] transition-all duration-200 group"
-                    >
-                      {/* Image */}
-                      <div className="relative h-28 bg-slate-100 dark:bg-slate-700">
-                        {plan.image_path ? (
-                          <Image
-                            src={plan.image_path}
-                            alt={plan.image_alt || cleanName || "Workout plan"}
-                            fill
-                            sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                            className="object-cover"
-                          />
-                        ) : (
-                          <Image
-                            src="/images/onboarding_1.png"
-                            alt={cleanName || "Workout plan"}
-                            fill
-                            sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                            className="object-cover"
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-linear-to-t from-black/30 via-black/10 to-transparent" />
-                        {plan.category && (
-                          <div className="absolute top-3 right-3">
-                            <span className="bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide shadow-sm">
-                              {plan.category}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      {/* Header */}
-                      <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                        <h4 className="font-semibold text-slate-800 dark:text-slate-100 text-xs leading-snug line-clamp-2">
-                          {cleanName}
-                        </h4>
-                      </div>
-
-                      {/* Content */}
-                      <div className="p-3">
-                        {/* Stats Row */}
-                        <div className="flex items-center gap-3 mb-2.5">
-                          {plan.duration_days && (
-                            <div className="flex items-center gap-1.5">
-                              <svg
-                                className="w-4 h-4 text-teal-600"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                />
-                              </svg>
-                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                {plan.duration_days} Days
-                              </span>
-                            </div>
-                          )}
-                          {totalWeeks && (
-                            <div className="flex items-center gap-1.5">
-                              <svg
-                                className="w-4 h-4 text-amber-500"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                {totalWeeks} Week{totalWeeks > 1 ? "s" : ""}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Tags - Limited to 3, Title Case format */}
-                        {plan.tags && plan.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mb-3">
-                            {plan.tags.slice(0, 3).map((tag, index) => {
-                              // Format tag as Title Case (Abb Abc)
-                              const formattedTag = tag
-                                .toLowerCase()
-                                .split(" ")
-                                .map(
-                                  (word) =>
-                                    word.charAt(0).toUpperCase() +
-                                    word.slice(1),
-                                )
-                                .join(" ");
-                              return (
-                                <span
-                                  key={index}
-                                  className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg font-medium"
-                                >
-                                  {formattedTag}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Footer */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700">
-                          <span className="text-xs text-slate-400 dark:text-slate-500">
-                            {new Date(plan.created_at).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )}
-                          </span>
-                          <div className="flex items-center gap-1 text-teal-600 dark:text-teal-300 group-hover:text-teal-700 dark:group-hover:text-teal-200 transition-colors">
-                            <span className="text-xs font-semibold">View</span>
-                            <HiArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Workout Plans by Fitness Coaches Section */}
-        <div className="mb-8">
-          <h3 className="text-2xl font-extrabold text-teal-800 dark:text-teal-300 mb-6">
-            Workout Plans by Fitness Coaches
-          </h3>
-          {isLoadingCoachPlans ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mb-4" />
-              <p className="text-base font-bold text-teal-700 dark:text-teal-300">
-                Loading workout plans...
-              </p>
-            </div>
-          ) : coachWorkoutPlans.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="text-5xl mb-4"></div>
-              <p className="text-base font-medium text-slate-500 dark:text-slate-400 text-center">
-                No workout plans available from coaches yet
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="pb-2">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {coachWorkoutPlans.map((plan, index) => {
-                    const isLocked = !isPlanUnlocked(index);
-                    return (
-                      <CoachWorkoutPlanCard
-                        key={plan.id}
-                        plan={plan}
-                        isLocked={isLocked}
-                        onClick={() => handlePlanClick(plan, index)}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-              {coachWorkoutPlans.length > 6 && (
-                <div className="mt-6 flex justify-center">
-                  {getUserPlanTier() === "premium" ? (
-                    <button
-                      onClick={() => router.push("/personal/coach/workout")}
-                      className="w-full max-w-md bg-linear-to-r from-teal-600 to-teal-500 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
-                    >
-                      <span>View all plans</span>
-                      <HiArrowRight className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const userTier = getUserPlanTier();
-                        showPlanDialog({
-                          showAllPlans: false,
-                          highlightTier:
-                            userTier === "free" ? "pro" : "premium",
-                          onPlanSelect: (planCode: string, tier: PlanTier) => {
-                            console.log("Selected plan:", planCode, tier);
-                            // TODO: Navigate to payment/subscription page
-                          },
-                        });
-                      }}
-                      className="w-full max-w-md bg-linear-to-r from-amber-500 to-amber-400 text-white rounded-2xl p-4 font-bold text-base shadow-lg dark:shadow-black/40 hover:shadow-xl transition-all flex items-center justify-center gap-3"
-                    >
-                      <HiLockOpen className="w-5 h-5" />
-                      <span>Unlock all Workout Plans</span>
-                      <HiArrowRight className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Duration Selection Dialog */}
-        <Dialog
-          visible={showDurationDialog}
-          onDismiss={() => setShowDurationDialog(false)}
-          maxWidth="clamp(18rem, 30vw, 26rem)"
-        >
-          <div className="p-4 xl:p-6 text-slate-900 dark:text-slate-100">
-            <h2 className="text-[clamp(0.95rem,1vw,1.125rem)] font-bold text-gray-800 dark:text-slate-100 mb-2 text-center">
-              Choose Plan Duration
-            </h2>
-            <p className="text-[clamp(0.7rem,0.75vw,0.85rem)] text-gray-500 dark:text-slate-400 mb-6 text-center">
-              How long would you like your workout plan to be?
-            </p>
-            <div className="flex flex-col gap-3">
-              {[
-                {
-                  days: 7,
-                  label: "7 Days",
-                  description: "Quick start program",
-                },
-                {
-                  days: 14,
-                  label: "14 Days",
-                  description: "Two-week challenge",
-                },
-                {
-                  days: 28,
-                  label: "28 Days",
-                  description: "Full month transformation",
-                },
-              ].map((option) => (
-                <button
-                  key={option.days}
-                  onClick={() => handleDurationSelect(option.days)}
-                  className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/40 transition-all flex items-center justify-between group"
-                >
-                  <div className="text-left">
-                    <p className="text-[clamp(0.82rem,0.85vw,0.95rem)] font-bold text-gray-800 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
-                      {option.label}
-                    </p>
-                    <p className="text-[clamp(0.65rem,0.7vw,0.75rem)] text-gray-500 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300">
-                      {option.description}
-                    </p>
-                  </div>
-                  <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-slate-700 group-hover:bg-teal-500 flex items-center justify-center transition-all">
-                    <span className="text-gray-400 dark:text-slate-300 group-hover:text-white text-lg">
-                      <HiArrowLeft className="h-5 w-5 -scale-x-100 font-bold" />
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowDurationDialog(false)}
-              className="w-full mt-4 py-2 text-[clamp(0.7rem,0.75vw,0.85rem)] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </Dialog>
-
-        {/* Generation Progress Dialog */}
-        <Dialog
-          visible={showGenerationModal}
-          onDismiss={() => setShowGenerationModal(false)}
-          maxWidth="clamp(22rem, 62vw, 72rem)"
-        >
-          <div className="p-4 xl:p-6 text-slate-900 dark:text-slate-100">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
-                <h2 className="text-[clamp(1rem,1vw,1.2rem)] font-extrabold text-teal-800 dark:text-teal-300 whitespace-nowrap">
-                  Generating Your Workout
-                </h2>
-                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1 whitespace-nowrap">
-                  This might take a while, please wait.
-                </p>
-              </div>
-              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-bold">
-                {generationProgressPercent}%
-              </div>
-            </div>
-
-            <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-linear-to-r from-teal-500 to-amber-400 transition-all duration-700"
-                style={{ width: `${generationProgressPercent}%` }}
-              />
-            </div>
-            <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 text-right">
-              ~{generationDurationSeconds}s
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {generationSteps.map((step, index) => {
-                const isComplete = index < currentGenerationStep;
-                const isActive = index === currentGenerationStep;
-
-                return (
-                  <div
-                    key={step.title}
-                    className={`flex items-center gap-3 rounded-2xl border px-4 py-2.5 transition-all ${
-                      isActive
-                        ? "border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30"
-                        : isComplete
-                          ? "border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/25"
-                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-                    }`}
-                  >
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${
-                        isComplete
-                          ? "bg-amber-500 text-white"
-                          : isActive
-                            ? "bg-teal-600 text-white"
-                            : "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500"
-                       }`}
-                    >
-                      {isComplete ? "" : index + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={`text-sm font-bold ${
-                          isActive
-                            ? "text-teal-800 dark:text-teal-300"
-                          : isComplete
-                              ? "text-amber-700 dark:text-amber-300"
-                              : "text-slate-700 dark:text-slate-200"
-                        } whitespace-nowrap truncate text-[13px] leading-tight`}
-                      >
-                        {step.title}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 whitespace-nowrap truncate leading-tight">
-                        {step.detail}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {generationSeconds >= generationDurationSeconds &&
-              isGeneratingWorkout && (
-                <div className="mt-4 text-[10px] text-amber-600 font-semibold whitespace-nowrap">
-                  Still working on the final touches...
-                </div>
-              )}
-          </div>
-        </Dialog>
-
-        {/* Workout Plan Dialog */}
-        <Dialog
-          visible={showWorkoutPlanDialog && !!workoutPlanJSON}
-          onDismiss={() => {
-            console.log(" Dialog dismissed - cleaning up states...");
-            setShowWorkoutPlanDialog(false);
-            // Cleanup will be handled by the useEffect hook
-          }}
-          maxWidth="95vw"
-          maxHeight="90vh"
-          height="90vh"
-        >
-          {workoutPlanJSON && (
-            <div className="flex flex-col h-full overflow-y-auto text-slate-900 dark:text-slate-100">
-              {/* Plan Info Row - 3 Columns */}
-              <div className="grid grid-cols-3 gap-6 mb-4 mt-2 pb-2 border-b border-gray-200 dark:border-slate-700">
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
-                    Plan Name
-                  </p>
-                  <p className="text-sm font-bold text-teal-700 dark:text-teal-300">
-                    {planMetadata?.plan_name || "Loading..."}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
-                    Week #
-                  </p>
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                    {workoutPlanJSON.week_number}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
-                    Rest Day(s)
-                  </p>
-                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    {workoutPlanJSON.rest_days &&
-                    workoutPlanJSON.rest_days.length > 0
-                      ? workoutPlanJSON.rest_days
-                          .map((day) => formatTitleCase(day))
-                          .join(", ")
-                      : "None"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Day Cards Grid */}
-              <div className="relative flex-1">
-                <div
-                  ref={dayCardsScrollRef}
-                  className="h-full overflow-x-auto overflow-y-hidden pb-2"
-                >
-                  <div className="flex h-full flex-nowrap items-stretch gap-4">
-                    {workoutPlanJSON.days &&
-                      Object.entries(workoutPlanJSON.days)
-                        .filter(
-                          ([_, day]) =>
-                            day?.title?.trim() && day?.focus?.trim(),
-                        )
-                        .map(([dayName, day]) => {
-                          const dayResult = dayWorkoutResults[dayName];
-                          const isGenerating = !!generatingDays[dayName];
-                          const availableSections =
-                            getAvailableSections(dayResult);
-                          const activeSection =
-                            selectedSection[dayName] ??
-                            availableSections[0] ??
-                            null;
-                          const activeIndex =
-                            activeSection === null
-                              ? -1
-                              : availableSections.indexOf(activeSection);
-                          const hasPrev = activeIndex > 0;
-                          const hasNext =
-                            activeIndex >= 0 &&
-                            activeIndex < availableSections.length - 1;
-
-                          return (
-                            <div
-                              key={dayName}
-                              className="flex-none w-[85%] min-[1024px]:w-[calc((100%-2*1rem)/3)] min-[1520px]:w-[calc((100%-3*1rem)/4)] h-full bg-white dark:bg-slate-800 rounded-xl border-2 border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-black/30 flex flex-col"
-                            >
-                              {/* Card Header */}
-                              <div className="p-4 border-b border-gray-100 dark:border-slate-700">
-                                <div className="flex items-start justify-between gap-2 mb-2">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                                        {formatTitleCase(dayName)}
-                                      </h3>
-                                      {dayResult &&
-                                        (dayResult[
-                                          "estimated total calories"
-                                        ] ||
-                                          dayResult.estimated_total_calories) &&
-                                        (() => {
-                                          const calories =
-                                            (
-                                              dayResult[
-                                                "estimated total calories"
-                                              ] ||
-                                              dayResult.estimated_total_calories
-                                            )?.toString() || "";
-                                          // Remove any existing "cal" or "kcal" to avoid duplicates
-                                          const caloriesValue = calories
-                                            .replace(/\s*(k?cal|kcal)\s*/gi, "")
-                                            .trim();
-                                          return (
-                                            <span className="text-[10px] text-amber-600 dark:text-amber-300 font-medium align-middle">
-                                              ({caloriesValue} kCal)
-                                            </span>
-                                          );
-                                        })()}
-                                    </div>
-                                    <p className="text-sm font-semibold text-teal-600 dark:text-teal-300 mb-1">
-                                      {day.title}
-                                    </p>
-                                    <p className="text-[10px] text-slate-600 dark:text-slate-300">
-                                      <span className="font-medium">
-                                        Focus:{" "}
-                                      </span>
-                                      {day.focus}
-                                    </p>
-                                  </div>
-                                  {/* Action Buttons */}
-                                  {dayResult && (
-                                    <div className="flex items-center gap-1">
-                                      {/* Regenerate Exercises Button */}
-                                      <button
-                                        onClick={() => {
-                                          // Remove the existing result and regenerate
-                                          setDayWorkoutResults((prev) => {
-                                            const updated = { ...prev };
-                                            delete updated[dayName];
-                                            return updated;
-                                          });
-                                          generatedDaysRef.current.delete(
-                                            dayName,
-                                          );
-                                          handleDayWorkoutGenerate(
-                                            dayName,
-                                            day.title,
-                                            day.focus,
-                                          );
-                                        }}
-                                        disabled={isGenerating}
-                                        className="shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title="Regenerate exercises"
-                                      >
-                                        {isGenerating ? (
-                                          <div className="w-4 h-4 border-2 border-teal-600 dark:border-teal-400 border-t-transparent rounded-full animate-spin" />
-                                        ) : (
-                                          <HiArrowPath className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-                                        )}
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Card Content - Scrollable */}
-                              <div className="flex-1 flex flex-col p-4 overflow-hidden">
-                                {!dayResult ? (
-                                  /* Generate Button - Centered */
-                                  <div className="flex-1 flex items-center justify-center">
-                                    <button
-                                      onClick={() =>
-                                        handleDayWorkoutGenerate(
-                                          dayName,
-                                          day.title,
-                                          day.focus,
-                                        )
-                                      }
-                                      disabled={isGenerating}
-                                      className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all flex items-center gap-2 ${
-                                        isGenerating
-                                          ? "bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-400 cursor-not-allowed"
-                                          : "bg-linear-to-r from-amber-500 to-amber-400 text-white hover:from-amber-600 hover:to-amber-500 shadow-md hover:shadow-lg"
-                                      }`}
-                                    >
-                                      {isGenerating ? (
-                                        <>
-                                          <div className="w-4 h-4 border-2 border-gray-500 dark:border-slate-400 border-t-transparent rounded-full animate-spin" />
-                                          <span>Generating...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <HiSparkles className="w-4 h-4" />
-                                          <span>Generate exercises</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  /* Generated Exercises - Scrollable */
-                                  <div className="flex-1 flex flex-col overflow-hidden">
-                                    {/* Section Buttons - 3 Columns */}
-                                    <div className="grid grid-cols-3 gap-2 mb-3">
-                                      <button
-                                        onClick={() =>
-                                          setSelectedSection((prev) => ({
-                                            ...prev,
-                                            [dayName]:
-                                              prev[dayName] === "warm_up"
-                                                ? null
-                                                : "warm_up",
-                                          }))
-                                        }
-                                        className={`px-3 py-2 rounded-lg text-[10px] font-semibold transition-all ${
-                                          selectedSection[dayName] === "warm_up"
-                                            ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
-                                        }`}
-                                      >
-                                        Warm Up
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          setSelectedSection((prev) => ({
-                                            ...prev,
-                                            [dayName]:
-                                              prev[dayName] === "main_workout"
-                                                ? null
-                                                : "main_workout",
-                                          }))
-                                        }
-                                        className={`px-3 py-2 rounded-lg text-[10px] font-semibold transition-all ${
-                                          selectedSection[dayName] ===
-                                          "main_workout"
-                                            ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
-                                        }`}
-                                      >
-                                        Main
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          setSelectedSection((prev) => ({
-                                            ...prev,
-                                            [dayName]:
-                                              prev[dayName] === "cooldown"
-                                                ? null
-                                                : "cooldown",
-                                          }))
-                                        }
-                                        className={`px-3 py-2 rounded-lg text-[10px] font-semibold transition-all ${
-                                          selectedSection[dayName] ===
-                                          "cooldown"
-                                            ? "bg-teal-600 text-white shadow-md"
-                                            : "bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600"
-                                        }`}
-                                      >
-                                        Cooldown
-                                      </button>
-                                    </div>
-
-                                    {/* Exercises Display - Based on Selected Section */}
-                                    <div className="flex-1 overflow-y-auto">
-                                      {selectedSection[dayName] === "warm_up" &&
-                                        dayResult.warm_up &&
-                                        dayResult.warm_up.length > 0 && (
-                                          <div className="space-y-2">
-                                            {dayResult.warm_up.map(
-                                              (item, index) => (
-                                                <div
-                                                  key={index}
-                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
-                                                >
-                                                  <div className="flex items-start gap-2 mb-1">
-                                                    <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                                                      {index + 1}
-                                                    </span>
-                                                    <div className="flex-1 min-w-0">
-                                                      {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
-                                                          {item.name}
-                                                        </p>
-                                                      )}
-                                                      {renderExerciseMetrics(
-                                                        item.sets_reps_duration_seconds_rest,
-                                                      )}
-                                                      {item.per_side &&
-                                                        item.per_side.toLowerCase() ===
-                                                          "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
-                                                            Per Side
-                                                          </span>
-                                                        )}
-                                                    </div>
-                                                  </div>
-                                                  {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
-                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
-                                                        {item.safety_cue}
-                                                      </p>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              ),
-                                            )}
-                                          </div>
-                                        )}
-
-                                      {selectedSection[dayName] ===
-                                        "main_workout" &&
-                                        dayResult.main_workout &&
-                                        dayResult.main_workout.length > 0 && (
-                                          <div className="space-y-2">
-                                            {dayResult.main_workout.map(
-                                              (item, index) => (
-                                                <div
-                                                  key={index}
-                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
-                                                >
-                                                  <div className="flex items-start gap-2 mb-1">
-                                                    <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                                                      {index + 1}
-                                                    </span>
-                                                    <div className="flex-1 min-w-0">
-                                                      {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
-                                                          {item.name}
-                                                        </p>
-                                                      )}
-                                                      {renderExerciseMetrics(
-                                                        item.sets_reps_duration_seconds_rest,
-                                                      )}
-                                                      {item.per_side &&
-                                                        item.per_side.toLowerCase() ===
-                                                          "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
-                                                            Per Side
-                                                          </span>
-                                                        )}
-                                                    </div>
-                                                  </div>
-                                                  {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
-                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
-                                                        {item.safety_cue}
-                                                      </p>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              ),
-                                            )}
-                                          </div>
-                                        )}
-
-                                      {selectedSection[dayName] ===
-                                        "cooldown" &&
-                                        dayResult.cooldown &&
-                                        dayResult.cooldown.length > 0 && (
-                                          <div className="space-y-2">
-                                            {dayResult.cooldown.map(
-                                              (item, index) => (
-                                                <div
-                                                  key={index}
-                                                  className="p-3 bg-teal-50 dark:bg-teal-900/25 rounded-lg border border-teal-100 dark:border-teal-800"
-                                                >
-                                                  <div className="flex items-start gap-2 mb-1">
-                                                    <span className="shrink-0 w-5 h-5 bg-teal-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                                                      {index + 1}
-                                                    </span>
-                                                    <div className="flex-1 min-w-0">
-                                                      {item.name && (
-                                                        <p className="text-[10px] font-semibold text-slate-800 dark:text-slate-100 mb-0.5">
-                                                          {item.name}
-                                                        </p>
-                                                      )}
-                                                      {renderCompleteExerciseMetrics(
-                                                        item.sets_reps_duration_seconds_rest,
-                                                      )}
-                                                      {item.per_side &&
-                                                        item.per_side.toLowerCase() ===
-                                                          "yes" && (
-                                                          <span className="inline-block text-[8px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium mt-1">
-                                                            Per Side
-                                                          </span>
-                                                        )}
-                                                    </div>
-                                                  </div>
-                                                  {item.safety_cue && (
-                                                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 dark:border-teal-800">
-                                                      <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium">
-                                                        {item.safety_cue}
-                                                      </p>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              ),
-                                            )}
-                                          </div>
-                                        )}
-
-                                      {/* No section selected message - should not show if warm_up is default */}
-                                      {!selectedSection[dayName] && (
-                                        <div className="flex items-center justify-center h-full text-sm text-gray-500 dark:text-slate-400">
-                                          Select a section to view exercises
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                  </div>
-                </div>
-                {dayCardsCanScrollLeft && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const container = dayCardsScrollRef.current;
-                      if (!container) return;
-                      container.scrollBy({
-                        left: -container.clientWidth * 0.9,
-                        behavior: "smooth",
-                      });
-                      setTimeout(updateDayCardsScrollState, 200);
-                    }}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full shadow-md  bg-amber-600/70 text-white cursor-pointer"
-                    aria-label="Scroll to previous days"
-                  >
-                    <HiArrowRight className="h-5 w-5 -scale-x-100 font-bold" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const container = dayCardsScrollRef.current;
-                    if (!container) return;
-                    container.scrollBy({
-                      left: container.clientWidth * 0.9,
-                      behavior: "smooth",
-                    });
-                    setTimeout(updateDayCardsScrollState, 200);
-                  }}
-                  className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-10 w-10 items-center justify-center rounded-full shadow-md  bg-amber-600/70 text-white cursor-pointer ${
-                    dayCardsCanScrollRight ? "" : "opacity-100-"
-                  }`}
-                  aria-label="Scroll to next days"
-                >
-                  <HiArrowRight className="h-5 w-5 font-bold" />
-                </button>
-              </div>
-
-              {/* Save Button */}
-              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
-                {/* Debug info for save state */}
-                {!planMetadata && (
-                  <div className="mb-2 text-xs text-amber-600 dark:text-amber-300 text-center">
-                    Waiting for plan metadata to generate...
-                  </div>
-                )}
-                {!workoutPlanJSON && planMetadata && (
-                  <div className="mb-2 text-xs text-amber-600 dark:text-amber-300 text-center">
-                    Waiting for workout plan to generate...
-                  </div>
-                )}
-                {!user?.id && (
-                  <div className="mb-2 text-xs text-red-600 dark:text-red-300 text-center">
-                    Please log in to save your plan
-                  </div>
-                )}
-                <button
-                  onClick={handleSavePlan}
-                  disabled={
-                    isSavingPlan ||
-                    !user?.id ||
-                    !planMetadata ||
-                    !workoutPlanJSON
-                  }
-                  className={`w-full bg-linear-to-r from-teal-600 to-teal-500 text-white rounded-xl py-4 px-6 font-bold text-base shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 ${
-                    isSavingPlan ||
-                    !user?.id ||
-                    !planMetadata ||
-                    !workoutPlanJSON
-                      ? "opacity-70 cursor-not-allowed"
-                      : ""
-                  }`}
-                >
-                  {isSavingPlan ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : !planMetadata || !workoutPlanJSON ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Generating plan data...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Save Plan</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-        </Dialog>
-
-        {/* Image Processing Reminder Dialog */}
-        <Dialog
-          visible={showImageProcessingDialog}
-          onDismiss={() => setShowImageProcessingDialog(false)}
-          maxWidth="520px"
-        >
-          <div className="p-6 text-slate-900 dark:text-slate-100">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2 text-center">
-              Image Processing Still Running
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
-              Your plan is saved. We are still generating and uploading plan
-              images in the background. Please keep this tab open, but you can
-              continue browsing other tabs.
-            </p>
-            <button
-              onClick={() => setShowImageProcessingDialog(false)}
-              className="w-full mt-5 py-2.5 text-sm font-semibold text-white bg-teal-600 dark:bg-teal-500 hover:bg-teal-700 dark:hover:bg-teal-400 rounded-lg transition-colors"
-            >
-              Got it
-            </button>
-          </div>
-        </Dialog>
-
-        {/* Toast Notification */}
-        {toast.show && (
-          <div className="fixed top-6 right-6 z-100 animate-in slide-in-from-right fade-in duration-300">
-            <div
-              className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border ${
-                toast.type === "success"
-                  ? "bg-teal-50 dark:bg-teal-950/75 border-teal-200 dark:border-teal-800"
-                  : toast.type === "error"
-                    ? "bg-red-50 dark:bg-red-950/75 border-red-200 dark:border-red-800"
-                    : "bg-blue-50 dark:bg-blue-950/75 border-blue-200 dark:border-blue-800"
-              }`}
-            >
-              <div
-                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                  toast.type === "success"
-                    ? "bg-teal-100 dark:bg-teal-900/60"
-                    : toast.type === "error"
-                      ? "bg-red-100 dark:bg-red-900/60"
-                      : "bg-blue-100 dark:bg-blue-900/60"
-                }`}
-              >
-                {toast.type === "success" ? (
-                  <svg
-                    className="w-5 h-5 text-teal-600 dark:text-teal-300"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : toast.type === "error" ? (
-                  <svg
-                    className="w-5 h-5 text-red-600 dark:text-red-300"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="w-5 h-5 text-blue-600 dark:text-blue-300"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p
-                    className={`text-sm font-medium ${
-                      toast.type === "success"
-                        ? "text-teal-800 dark:text-teal-200"
-                        : toast.type === "error"
-                          ? "text-red-800 dark:text-red-200"
-                          : "text-blue-800 dark:text-blue-200"
-                    }`}
-                  >
-                  {toast.type === "success"
-                    ? "Success!"
-                    : toast.type === "error"
-                      ? "Error"
-                      : "Info"}
-                </p>
-                <p
-                    className={`text-sm mt-0.5 ${
-                      toast.type === "success"
-                        ? "text-teal-700 dark:text-teal-300"
-                        : toast.type === "error"
-                          ? "text-red-700 dark:text-red-300"
-                          : "text-blue-700 dark:text-blue-300"
-                    }`}
-                  >
-                  {toast.message}
-                </p>
-              </div>
-              <button
-                onClick={() => setToast((prev) => ({ ...prev, show: false }))}
-                className={`shrink-0 p-1 rounded-lg transition-colors ${
-                  toast.type === "success"
-                    ? "hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-500 dark:text-teal-300"
-                    : toast.type === "error"
-                      ? "hover:bg-red-100 dark:hover:bg-red-900/60 text-red-500 dark:text-red-300"
-                      : "hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-500 dark:text-blue-300"
-                }`}
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

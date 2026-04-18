@@ -16,6 +16,7 @@ import type {
 import {
   convertUserProfileToVariables,
   generateDayWorkoutWithPrompt,
+  enrichDayWorkoutWithExerciseDescriptions,
   generatePlanMetadataWithPrompt,
   generateWorkoutWithPrompt,
   parseExerciseMetrics,
@@ -23,9 +24,22 @@ import {
   type ExerciseItem,
   type WorkoutPlanJSON,
 } from "@/lib/openai-prompt";
+import { getSavedPersonalizedWorkoutPlan } from "@/lib/user-workout-plan";
 
-const PLAN_DURATION_DAYS = 14;
+const PLAN_DURATION_DAYS = 28;
 const PLAN_DURATION_LABEL = `${PLAN_DURATION_DAYS} days`;
+const PROFILE_REQUEST_TIMEOUT_MS = 30000;
+const PROFILE_SAVE_TIMEOUT_MS = 30000;
+const EXISTING_PLANS_TIMEOUT_MS = 30000;
+const PLAN_METADATA_TIMEOUT_MS = 60000;
+const WORKOUT_STRUCTURE_TIMEOUT_MS = 60000;
+const DAY_WORKOUT_TIMEOUT_MS = 60000;
+const DAY_EXERCISE_ENRICH_TIMEOUT_MS = 60000;
+const PLAN_IMAGE_TIMEOUT_MS = 15000;
+const SINGLE_SAVE_TIMEOUT_MS = 60000;
+const BATCH_SAVE_TIMEOUT_MS = 90000;
+const SAVE_VERIFICATION_TIMEOUT_MS = 30000;
+const PLAN_EXERCISE_SAVE_CHUNK_SIZE = 40;
 
 const DAY_ORDER = [
   "monday",
@@ -183,29 +197,35 @@ const parsePlanExerciseMetricsForSave = (value: string | undefined) => {
   return normalized;
 };
 
-const calculateTotalMinutes = (
+const calculateTotalMinutesFromSavedExerciseMetrics = (
   exercises: ExerciseItem[] | undefined,
 ): number => {
   if (!exercises || exercises.length === 0) return 0;
 
   const totalSeconds = exercises.reduce((sum, exercise) => {
-    const metrics = parseExerciseMetrics(
+    const metrics = parsePlanExerciseMetricsForSave(
       exercise.sets_reps_duration_seconds_rest,
     );
-    const sets = metrics.sets ?? 1;
+    const sets = metrics.sets && metrics.sets > 0 ? metrics.sets : 1;
 
     if (metrics.duration_seconds !== null && metrics.duration_seconds > 0) {
       return sum + metrics.duration_seconds * sets;
-    }
-
-    if (metrics.reps !== null && metrics.reps > 0) {
-      return sum + metrics.reps * sets;
     }
 
     return sum;
   }, 0);
 
   return totalSeconds > 0 ? Math.ceil(totalSeconds / 60) : 0;
+};
+
+const chunkItems = <T,>(items: T[], chunkSize: number): T[][] => {
+  if (chunkSize <= 0) return [items];
+
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
 };
 
 const capitalizeDay = (day: string): string => {
@@ -219,12 +239,14 @@ export default function OnboardingGenerateWorkoutPage() {
   const { fetchUserProfile, upsertUserProfile } = useUserData();
   const {
     fetchUserWorkoutPlans,
+    fetchUserWorkoutPlanById,
     getRandomImagePath,
     createUserWorkoutPlan,
     createUserWorkoutWeekPlan,
     createUserWorkoutWeeklyPlans,
     createOrReuseExerciseDetailsBatch,
     createUserWorkoutPlanExercisesBatch,
+    deleteUserWorkoutPlanCascade,
     getExercisePosition,
     getExerciseImagePath,
     generateImageSlug,
@@ -289,7 +311,7 @@ export default function OnboardingGenerateWorkoutPage() {
     (planId: string) => {
       clearRedirectTimeout();
       setShowBackgroundImageDialog(false);
-      router.replace(`/`);
+      router.replace(`/personal/workout/details?id=${planId}`);
     },
     [clearRedirectTimeout, router],
   );
@@ -322,7 +344,7 @@ export default function OnboardingGenerateWorkoutPage() {
 
       const profileResult = await withTimeout(
         fetchUserProfile(user.id),
-        20000,
+        PROFILE_REQUEST_TIMEOUT_MS,
         "fetch user_profile",
       );
       if (!profileResult.success || !profileResult.data) {
@@ -346,7 +368,7 @@ export default function OnboardingGenerateWorkoutPage() {
 
       const existingPlansResult = await withTimeout(
         fetchUserWorkoutPlans(user.id),
-        20000,
+        EXISTING_PLANS_TIMEOUT_MS,
         "fetch user workout plans",
       );
       if (!existingPlansResult.success) {
@@ -357,7 +379,20 @@ export default function OnboardingGenerateWorkoutPage() {
       }
 
       const existingPlans = existingPlansResult.data || [];
-      if (existingPlans.length > 0) {
+      const savedPlanCheck = await withTimeout(
+        getSavedPersonalizedWorkoutPlan(user.id),
+        EXISTING_PLANS_TIMEOUT_MS,
+        "verify saved personalized workout plan",
+      );
+
+      if (!savedPlanCheck.success) {
+        throw new Error(
+          savedPlanCheck.error ||
+            "Unable to verify existing saved workout plans.",
+        );
+      }
+
+      if (existingPlans.length > 0 && savedPlanCheck.hasSavedPlan) {
         const completeResult = await withTimeout(
           upsertUserProfile({
             user_id: user.id,
@@ -365,7 +400,7 @@ export default function OnboardingGenerateWorkoutPage() {
             is_onboarding_complete: true,
             plan_code: profile.plan_code ?? "premium",
           }),
-          20000,
+          PROFILE_SAVE_TIMEOUT_MS,
           "mark onboarding complete",
         );
         if (!completeResult.success) {
@@ -376,11 +411,15 @@ export default function OnboardingGenerateWorkoutPage() {
 
         updateStatus(
           "Workout already generated",
-          "You already have a personalized workout plan. Redirecting to your dashboard.",
+          "You already have a saved personalized workout plan. Redirecting now.",
           100,
         );
         window.setTimeout(() => {
-          router.replace("/");
+          router.replace(
+            savedPlanCheck.planId
+              ? `/personal/workout/details?id=${savedPlanCheck.planId}`
+              : "/",
+          );
         }, 900);
         return;
       }
@@ -389,7 +428,7 @@ export default function OnboardingGenerateWorkoutPage() {
 
       updateStatus(
         "Creating plan metadata",
-        "Naming your personalized 14-day program.",
+        "Naming your personalized 28-day program.",
         28,
       );
 
@@ -404,13 +443,13 @@ export default function OnboardingGenerateWorkoutPage() {
           age: userVariables.age,
           duration: userVariables.duration,
         }),
-        45000,
+        PLAN_METADATA_TIMEOUT_MS,
         "generate workout plan metadata",
       );
 
-      const fallbackPlanName = "Personalized 14-Day Workout Plan";
+      const fallbackPlanName = "Personalized 28-Day Workout Plan";
       const fallbackDescription =
-        "A personalized 14-day workout plan based on your onboarding profile.";
+        "A personalized 28-day workout plan based on your onboarding profile.";
       const fallbackCategory = "General Fitness";
       const fallbackTags = ["workout", "fitness", "onboarding"];
 
@@ -451,7 +490,7 @@ export default function OnboardingGenerateWorkoutPage() {
           plan_duration: PLAN_DURATION_LABEL,
           week_number: "1",
         }),
-        45000,
+        WORKOUT_STRUCTURE_TIMEOUT_MS,
         "generate workout structure",
       );
 
@@ -480,6 +519,9 @@ export default function OnboardingGenerateWorkoutPage() {
       });
 
       const dayWorkoutResults: Record<string, DayWorkoutResponse> = {};
+      const rawGender = profile.gender?.toLowerCase().trim() || "female";
+      const userGender: NormalizedGender =
+        rawGender === "male" || rawGender === "m" ? "male" : "female";
 
       for (let index = 0; index < dayEntries.length; index += 1) {
         const [dayName, dayData] = dayEntries[index];
@@ -508,7 +550,7 @@ export default function OnboardingGenerateWorkoutPage() {
             plan_duration: PLAN_DURATION_LABEL,
             week_number: workoutPlanJSON.week_number || "1",
           }),
-          45000,
+          DAY_WORKOUT_TIMEOUT_MS,
           `generate ${dayName} workout`,
         );
 
@@ -518,12 +560,15 @@ export default function OnboardingGenerateWorkoutPage() {
           );
         }
 
-        dayWorkoutResults[dayName] = dayResult.response;
+        const dayResultWithDescriptions = await withTimeout(
+          enrichDayWorkoutWithExerciseDescriptions(dayResult.response, userGender),
+          DAY_EXERCISE_ENRICH_TIMEOUT_MS,
+          `generate ${dayName} exercise descriptions`,
+        );
+
+        dayWorkoutResults[dayName] = dayResultWithDescriptions;
       }
 
-      const rawGender = profile.gender?.toLowerCase().trim() || "female";
-      const userGender: NormalizedGender =
-        rawGender === "male" || rawGender === "m" ? "male" : "female";
       const rawLocation =
         profile.workout_location?.toLowerCase().trim() || "gym";
       const userLocation: NormalizedLocation =
@@ -531,7 +576,7 @@ export default function OnboardingGenerateWorkoutPage() {
 
       const imageResult = await withTimeout(
         getRandomImagePath(user.id, userGender, userLocation),
-        10000,
+        PLAN_IMAGE_TIMEOUT_MS,
         "fetch plan image",
       );
 
@@ -587,6 +632,9 @@ export default function OnboardingGenerateWorkoutPage() {
   const handleSavePlan = useCallback(async () => {
     if (!user?.id || !previewPlan) return;
 
+    let createdPlanId: string | null = null;
+    let shouldCleanupCreatedPlan = false;
+
     setError(null);
     setIsSavingPlan(true);
     setStatusTitle("Saving your workout plan");
@@ -619,7 +667,7 @@ export default function OnboardingGenerateWorkoutPage() {
           gender: userGender,
           location: userLocation,
         }),
-        30000,
+        SINGLE_SAVE_TIMEOUT_MS,
         "save workout plan",
       );
 
@@ -630,6 +678,8 @@ export default function OnboardingGenerateWorkoutPage() {
       }
 
       const planId = createdPlanResult.data.id;
+      createdPlanId = planId;
+      shouldCleanupCreatedPlan = true;
 
       const weekPlanResult = await withTimeout(
         createUserWorkoutWeekPlan({
@@ -638,7 +688,7 @@ export default function OnboardingGenerateWorkoutPage() {
           rest_days: workoutPlanJSON.rest_days || [],
           remaining_days: Math.max(0, PLAN_DURATION_DAYS - 7),
         }),
-        30000,
+        SINGLE_SAVE_TIMEOUT_MS,
         "save workout week plan",
       );
 
@@ -659,9 +709,11 @@ export default function OnboardingGenerateWorkoutPage() {
             dayResult?.estimated_total_calories,
         );
         const totalMinutes =
-          calculateTotalMinutes(dayResult?.warm_up) +
-          calculateTotalMinutes(dayResult?.main_workout) +
-          calculateTotalMinutes(dayResult?.cooldown);
+          calculateTotalMinutesFromSavedExerciseMetrics(dayResult?.warm_up) +
+          calculateTotalMinutesFromSavedExerciseMetrics(
+            dayResult?.main_workout,
+          ) +
+          calculateTotalMinutesFromSavedExerciseMetrics(dayResult?.cooldown);
 
         return {
           day: dayName,
@@ -674,28 +726,10 @@ export default function OnboardingGenerateWorkoutPage() {
         };
       });
 
-      const weeklyPlansResult = await withTimeout(
-        createUserWorkoutWeeklyPlans(weeklyDayPayloads),
-        30000,
-        "save workout daily plans",
-      );
-      if (!weeklyPlansResult.success || !weeklyPlansResult.data?.length) {
-        throw new Error(
-          weeklyPlansResult.error || "Unable to save daily workout rows.",
-        );
-      }
-
-      const weekDayMap = new Map<string, string>();
-      weeklyPlansResult.data.forEach((item) => {
-        if (item.day && item.id) {
-          weekDayMap.set(item.day.toLowerCase(), item.id);
-        }
-      });
-
       const exerciseDetailsPayloads: CreateUserExerciseDetailsPayload[] = [];
-      Object.entries(dayWorkoutResults).forEach(([dayName, dayResult]) => {
-        const linkedWeekDayId = weekDayMap.get(dayName.toLowerCase());
-        if (!linkedWeekDayId) return;
+      dayEntries.forEach(([dayName]) => {
+        const dayResult = dayWorkoutResults[dayName];
+        if (!dayResult) return;
 
         const sections = [
           { key: "warm_up", exercises: dayResult.warm_up || [] },
@@ -719,11 +753,32 @@ export default function OnboardingGenerateWorkoutPage() {
         });
       });
 
-      const exerciseDetailsResult = await withTimeout(
-        createOrReuseExerciseDetailsBatch(exerciseDetailsPayloads),
-        45000,
-        "save workout exercise details",
-      );
+      const [weeklyPlansResult, exerciseDetailsResult] = await Promise.all([
+        withTimeout(
+          createUserWorkoutWeeklyPlans(weeklyDayPayloads),
+          BATCH_SAVE_TIMEOUT_MS,
+          "save workout daily plans",
+        ),
+        withTimeout(
+          createOrReuseExerciseDetailsBatch(exerciseDetailsPayloads),
+          BATCH_SAVE_TIMEOUT_MS,
+          "save workout exercise details",
+        ),
+      ]);
+
+      if (!weeklyPlansResult.success || !weeklyPlansResult.data?.length) {
+        throw new Error(
+          weeklyPlansResult.error || "Unable to save daily workout rows.",
+        );
+      }
+
+      const weekDayMap = new Map<string, string>();
+      weeklyPlansResult.data.forEach((item) => {
+        if (item.day && item.id) {
+          weekDayMap.set(item.day.toLowerCase(), item.id);
+        }
+      });
+
       if (
         !exerciseDetailsResult.success ||
         !exerciseDetailsResult.data?.length
@@ -808,33 +863,35 @@ export default function OnboardingGenerateWorkoutPage() {
       });
 
       if (planExercisesPayloads.length > 0) {
-        const savedPlanExercisesResult = await withTimeout(
-          createUserWorkoutPlanExercisesBatch(planExercisesPayloads),
-          45000,
-          "save workout plan exercises",
-        );
-        if (!savedPlanExercisesResult.success) {
-          throw new Error(
-            savedPlanExercisesResult.error || "Unable to save plan exercises.",
+        for (const payloadChunk of chunkItems(
+          planExercisesPayloads,
+          PLAN_EXERCISE_SAVE_CHUNK_SIZE,
+        )) {
+          const savedPlanExercisesResult = await withTimeout(
+            createUserWorkoutPlanExercisesBatch(payloadChunk),
+            BATCH_SAVE_TIMEOUT_MS,
+            "save workout plan exercises",
           );
+          if (!savedPlanExercisesResult.success) {
+            throw new Error(
+              savedPlanExercisesResult.error || "Unable to save plan exercises.",
+            );
+          }
         }
       }
 
-      const savedPlansResult = await withTimeout(
-        fetchUserWorkoutPlans(user.id),
-        20000,
-        "verify personalized workout plans",
+      const savedPlanResult = await withTimeout(
+        fetchUserWorkoutPlanById(planId),
+        SAVE_VERIFICATION_TIMEOUT_MS,
+        "verify personalized workout plan",
       );
-      if (!savedPlansResult.success) {
+      if (!savedPlanResult.success || !savedPlanResult.data?.id) {
         throw new Error(
-          savedPlansResult.error || "Unable to verify saved workout plans.",
+          savedPlanResult.error || "Unable to verify the saved workout plan.",
         );
       }
-      if ((savedPlansResult.data?.length ?? 0) < 1) {
-        throw new Error(
-          "Cannot complete onboarding because no personalized workout plan was found.",
-        );
-      }
+
+      shouldCleanupCreatedPlan = false;
 
       const completeResult = await withTimeout(
         upsertUserProfile({
@@ -842,7 +899,7 @@ export default function OnboardingGenerateWorkoutPage() {
           current_step: 11,
           is_onboarding_complete: true,
         }),
-        20000,
+        PROFILE_SAVE_TIMEOUT_MS,
         "mark onboarding complete",
       );
       if (!completeResult.success) {
@@ -853,7 +910,7 @@ export default function OnboardingGenerateWorkoutPage() {
 
       setSavedPlanId(planId);
       setStatusTitle("All set");
-      setStatusDetail("Your personalized 14-day workout plan is ready.");
+      setStatusDetail("Your personalized 28-day workout plan is ready.");
       setProgress(100);
       setPendingRedirectPlanId(planId);
       setShowBackgroundImageDialog(true);
@@ -862,10 +919,22 @@ export default function OnboardingGenerateWorkoutPage() {
         proceedToWorkoutDetails(planId);
       }, 3500);
     } catch (saveError: unknown) {
-      const message =
+      let message =
         saveError instanceof Error
           ? saveError.message
           : "Unable to save your workout plan.";
+
+      if (createdPlanId && shouldCleanupCreatedPlan) {
+        const cleanupResult = await deleteUserWorkoutPlanCascade(createdPlanId);
+        if (!cleanupResult.success) {
+          console.error(
+            "Failed to clean up incomplete onboarding workout plan:",
+            cleanupResult.error,
+          );
+          message = `${message} Automatic cleanup failed. Please refresh before retrying.`;
+        }
+      }
+
       setError(message);
       setStatusTitle("Save failed");
       setStatusDetail(
@@ -877,13 +946,14 @@ export default function OnboardingGenerateWorkoutPage() {
   }, [
     user?.id,
     previewPlan,
-    fetchUserWorkoutPlans,
+    fetchUserWorkoutPlanById,
     upsertUserProfile,
     createUserWorkoutPlan,
     createUserWorkoutWeekPlan,
     createUserWorkoutWeeklyPlans,
     createOrReuseExerciseDetailsBatch,
     createUserWorkoutPlanExercisesBatch,
+    deleteUserWorkoutPlanCascade,
     getExercisePosition,
     getExerciseImagePath,
     generateImageSlug,
@@ -956,7 +1026,7 @@ export default function OnboardingGenerateWorkoutPage() {
               Onboarding
             </p>
             <h1 className="mt-2 text-2xl sm:text-3xl font-extrabold text-white">
-              Preview your first week of your 14 - day workout plan
+              Preview your first week of your 28 - day workout plan
             </h1>
             <p className="mt-3 text-sm sm:text-sm text-slate-300">
               Review your generated plan. It will be saved only after you click

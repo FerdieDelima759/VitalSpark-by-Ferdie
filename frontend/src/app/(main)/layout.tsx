@@ -3,11 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { BackgroundImageGenerationProvider } from "@/contexts/BackgroundImageGenerationContext";
 import { MealsProvider } from "@/contexts/MealsContext";
 import BottomNavBar from "@/components/BottomNavBar";
 import Loader from "@/components/Loader";
 import { clearLocalStoragePreserveTheme } from "@/utils/themeStorage";
+import { getSavedPersonalizedWorkoutPlan } from "@/lib/user-workout-plan";
 
 export default function MainLayout({
   children,
@@ -103,6 +103,13 @@ export default function MainLayout({
           } else {
             router.push(routes[step - 1] || routes[0]);
           }
+          return;
+        }
+
+        const savedPlanCheck = await getSavedPersonalizedWorkoutPlan(user.id);
+        if (!savedPlanCheck.success || !savedPlanCheck.hasSavedPlan) {
+          router.push("/onboarding/generate-workout");
+          return;
         }
       } catch (error) {
         console.error("Error determining route:", error);
@@ -152,15 +159,13 @@ export default function MainLayout({
   }
 
   return (
-    <BackgroundImageGenerationProvider>
-      <MealsProvider>
-        <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex flex-col">
-          <main className={`flex-1 ${hideBottomNav ? "pb-0" : "pb-[70px]"}`}>
-            {children}
-          </main>
-          {!hideBottomNav && <BottomNavBar />}
-        </div>
-      </MealsProvider>
-    </BackgroundImageGenerationProvider>
+    <MealsProvider>
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex flex-col">
+        <main className={`flex-1 ${hideBottomNav ? "pb-0" : "pb-[70px]"}`}>
+          {children}
+        </main>
+        {!hideBottomNav && <BottomNavBar />}
+      </div>
+    </MealsProvider>
   );
 }

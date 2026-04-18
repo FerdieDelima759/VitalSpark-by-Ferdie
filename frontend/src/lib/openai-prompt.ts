@@ -4,10 +4,6 @@ import { openai } from "./openai";
 const WORKOUT_PROMPT_ID = "pmpt_696b1cbae2748190b762941e94daf9ca04d42161af28312a";
 const PROMPT_VERSION = "7";
 
-// Prompt ID for day-specific workout generation
-const DAY_WORKOUT_PROMPT_ID = "pmpt_696b4c297ebc8193ab67088cd5e034c10a70cda92773d275";
-const DAY_WORKOUT_PROMPT_VERSION = "16";
-
 // Interface for user profile data
 export interface WorkoutPromptVariables {
   gender?: string;
@@ -15,6 +11,7 @@ export interface WorkoutPromptVariables {
   location?: string;
   equipments?: string;
   level?: string;
+  weekly_frequency?: string;
   schedule?: string;
   age?: string;
   duration?: string;
@@ -97,6 +94,7 @@ export interface DayWorkoutPromptVariables {
   location?: string;
   equipments?: string;
   level?: string;
+  weekly_frequency?: string;
   schedule?: string;
   age?: string;
   duration?: string;
@@ -111,6 +109,11 @@ export interface DayWorkoutPromptVariables {
 export interface DayWorkoutRpePromptVariables extends DayWorkoutPromptVariables {
   rpe?: string;
   remaining_days?: string;
+}
+
+export interface ExerciseDescriptionPromptVariables {
+  exercise: string;
+  gender?: string;
 }
 
 // Interface for exercise item in workout arrays
@@ -276,6 +279,7 @@ export async function generateWorkoutWithPrompt(
     location: variables.location,
     equipments: variables.equipments,
     level: variables.level,
+    weekly_frequency: variables.weekly_frequency,
     schedule: variables.schedule,
     age: variables.age,
     duration: variables.duration,
@@ -301,7 +305,10 @@ export async function generateWorkoutWithPrompt(
             location: variables.location ?? "not specified",
             equipments: variables.equipments ?? "not specified",
             level: variables.level ?? "not specified",
-            schedule: variables.schedule ?? "not specified",
+            schedule:
+              variables.schedule ??
+              variables.weekly_frequency ??
+              "not specified",
             age: variables.age ?? "not specified",
             duration: variables.duration ?? "not specified",
             plan_name: variables.plan_name ?? "not specified",
@@ -521,7 +528,10 @@ export async function generateWorkoutWithPrompt(
               location: variables.location ?? "not specified",
               equipments: variables.equipments ?? "not specified",
               level: variables.level ?? "not specified",
-              schedule: variables.schedule ?? "not specified",
+              schedule:
+                variables.schedule ??
+                variables.weekly_frequency ??
+                "not specified",
               age: variables.age ?? "not specified",
               duration: variables.duration ?? "not specified",
               plan_name: variables.plan_name ?? "not specified",
@@ -763,6 +773,9 @@ export function convertUserProfileToVariables(userProfile: {
       ? userProfile.equipment_list!.join(", ")
       : "not specified",
     level: hasValue(userProfile.fitness_level) ? String(userProfile.fitness_level) : "not specified",
+    weekly_frequency: hasValue(userProfile.weekly_frequency)
+      ? userProfile.weekly_frequency!.join(", ")
+      : "not specified",
     schedule: hasValue(userProfile.weekly_frequency)
       ? userProfile.weekly_frequency!.join(", ")
       : "not specified",
@@ -855,6 +868,179 @@ export async function generateDayWorkoutWithRpePrompt(
   }
 }
 
+const normalizeExerciseName = (name: string): string => name.toLowerCase().trim();
+
+export async function generateExerciseDescriptionWithPrompt(
+  variables: ExerciseDescriptionPromptVariables
+): Promise<{ success: boolean; response?: string; error?: string }> {
+  try {
+    const response = await fetch("/api/generate-exercise-description", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        variables: {
+          exercise: variables.exercise,
+          gender: variables.gender,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error:
+          errorData.error ||
+          `API request failed with status ${response.status}`,
+      };
+    }
+
+    const data = (await response.json()) as { response?: string };
+    const description = data?.response?.trim();
+    if (!description) {
+      return {
+        success: false,
+        error: "Description prompt returned an empty response.",
+      };
+    }
+
+    return {
+      success: true,
+      response: description,
+    };
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown error occurred while generating exercise description";
+    return {
+      success: false,
+      error: message,
+    };
+  }
+}
+
+export async function generateExerciseDescriptionsForNames(
+  exerciseNames: string[],
+  gender?: string,
+  maxConcurrency = 3
+): Promise<Map<string, string>> {
+  const descriptionMap = new Map<string, string>();
+  const uniqueNames = Array.from(
+    new Set(
+      exerciseNames
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+    )
+  );
+
+  if (uniqueNames.length === 0) {
+    return descriptionMap;
+  }
+
+  const queue = [...uniqueNames];
+  const workerCount = Math.max(
+    1,
+    Math.min(maxConcurrency, queue.length)
+  );
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (queue.length > 0) {
+      const nextName = queue.shift();
+      if (!nextName) continue;
+
+      const result = await generateExerciseDescriptionWithPrompt({
+        exercise: nextName,
+        gender: gender ?? "not specified",
+      });
+
+      if (result.success && result.response) {
+        descriptionMap.set(normalizeExerciseName(nextName), result.response);
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return descriptionMap;
+}
+
+const fillExerciseDescriptions = (
+  exercises: ExerciseItem[] | undefined,
+  descriptionMap: Map<string, string>
+): ExerciseItem[] | undefined => {
+  if (!exercises || exercises.length === 0 || descriptionMap.size === 0) {
+    return exercises;
+  }
+
+  return exercises.map((exercise) => {
+    const existingDescription = exercise.description?.trim();
+    if (existingDescription) {
+      return exercise;
+    }
+
+    const exerciseName = exercise.name?.trim();
+    if (!exerciseName) {
+      return exercise;
+    }
+
+    const generatedDescription = descriptionMap.get(
+      normalizeExerciseName(exerciseName)
+    );
+    if (!generatedDescription) {
+      return exercise;
+    }
+
+    return {
+      ...exercise,
+      description: generatedDescription,
+    };
+  });
+};
+
+export async function enrichDayWorkoutWithExerciseDescriptions(
+  dayWorkout: DayWorkoutResponse,
+  gender?: string
+): Promise<DayWorkoutResponse> {
+  const missingNameSet = new Set<string>();
+  const allExercises = [
+    ...(dayWorkout.warm_up || []),
+    ...(dayWorkout.main_workout || []),
+    ...(dayWorkout.cooldown || []),
+  ];
+
+  allExercises.forEach((exercise) => {
+    const exerciseName = exercise.name?.trim();
+    if (!exerciseName) return;
+    if (exercise.description?.trim()) return;
+    missingNameSet.add(exerciseName);
+  });
+
+  const missingNames = Array.from(missingNameSet);
+
+  if (missingNames.length === 0) {
+    return dayWorkout;
+  }
+
+  const descriptionMap = await generateExerciseDescriptionsForNames(
+    missingNames,
+    gender
+  );
+
+  if (descriptionMap.size === 0) {
+    return dayWorkout;
+  }
+
+  return {
+    ...dayWorkout,
+    warm_up: fillExerciseDescriptions(dayWorkout.warm_up, descriptionMap),
+    main_workout: fillExerciseDescriptions(
+      dayWorkout.main_workout,
+      descriptionMap
+    ),
+    cooldown: fillExerciseDescriptions(dayWorkout.cooldown, descriptionMap),
+  };
+}
+
 // ===========================
 // Plan Metadata Generation
 // ===========================
@@ -879,6 +1065,7 @@ export interface PlanMetadataPromptVariables {
   location?: string;
   equipments?: string;
   level?: string;
+  weekly_frequency?: string;
   schedule?: string;
   age?: string;
   duration?: string;
@@ -907,6 +1094,7 @@ export async function generatePlanMetadataWithPrompt(
     location: variables.location,
     equipments: variables.equipments,
     level: variables.level,
+    weekly_frequency: variables.weekly_frequency,
     schedule: variables.schedule,
     age: variables.age,
     duration: variables.duration,
@@ -925,7 +1113,10 @@ export async function generatePlanMetadataWithPrompt(
             location: variables.location ?? "not specified",
             equipments: variables.equipments ?? "not specified",
             level: variables.level ?? "not specified",
-            schedule: variables.schedule ?? "not specified",
+            schedule:
+              variables.schedule ??
+              variables.weekly_frequency ??
+              "not specified",
             age: variables.age ?? "not specified",
             duration: variables.duration ?? "not specified",
           },
@@ -1036,7 +1227,10 @@ export async function generatePlanMetadataWithPrompt(
               location: variables.location ?? "not specified",
               equipments: variables.equipments ?? "not specified",
               level: variables.level ?? "not specified",
-              schedule: variables.schedule ?? "not specified",
+              schedule:
+                variables.schedule ??
+                variables.weekly_frequency ??
+                "not specified",
               age: variables.age ?? "not specified",
               duration: variables.duration ?? "not specified",
             },
@@ -1521,4 +1715,3 @@ export async function generateMealPlanDayWithPrompt(
 
   return { success: false, error: "OpenAI responses API not available" };
 }
-

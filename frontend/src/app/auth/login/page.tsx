@@ -8,6 +8,7 @@ import Image from "next/image";
 import { useScale } from "@/hooks/useScale";
 import { HiEnvelope, HiLockClosed } from "react-icons/hi2";
 import Loader from "@/components/Loader";
+import { getSavedPersonalizedWorkoutPlan } from "@/lib/user-workout-plan";
 
 interface ToastState extends Omit<ToastProps, "onDismiss"> {
   id: number;
@@ -188,6 +189,17 @@ export default function LoginPage() {
 
             // Profile exists - check completion
             if (profileData.is_onboarding_complete) {
+              const savedPlanCheck = await withTimeout(
+                getSavedPersonalizedWorkoutPlan(user.id),
+                AUTH_STEP_TIMEOUT_MS,
+                "check saved personalized workout plan",
+              );
+
+              if (!savedPlanCheck.success || !savedPlanCheck.hasSavedPlan) {
+                router.push("/onboarding/generate-workout");
+                return;
+              }
+
               router.push("/");
             } else {
               // Route to current step

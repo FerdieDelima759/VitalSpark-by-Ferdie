@@ -12,6 +12,7 @@ import React, {
 import { supabase } from "@/lib/api/supabase";
 import { generateExerciseImage, isImageQuotaExceededError } from "@/lib/gemini";
 import type { DayWorkoutResponse } from "@/lib/openai-prompt";
+import { getUserSessionData } from "@/utils/sessionStorage";
 
 // ============================================================================
 // TYPES
@@ -33,6 +34,7 @@ export interface ImageGenExercise {
 
 export interface ImageGenState {
   sessionId: string;
+  planId: string | null;
   gender: "male" | "female";
   createdAt: number;
   updatedAt: number;
@@ -72,6 +74,7 @@ interface ImageGenerationContextType {
     dayResult: DayWorkoutResponse,
     gender: "male" | "female",
     dayOrder?: string[],
+    planId?: string | null,
   ) => void;
   clearImageGeneration: () => void;
   retryFailedImages: () => void;
@@ -99,7 +102,32 @@ interface ImageGenerationContextType {
 // CONSTANTS
 // ============================================================================
 
-const IMAGE_GEN_STORAGE_KEY = "vitalspark_image_generation_state";
+const IMAGE_GEN_STORAGE_KEY_PREFIX = "vitalspark_image_generation_state";
+const DRAFT_PLAN_ID_PREFIX = "draft:";
+const EXERCISE_DELAY_MIN_MS = Math.max(
+  800,
+  Number(process.env.NEXT_PUBLIC_IMAGE_GEN_EXERCISE_DELAY_MIN_MS ?? "1800"),
+);
+const EXERCISE_DELAY_MAX_MS = Math.max(
+  EXERCISE_DELAY_MIN_MS,
+  Number(process.env.NEXT_PUBLIC_IMAGE_GEN_EXERCISE_DELAY_MAX_MS ?? "3200"),
+);
+const DAY_PAUSE_MS = Math.max(
+  3000,
+  Number(process.env.NEXT_PUBLIC_IMAGE_GEN_DAY_PAUSE_MS ?? "20000"),
+);
+const QUOTA_PAUSE_MS = Math.max(
+  60_000,
+  Number(process.env.NEXT_PUBLIC_IMAGE_GEN_QUOTA_PAUSE_MS ?? "1800000"),
+);
+const IMAGE_GEN_VERBOSE_LOGS =
+  process.env.NEXT_PUBLIC_IMAGE_GEN_VERBOSE_LOGS === "true";
+
+const imgDebug = (...args: unknown[]) => {
+  if (IMAGE_GEN_VERBOSE_LOGS) {
+    console.log(...args);
+  }
+};
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -130,6 +158,78 @@ const createImageSlug = (section: string, name: string): string => {
   return `${storageSection}/${kebabName}`;
 };
 
+const decodeGeneratedImageToBlob = async (
+  imageData: string,
+): Promise<Blob> => {
+  const normalized = imageData.startsWith("data:image")
+    ? imageData
+    : `data:image/png;base64,${imageData}`;
+  const response = await fetch(normalized);
+  if (!response.ok) {
+    throw new Error("Failed to decode generated image");
+  }
+  return response.blob();
+};
+
+const convertBlobToPng = async (sourceBlob: Blob): Promise<Blob> => {
+  if (sourceBlob.type === "image/png") {
+    return sourceBlob;
+  }
+
+  const objectUrl = URL.createObjectURL(sourceBlob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () =>
+        reject(new Error("Failed to load generated image for PNG conversion"));
+      nextImage.src = objectUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to create canvas context for image upload");
+    }
+
+    context.drawImage(image, 0, 0);
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+            return;
+          }
+          reject(new Error("Failed to convert generated image to PNG"));
+        },
+        "image/png",
+        1,
+      );
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
+const checkPublicStorageUrlExists = async (publicUrl: string): Promise<boolean> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(publicUrl, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok || response.status === 206;
+  } catch {
+    return false;
+  }
+};
+
 // Upload base64 image to Supabase Storage
 const uploadImageToStorage = async (
   base64Image: string,
@@ -137,27 +237,12 @@ const uploadImageToStorage = async (
   imageSlug: string,
 ): Promise<{ success: boolean; url?: string; error?: string }> => {
   try {
-    let imageBlob: Blob;
-    if (base64Image.startsWith("data:image")) {
-      const base64Data = base64Image.split(",")[1];
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      imageBlob = new Blob([byteArray], { type: "image/png" });
-    } else {
-      const byteCharacters = atob(base64Image);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      imageBlob = new Blob([byteArray], { type: "image/png" });
-    }
+    // Keep the storage contract stable: generated assets are always stored as PNG.
+    const decodedBlob = await decodeGeneratedImageToBlob(base64Image);
+    const imageBlob = await convertBlobToPng(decodedBlob);
 
     const storagePath = `exercises/${gender}/${imageSlug}.png`;
+    const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
 
     const { error: uploadError } = await supabase.storage
       .from("workouts")
@@ -167,13 +252,35 @@ const uploadImageToStorage = async (
       });
 
     if (uploadError) {
-      return { success: false, error: uploadError.message };
+      const alreadyExists = await checkPublicStorageUrlExists(publicUrl);
+      if (alreadyExists) {
+        return { success: true, url: publicUrl };
+      }
+
+      const { error: updateError } = await supabase.storage
+        .from("workouts")
+        .update(storagePath, imageBlob, {
+          contentType: "image/png",
+          upsert: true,
+        });
+
+      if (!updateError) {
+        return { success: true, url: publicUrl };
+      }
+
+      return {
+        success: false,
+        error:
+          updateError.message !== uploadError.message
+            ? `${uploadError.message} | update fallback: ${updateError.message}`
+            : uploadError.message,
+      };
     }
 
-    const publicUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/${storagePath}`;
     return { success: true, url: publicUrl };
-  } catch (err: any) {
-    return { success: false, error: err?.message || "Upload failed" };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return { success: false, error: message };
   }
 };
 
@@ -184,8 +291,7 @@ const fetchPlanExerciseImageStatus = async (
     const { data, error } = await supabase
       .from("user_workout_plan_exercises")
       .select("id,is_image_generated")
-      .eq("image_path", imagePath)
-      .or("is_image_generated.is.null,is_image_generated.eq.false");
+      .eq("image_path", imagePath);
 
     if (error) {
       console.warn(
@@ -196,10 +302,21 @@ const fetchPlanExerciseImageStatus = async (
     }
 
     if (!data || data.length === 0) {
-      return { hasRecords: true, shouldProcess: false };
+      imgDebug(
+        "[ImageGenContext] No user_workout_plan_exercises rows yet; image will be generated.",
+        { imagePath },
+      );
+      return { hasRecords: false, shouldProcess: true };
     }
 
-    return { hasRecords: true, shouldProcess: true };
+    const shouldProcess = data.some((row) => row.is_image_generated !== true);
+    if (!shouldProcess) {
+      imgDebug(
+        "[ImageGenContext] All linked plan rows already marked generated.",
+        { imagePath, rows: data.length },
+      );
+    }
+    return { hasRecords: true, shouldProcess };
   } catch (err) {
     console.warn("[ImageGenContext] is_image_generated check failed:", err);
     return { hasRecords: false, shouldProcess: true };
@@ -257,18 +374,500 @@ const markPlanExercisesImageGenerated = async (
 };
 
 // LocalStorage helpers
-const getImageGenState = (): ImageGenState | null => {
+const getImageGenStorageKey = (userId: string | null): string =>
+  `${IMAGE_GEN_STORAGE_KEY_PREFIX}_${userId || "anonymous"}`;
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const randomBetween = (min: number, max: number): number => {
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+const isDraftPlanId = (planId: string | null | undefined): boolean =>
+  typeof planId === "string" && planId.startsWith(DRAFT_PLAN_ID_PREFIX);
+
+const parseImagePathMetadata = (
+  imagePath: string,
+): { gender: "male" | "female"; imageSlug: string } | null => {
+  const match = imagePath.match(
+    /\/exercises\/(male|female)\/(.+?)\.png(?:\?|$)/i,
+  );
+  if (!match) return null;
+  const [, genderRaw, slugRaw] = match;
+  if (!genderRaw || !slugRaw) return null;
+  return {
+    gender: genderRaw.toLowerCase() === "male" ? "male" : "female",
+    imageSlug: slugRaw,
+  };
+};
+
+const mapStoredSectionToQueueSection = (section: string | null): string => {
+  if (section === "warmup") return "warm_up";
+  if (section === "cooldown") return "cooldown";
+  return "main_workout";
+};
+
+const parseExerciseNameFromImageAlt = (imageAlt: string | null): string | null => {
+  if (!imageAlt) return null;
+  const trimmed = imageAlt
+    .replace(/\s*exercise demonstration\s*$/i, "")
+    .trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseExerciseNameFromSlug = (imageSlug: string): string => {
+  const namePart = imageSlug.includes("/")
+    ? imageSlug.split("/").slice(1).join("/")
+    : imageSlug;
+  return namePart.replace(/-/g, " ").trim() || "Exercise";
+};
+
+const buildExerciseStorageUrl = (
+  gender: "male" | "female",
+  imageSlug: string,
+): string =>
+  `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${gender}/${imageSlug}.png`;
+
+const checkStorageObjectExists = async (
+  storageUrl: string,
+  cache: Map<string, boolean>,
+): Promise<boolean> => {
+  const cached = cache.get(storageUrl);
+  if (typeof cached === "boolean") {
+    return cached;
+  }
+
+  let exists = false;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(storageUrl, {
+      method: "GET",
+      headers: { Range: "bytes=0-0" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    exists = response.ok || response.status === 206;
+  } catch {
+    exists = false;
+  }
+
+  cache.set(storageUrl, exists);
+  return exists;
+};
+
+const normalizeDayLabel = (value: string | null | undefined): string =>
+  (value || "").toLowerCase().trim();
+
+const parseQueuedDayMetadata = (
+  queuedDayName: string,
+): {
+  dayLabel: string | null;
+  weekNumber: number | null;
+  planId: string | null;
+  dayPlanId: string | null;
+} => {
+  const trimmed = queuedDayName.trim();
+  if (!trimmed) {
+    return { dayLabel: null, weekNumber: null, planId: null, dayPlanId: null };
+  }
+
+  const canonicalMatch = trimmed.match(
+    /^(.*?)\s*\|\s*W(\d+)\s*(?:\|\s*P:([a-f0-9-]{8,}))?(?:\|\s*D:([a-f0-9-]{8,}))?\s*$/i,
+  );
+  if (canonicalMatch) {
+    return {
+      dayLabel: canonicalMatch[1]?.trim() || null,
+      weekNumber: Number(canonicalMatch[2]),
+      planId: canonicalMatch[3] || null,
+      dayPlanId: canonicalMatch[4] || null,
+    };
+  }
+
+  const weekParenMatch = trimmed.match(/^(.*?)\s*\(week\s*(\d+)\)\s*$/i);
+  if (weekParenMatch) {
+    return {
+      dayLabel: weekParenMatch[1]?.trim() || null,
+      weekNumber: Number(weekParenMatch[2]),
+      planId: null,
+      dayPlanId: null,
+    };
+  }
+
+  const weekPipeMatch = trimmed.match(/^(.*?)\s*\|\s*w(\d+)\b/i);
+  if (weekPipeMatch) {
+    return {
+      dayLabel: weekPipeMatch[1]?.trim() || null,
+      weekNumber: Number(weekPipeMatch[2]),
+      planId: null,
+      dayPlanId: null,
+    };
+  }
+
+  return { dayLabel: trimmed, weekNumber: null, planId: null, dayPlanId: null };
+};
+
+const buildQueuedDayName = (
+  dayLabel: string,
+  weekNumber: number | null | undefined,
+  planId?: string | null,
+  dayPlanId?: string | null,
+): string => {
+  const safeDay = dayLabel.trim() || "Day";
+  const safeWeek = Number.isFinite(weekNumber as number)
+    ? Number(weekNumber)
+    : 1;
+  let name = `${safeDay} | W${safeWeek}`;
+  if (planId) {
+    name += ` | P:${planId}`;
+  }
+  if (dayPlanId) {
+    name += ` | D:${dayPlanId}`;
+  }
+  return name;
+};
+
+const getQueuedDayPlanId = (
+  queuedDayName: string,
+  fallbackPlanId: string | null,
+): string | null => {
+  const parsed = parseQueuedDayMetadata(queuedDayName);
+  return parsed.planId || fallbackPlanId;
+};
+
+const fetchPendingDayExercisesFromDatabase = async (
+  planId: string | null,
+  queuedDayName: string,
+  expectedGender: "male" | "female",
+): Promise<ImageGenExercise[]> => {
+  if (!planId) return [];
+
+  try {
+    type WeekRow = { id: string; week_number: number | null };
+    type DayRow = { id: string; day: string | null; week_plan_id: string };
+    type ExerciseRow = {
+      id: string;
+      weekly_plan_id: string;
+      section: string | null;
+      position: number | null;
+      image_path: string | null;
+      image_alt: string | null;
+      description: string | null;
+      is_image_generated: boolean | null;
+    };
+
+    const queuedMeta = parseQueuedDayMetadata(queuedDayName);
+
+    let weeksQuery = supabase
+      .from("user_workout_weekly_plan")
+      .select("id,week_number")
+      .eq("plan_id", planId);
+    if (queuedMeta.weekNumber !== null && !Number.isNaN(queuedMeta.weekNumber)) {
+      weeksQuery = weeksQuery.eq("week_number", queuedMeta.weekNumber);
+    }
+    const { data: weeksData, error: weeksError } = await weeksQuery;
+    if (weeksError || !weeksData || weeksData.length === 0) {
+      if (weeksError) {
+        console.warn(
+          "[ImageGenContext] Day re-check: weekly plan read failed:",
+          weeksError.message,
+        );
+      }
+      return [];
+    }
+
+    const weekRows = weeksData as WeekRow[];
+    const weekPlanIds = weekRows.map((row) => row.id);
+
+    const { data: daysData, error: daysError } = await supabase
+      .from("user_workout_weekly_day_plan")
+      .select("id,day,week_plan_id")
+      .in("week_plan_id", weekPlanIds);
+    if (daysError || !daysData || daysData.length === 0) {
+      if (daysError) {
+        console.warn(
+          "[ImageGenContext] Day re-check: daily plan read failed:",
+          daysError.message,
+        );
+      }
+      return [];
+    }
+
+    const normalizedQueuedDay = normalizeDayLabel(queuedMeta.dayLabel);
+    const dayRows = (daysData as DayRow[]).filter((row) => {
+      if (!normalizedQueuedDay) return true;
+      const normalizedRowDay = normalizeDayLabel(row.day);
+      return (
+        normalizedRowDay === normalizedQueuedDay ||
+        normalizedQueuedDay.startsWith(normalizedRowDay) ||
+        normalizedRowDay.startsWith(normalizedQueuedDay)
+      );
+    });
+    if (dayRows.length === 0) {
+      return [];
+    }
+
+    const dayPlanIds = dayRows.map((row) => row.id);
+
+    const { data: exercisesData, error: exercisesError } = await supabase
+      .from("user_workout_plan_exercises")
+      .select(
+        "id,weekly_plan_id,section,position,image_path,image_alt,description,is_image_generated",
+      )
+      .in("weekly_plan_id", dayPlanIds)
+      .or("is_image_generated.is.null,is_image_generated.eq.false")
+      .not("image_path", "is", null)
+      .order("weekly_plan_id", { ascending: true })
+      .order("position", { ascending: true });
+    if (exercisesError || !exercisesData || exercisesData.length === 0) {
+      if (exercisesError) {
+        console.warn(
+          "[ImageGenContext] Day re-check: pending exercise read failed:",
+          exercisesError.message,
+        );
+      }
+      return [];
+    }
+
+    const pendingRows = exercisesData as ExerciseRow[];
+    const pendingExercises = pendingRows
+      .map((row, fallbackIndex) => {
+        const parsedPath = parseImagePathMetadata(row.image_path || "");
+        if (parsedPath && parsedPath.gender !== expectedGender) {
+          return null;
+        }
+
+        const section = mapStoredSectionToQueueSection(row.section);
+        const imageSlug =
+          parsedPath?.imageSlug ||
+          createImageSlug(
+            section,
+            parseExerciseNameFromImageAlt(row.image_alt) || "exercise",
+          );
+        const exerciseName =
+          parseExerciseNameFromImageAlt(row.image_alt) ||
+          parseExerciseNameFromSlug(imageSlug);
+        const description =
+          row.description?.trim() ||
+          `Exercise demonstration for ${exerciseName}`;
+
+        return {
+          dayName: queuedDayName,
+          section,
+          index: row.position ?? fallbackIndex,
+          exerciseName,
+          exerciseDescription: description,
+          imageSlug,
+          status: "pending" as const,
+          retryCount: 0,
+        } as ImageGenExercise;
+      })
+      .filter((entry): entry is ImageGenExercise => Boolean(entry));
+
+    const uniqueBySlugAndSection = new Map<string, ImageGenExercise>();
+    pendingExercises.forEach((exercise) => {
+      const key = `${exercise.imageSlug}|${exercise.section}`;
+      if (!uniqueBySlugAndSection.has(key)) {
+        uniqueBySlugAndSection.set(key, exercise);
+      }
+    });
+
+    return Array.from(uniqueBySlugAndSection.values());
+  } catch (error) {
+    console.warn("[ImageGenContext] Day re-check failed:", error);
+    return [];
+  }
+};
+
+const fetchPendingPlanExercisesFromDatabase = async (
+  planId: string | null,
+  expectedGender: "male" | "female",
+): Promise<ImageGenExercise[]> => {
+  if (!planId) return [];
+
+  try {
+    type WeekRow = { id: string; week_number: number | null };
+    type DayRow = { id: string; day: string | null; week_plan_id: string };
+    type ExerciseRow = {
+      id: string;
+      weekly_plan_id: string;
+      section: string | null;
+      position: number | null;
+      image_path: string | null;
+      image_alt: string | null;
+      description: string | null;
+      is_image_generated: boolean | null;
+    };
+
+    const { data: weeksData, error: weeksError } = await supabase
+      .from("user_workout_weekly_plan")
+      .select("id,week_number")
+      .eq("plan_id", planId);
+    if (weeksError || !weeksData || weeksData.length === 0) {
+      if (weeksError) {
+        console.warn(
+          "[ImageGenContext] Plan re-check: weekly plan read failed:",
+          weeksError.message,
+        );
+      }
+      return [];
+    }
+
+    const weekRows = weeksData as WeekRow[];
+    const weekById = new Map<string, WeekRow>();
+    weekRows.forEach((row) => weekById.set(row.id, row));
+    const weekPlanIds = weekRows.map((row) => row.id);
+
+    const { data: daysData, error: daysError } = await supabase
+      .from("user_workout_weekly_day_plan")
+      .select("id,day,week_plan_id")
+      .in("week_plan_id", weekPlanIds);
+    if (daysError || !daysData || daysData.length === 0) {
+      if (daysError) {
+        console.warn(
+          "[ImageGenContext] Plan re-check: daily plan read failed:",
+          daysError.message,
+        );
+      }
+      return [];
+    }
+
+    const dayRows = daysData as DayRow[];
+    const dayById = new Map<string, DayRow>();
+    dayRows.forEach((row) => dayById.set(row.id, row));
+    const dayPlanIds = dayRows.map((row) => row.id);
+
+    const { data: exercisesData, error: exercisesError } = await supabase
+      .from("user_workout_plan_exercises")
+      .select(
+        "id,weekly_plan_id,section,position,image_path,image_alt,description,is_image_generated",
+      )
+      .in("weekly_plan_id", dayPlanIds)
+      .or("is_image_generated.is.null,is_image_generated.eq.false")
+      .not("image_path", "is", null)
+      .order("weekly_plan_id", { ascending: true })
+      .order("position", { ascending: true });
+    if (exercisesError || !exercisesData || exercisesData.length === 0) {
+      if (exercisesError) {
+        console.warn(
+          "[ImageGenContext] Plan re-check: pending exercise read failed:",
+          exercisesError.message,
+        );
+      }
+      return [];
+    }
+
+    const pendingRows = exercisesData as ExerciseRow[];
+    const pendingExercises = pendingRows
+      .map((row, fallbackIndex) => {
+        const dayRow = dayById.get(row.weekly_plan_id);
+        if (!dayRow) return null;
+        const weekRow = weekById.get(dayRow.week_plan_id);
+        if (!weekRow) return null;
+
+        const parsedPath = parseImagePathMetadata(row.image_path || "");
+        if (parsedPath && parsedPath.gender !== expectedGender) {
+          return null;
+        }
+
+        const section = mapStoredSectionToQueueSection(row.section);
+        const imageSlug =
+          parsedPath?.imageSlug ||
+          createImageSlug(
+            section,
+            parseExerciseNameFromImageAlt(row.image_alt) || "exercise",
+          );
+        const exerciseName =
+          parseExerciseNameFromImageAlt(row.image_alt) ||
+          parseExerciseNameFromSlug(imageSlug);
+        const description =
+          row.description?.trim() ||
+          `Exercise demonstration for ${exerciseName}`;
+
+        const queueDayName = buildQueuedDayName(
+          dayRow.day?.trim() || "Day",
+          weekRow.week_number ?? 1,
+          planId,
+          dayRow.id,
+        );
+
+        return {
+          dayName: queueDayName,
+          section,
+          index: row.position ?? fallbackIndex,
+          exerciseName,
+          exerciseDescription: description,
+          imageSlug,
+          status: "pending" as const,
+          retryCount: 0,
+        } as ImageGenExercise;
+      })
+      .filter((entry): entry is ImageGenExercise => Boolean(entry));
+
+    const uniqueByKey = new Map<string, ImageGenExercise>();
+    pendingExercises.forEach((exercise) => {
+      const key = `${exercise.dayName}|${exercise.section}|${exercise.imageSlug}`;
+      if (!uniqueByKey.has(key)) {
+        uniqueByKey.set(key, exercise);
+      }
+    });
+
+    return Array.from(uniqueByKey.values()).sort((a, b) => {
+      const aMeta = parseQueuedDayMetadata(a.dayName);
+      const bMeta = parseQueuedDayMetadata(b.dayName);
+      const weekDiff = (aMeta.weekNumber ?? 999) - (bMeta.weekNumber ?? 999);
+      if (weekDiff !== 0) return weekDiff;
+      const dayDiff = daySortRank(aMeta.dayLabel) - daySortRank(bMeta.dayLabel);
+      if (dayDiff !== 0) return dayDiff;
+      return a.index - b.index;
+    });
+  } catch (error) {
+    console.warn("[ImageGenContext] Plan re-check failed:", error);
+    return [];
+  }
+};
+
+const daySortRank = (day: string | null): number => {
+  if (!day) return 99;
+  const normalized = day.toLowerCase().trim();
+  const rankMap: Record<string, number> = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 7,
+  };
+  if (rankMap[normalized]) {
+    return rankMap[normalized];
+  }
+
+  const numericMatch = normalized.match(/\d+/);
+  if (numericMatch?.[0]) {
+    return Number(numericMatch[0]);
+  }
+  return 99;
+};
+
+const getImageGenState = (storageKey: string): ImageGenState | null => {
   if (typeof window === "undefined") return null;
   try {
-    const stored = localStorage.getItem(IMAGE_GEN_STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (!stored) return null;
-    return JSON.parse(stored) as ImageGenState;
+    const parsed = JSON.parse(stored) as Partial<ImageGenState>;
+    return {
+      ...(parsed as ImageGenState),
+      planId: parsed.planId ?? null,
+    };
   } catch {
     return null;
   }
 };
 
-const saveImageGenState = (state: ImageGenState): void => {
+const saveImageGenState = (state: ImageGenState, storageKey: string): void => {
   if (typeof window === "undefined") return;
   try {
     state.updatedAt = Date.now();
@@ -280,17 +879,17 @@ const saveImageGenState = (state: ImageGenState): void => {
       uploaded: state.exercises.filter((e) => e.status === "uploaded").length,
       failed: state.exercises.filter((e) => e.status === "failed").length,
     };
-    localStorage.setItem(IMAGE_GEN_STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(storageKey, JSON.stringify(state));
   } catch (err) {
     console.error("Failed to save image gen state:", err);
   }
 };
 
-const clearStoredImageGenState = (): void => {
+const clearStoredImageGenState = (storageKey: string): void => {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(IMAGE_GEN_STORAGE_KEY);
-    console.log("🗑️ Cleared image generation state from localStorage");
+    localStorage.removeItem(storageKey);
+    imgDebug("🗑️ Cleared image generation state from localStorage");
   } catch (err) {
     console.error("Failed to clear image gen state:", err);
   }
@@ -299,10 +898,12 @@ const clearStoredImageGenState = (): void => {
 const createImageGenSession = (
   gender: "male" | "female",
   dayOrder: string[],
+  planId: string | null = null,
 ): ImageGenState => {
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   return {
     sessionId,
+    planId,
     gender,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -430,18 +1031,19 @@ const getNextPendingExercise = (
 const getNextDayToProcess = (state: ImageGenState): string | null => {
   for (const day of state.dayOrder) {
     if (!state.completedDays.includes(day)) {
-      const hasWork = state.exercises.some(
+      const hasRunnableWork = state.exercises.some(
         (e) =>
           e.dayName === day &&
           (e.status === "pending" ||
-            e.status === "generating" ||
-            e.status === "failed"),
+            e.status === "generating"),
       );
-      if (hasWork) return day;
+      if (hasRunnableWork) return day;
       const dayExercises = state.exercises.filter((e) => e.dayName === day);
       if (
         dayExercises.length > 0 &&
-        dayExercises.every((e) => e.status === "uploaded")
+        dayExercises.every(
+          (e) => e.status === "uploaded" || e.status === "failed",
+        )
       ) {
         continue;
       }
@@ -504,12 +1106,363 @@ export function ImageGenerationProvider({
   const isProcessingImagesRef = useRef(false);
   const processingAbortedRef = useRef(false);
   const lastActivityTimeRef = useRef<number>(Date.now());
+  const userIdRef = useRef<string | null>(null);
+  const quotaPauseUntilRef = useRef<number>(0);
+  const bootstrapInFlightRef = useRef(false);
+  const lastBootstrapAttemptRef = useRef<number>(0);
 
-  // Load state from localStorage on mount
+  const getStorageKey = useCallback((): string => {
+    const sessionData = getUserSessionData();
+    const userId = sessionData.userId || userIdRef.current || null;
+    return getImageGenStorageKey(userId);
+  }, []);
+
+  const bootstrapPendingQueueFromDatabase = useCallback(
+    async (reason: string): Promise<boolean> => {
+      const now = Date.now();
+      if (bootstrapInFlightRef.current) return false;
+      if (now - lastBootstrapAttemptRef.current < 15000) return false;
+      lastBootstrapAttemptRef.current = now;
+      bootstrapInFlightRef.current = true;
+
+      try {
+        const sessionData = getUserSessionData();
+        let userId = sessionData.userId || userIdRef.current || null;
+        if (!userId) {
+          const { data } = await supabase.auth.getUser();
+          userId = data?.user?.id ?? null;
+        }
+        if (!userId) {
+          return false;
+        }
+
+        const storageKey = getStorageKey();
+        const existingState = getImageGenState(storageKey);
+        const hasLocalWork =
+          !!existingState &&
+          (existingState.stats.pending > 0 ||
+            existingState.exercises.some(
+              (ex) =>
+                ex.status === "pending" ||
+                ex.status === "generating" ||
+                ex.status === "failed",
+            ));
+
+        type PlanRow = { id: string; created_at: string | null };
+        type WeekRow = {
+          id: string;
+          plan_id: string;
+          week_number: number | null;
+        };
+        type DayRow = { id: string; day: string | null; week_plan_id: string };
+        type PlanExerciseRow = {
+          id: string;
+          weekly_plan_id: string;
+          section: string | null;
+          position: number | null;
+          image_path: string | null;
+          image_alt: string | null;
+          description: string | null;
+          is_image_generated: boolean | null;
+        };
+
+        const { data: plansData, error: plansError } = await supabase
+          .from("user_workout_plans")
+          .select("id, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
+        if (plansError) {
+          console.warn(
+            "[ImageGenContext] Failed to read user plans for queue bootstrap:",
+            plansError.message,
+          );
+          return false;
+        }
+
+        const planRows = (plansData || []) as PlanRow[];
+        if (planRows.length === 0) {
+          return false;
+        }
+        const planIds = planRows.map((row) => row.id);
+
+        const { data: weeksData, error: weeksError } = await supabase
+          .from("user_workout_weekly_plan")
+          .select("id, plan_id, week_number")
+          .in("plan_id", planIds);
+        if (weeksError) {
+          console.warn(
+            "[ImageGenContext] Failed to read weekly plans for queue bootstrap:",
+            weeksError.message,
+          );
+          return false;
+        }
+
+        const weekRows = (weeksData || []) as WeekRow[];
+        if (weekRows.length === 0) {
+          return false;
+        }
+        const weekPlanIds = weekRows.map((row) => row.id);
+
+        const { data: daysData, error: daysError } = await supabase
+          .from("user_workout_weekly_day_plan")
+          .select("id, day, week_plan_id")
+          .in("week_plan_id", weekPlanIds);
+        if (daysError) {
+          console.warn(
+            "[ImageGenContext] Failed to read daily plans for queue bootstrap:",
+            daysError.message,
+          );
+          return false;
+        }
+
+        const dayRows = (daysData || []) as DayRow[];
+        if (dayRows.length === 0) {
+          return false;
+        }
+        const dayPlanIds = dayRows.map((row) => row.id);
+
+        const { data: exercisesData, error: exercisesError } = await supabase
+          .from("user_workout_plan_exercises")
+          .select(
+            "id, weekly_plan_id, section, position, image_path, image_alt, description, is_image_generated",
+          )
+          .in("weekly_plan_id", dayPlanIds)
+          .or("is_image_generated.is.null,is_image_generated.eq.false")
+          .not("image_path", "is", null)
+          .order("weekly_plan_id", { ascending: true })
+          .order("position", { ascending: true });
+        if (exercisesError) {
+          console.warn(
+            "[ImageGenContext] Failed to read pending exercises for queue bootstrap:",
+            exercisesError.message,
+          );
+          return false;
+        }
+
+        const exerciseRows = (exercisesData || []) as PlanExerciseRow[];
+        if (exerciseRows.length === 0) {
+          return false;
+        }
+
+        const planOrder = new Map<string, number>();
+        planRows.forEach((row, index) => planOrder.set(row.id, index));
+
+        const weekById = new Map<string, WeekRow>();
+        weekRows.forEach((row) => weekById.set(row.id, row));
+
+        const dayById = new Map<string, DayRow>();
+        dayRows.forEach((row) => dayById.set(row.id, row));
+
+        const pendingQueueEntries = exerciseRows
+          .map((row) => {
+            if (!row.image_path) return null;
+
+            const dayPlan = dayById.get(row.weekly_plan_id);
+            if (!dayPlan) return null;
+            const weekPlan = weekById.get(dayPlan.week_plan_id);
+            if (!weekPlan) return null;
+            const planId = weekPlan.plan_id;
+            const parsedPath = parseImagePathMetadata(row.image_path);
+            const imageSlug =
+              parsedPath?.imageSlug ||
+              createImageSlug(
+                mapStoredSectionToQueueSection(row.section),
+                parseExerciseNameFromImageAlt(row.image_alt) || "exercise",
+              );
+            const exerciseName =
+              parseExerciseNameFromImageAlt(row.image_alt) ||
+              parseExerciseNameFromSlug(imageSlug);
+            const dayLabel = dayPlan.day?.trim() || "Day";
+            const dayName = buildQueuedDayName(
+              dayLabel,
+              weekPlan.week_number ?? 1,
+              planId,
+              dayPlan.id,
+            );
+            const section = mapStoredSectionToQueueSection(row.section);
+
+            return {
+              dayName,
+              planId,
+              planOrder: planOrder.get(planId) ?? 9999,
+              weekNumber: weekPlan.week_number ?? 999,
+              dayRank: daySortRank(dayPlan.day),
+              position: row.position ?? 0,
+              gender: parsedPath?.gender || "female",
+              exercise: {
+                dayName,
+                section,
+                index: row.position ?? 0,
+                exerciseName,
+                exerciseDescription:
+                  row.description?.trim() ||
+                  `Exercise demonstration for ${exerciseName}`,
+                imageSlug,
+                status: "pending" as const,
+                retryCount: 0,
+              } as ImageGenExercise,
+            };
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+        if (pendingQueueEntries.length === 0) {
+          return false;
+        }
+
+        const genderCounts = pendingQueueEntries.reduce(
+          (acc, entry) => {
+            acc[entry.gender] += 1;
+            return acc;
+          },
+          { male: 0, female: 0 },
+        );
+        const selectedGender: "male" | "female" =
+          existingState?.gender ||
+          (genderCounts.male > genderCounts.female ? "male" : "female");
+        const filteredEntries = pendingQueueEntries.filter(
+          (entry) => entry.gender === selectedGender,
+        );
+        if (filteredEntries.length === 0) {
+          return false;
+        }
+
+        filteredEntries.sort((a, b) => {
+          if (a.planOrder !== b.planOrder) return a.planOrder - b.planOrder;
+          if (a.weekNumber !== b.weekNumber) return a.weekNumber - b.weekNumber;
+          if (a.dayRank !== b.dayRank) return a.dayRank - b.dayRank;
+          return a.position - b.position;
+        });
+
+        const dayOrder = Array.from(
+          new Set(filteredEntries.map((entry) => entry.dayName)),
+        );
+        const uniquePlanIds = Array.from(
+          new Set(filteredEntries.map((entry) => entry.planId)),
+        );
+
+        if (existingState && hasLocalWork) {
+          const existingImageSlugs = new Set(
+            existingState.exercises.map((exercise) => exercise.imageSlug),
+          );
+          const appendedExercises = filteredEntries
+            .map((entry) => entry.exercise)
+            .filter((exercise) => !existingImageSlugs.has(exercise.imageSlug));
+
+          if (appendedExercises.length === 0) {
+            imgDebug(
+              "[ImageGenContext] Login DB check completed; local queue already covers pending images.",
+              {
+                reason,
+                userId,
+                pendingDbRows: filteredEntries.length,
+                localPending: existingState.stats.pending,
+              },
+            );
+            return false;
+          }
+
+          const mergedDayOrder = Array.from(
+            new Set([...existingState.dayOrder, ...dayOrder]),
+          );
+          const mergedState: ImageGenState = {
+            ...existingState,
+            gender: existingState.gender || selectedGender,
+            planId:
+              existingState.planId ??
+              (uniquePlanIds.length === 1 ? uniquePlanIds[0] : null),
+            dayOrder: mergedDayOrder,
+            exercises: [...existingState.exercises, ...appendedExercises],
+          };
+          saveImageGenState(mergedState, storageKey);
+          setImageGenState(mergedState);
+          setImageGenStats(mergedState.stats);
+
+          imgDebug(
+            "[ImageGenContext] Login DB check merged missing pending images into local queue.",
+            {
+              reason,
+              userId,
+              addedExercises: appendedExercises.length,
+              pendingDbRows: filteredEntries.length,
+              localPending: mergedState.stats.pending,
+            },
+          );
+          return true;
+        }
+
+        const bootstrapState: ImageGenState = {
+          ...createImageGenSession(
+            selectedGender,
+            dayOrder,
+            uniquePlanIds.length === 1 ? uniquePlanIds[0] : null,
+          ),
+          exercises: filteredEntries.map((entry) => entry.exercise),
+          stats: {
+            total: filteredEntries.length,
+            pending: filteredEntries.length,
+            generating: 0,
+            uploaded: 0,
+            failed: 0,
+          },
+        };
+
+        saveImageGenState(bootstrapState, storageKey);
+        setImageGenState(bootstrapState);
+        setImageGenStats(bootstrapState.stats);
+        setCompletedImageDays(new Set());
+        setExerciseImages({});
+
+        imgDebug("[ImageGenContext] Bootstrapped pending queue from DB.", {
+          reason,
+          userId,
+          plans: uniquePlanIds.length,
+          days: dayOrder.length,
+          exercises: filteredEntries.length,
+          gender: selectedGender,
+          droppedForGenderMismatch:
+            pendingQueueEntries.length - filteredEntries.length,
+        });
+        return true;
+      } catch (error) {
+        console.warn(
+          "[ImageGenContext] Failed to bootstrap queue from DB:",
+          error,
+        );
+        return false;
+      } finally {
+        bootstrapInFlightRef.current = false;
+      }
+    },
+    [getStorageKey],
+  );
+
+  // Load state from localStorage on mount (scoped by signed-in user)
   useEffect(() => {
-    const savedState = getImageGenState();
-    if (savedState) {
-      console.log("📂 [ImageGenContext] Loaded state from localStorage:", {
+    const loadState = () => {
+      const primaryKey = getStorageKey();
+      let savedState = getImageGenState(primaryKey);
+
+      // Recover queue created before session user_id was available.
+      if (!savedState && primaryKey !== getImageGenStorageKey(null)) {
+        const anonymousKey = getImageGenStorageKey(null);
+        const anonymousState = getImageGenState(anonymousKey);
+        if (anonymousState) {
+          savedState = anonymousState;
+          saveImageGenState(anonymousState, primaryKey);
+          clearStoredImageGenState(anonymousKey);
+        }
+      }
+
+      if (!savedState) {
+        setImageGenState(null);
+        setImageGenStats({ total: 0, pending: 0, uploaded: 0, failed: 0 });
+        setCompletedImageDays(new Set());
+        setExerciseImages({});
+        void bootstrapPendingQueueFromDatabase("loadState:no-local-state");
+        return;
+      }
+
+      imgDebug("[ImageGenContext] Loaded state from localStorage:", {
         sessionId: savedState.sessionId,
         totalExercises: savedState.exercises.length,
         stats: savedState.stats,
@@ -519,7 +1472,6 @@ export function ImageGenerationProvider({
       setImageGenStats(savedState.stats);
       setCompletedImageDays(new Set(savedState.completedDays));
 
-      // Restore exercise images from uploaded exercises
       const images: Record<string, string> = {};
       savedState.exercises.forEach((ex) => {
         if (ex.status === "uploaded" && ex.uploadedUrl) {
@@ -527,30 +1479,84 @@ export function ImageGenerationProvider({
           images[key] = ex.uploadedUrl;
         }
       });
-      if (Object.keys(images).length > 0) {
-        setExerciseImages(images);
+      setExerciseImages(images);
+
+      void bootstrapPendingQueueFromDatabase("loadState:auth-sync");
+    };
+
+    userIdRef.current = getUserSessionData().userId;
+    loadState();
+
+    const syncFromAuth = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const resolvedUserId = data?.user?.id ?? null;
+        if (resolvedUserId !== userIdRef.current) {
+          userIdRef.current = resolvedUserId;
+          loadState();
+        }
+      } catch {
+        // Ignore auth sync errors.
       }
-    }
-  }, []);
+    };
+    void syncFromAuth();
+
+    const handleSessionStorageChange = () => {
+      const nextUserId = getUserSessionData().userId;
+      if (nextUserId === userIdRef.current) return;
+      userIdRef.current = nextUserId;
+      loadState();
+    };
+
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        const nextUserId = session?.user?.id ?? null;
+        if (nextUserId === userIdRef.current) return;
+        userIdRef.current = nextUserId;
+        loadState();
+      },
+    );
+
+    window.addEventListener("sessionStorageChange", handleSessionStorageChange);
+    return () => {
+      authSubscription.subscription.unsubscribe();
+      window.removeEventListener(
+        "sessionStorageChange",
+        handleSessionStorageChange,
+      );
+    };
+  }, [bootstrapPendingQueueFromDatabase, getStorageKey]);
 
   // Process image generation queue
   const processImageGenerationQueue = useCallback(async () => {
     if (isProcessingImagesRef.current) {
-      console.log(`⏳ [ImageGenContext] Image processing already running...`);
+      imgDebug(`⏳ [ImageGenContext] Image processing already running...`);
       return;
     }
 
-    processingAbortedRef.current = false;
+    if (processingAbortedRef.current) {
+      return;
+    }
 
-    const state = getImageGenState();
+    const now = Date.now();
+    if (quotaPauseUntilRef.current > now) {
+      const remainingMs = quotaPauseUntilRef.current - now;
+      console.warn(
+        `[ImageGenContext] Quota cooldown active (${Math.ceil(remainingMs / 1000)}s remaining).`,
+      );
+      return;
+    }
+
+    const storageKey = getStorageKey();
+    const state = getImageGenState(storageKey);
     if (!state) {
-      console.log(`📋 [ImageGenContext] No image generation state found`);
+      imgDebug(`📋 [ImageGenContext] No image generation state found`);
       return;
     }
 
     const nextDay = getNextDayToProcess(state);
     if (!nextDay) {
-      console.log(`✅ [ImageGenContext] All days completed!`);
+      imgDebug(`✅ [ImageGenContext] All days completed!`);
       setCurrentImageGenDay(null);
       setIsProcessingImages(false);
       return;
@@ -560,39 +1566,46 @@ export function ImageGenerationProvider({
     setIsProcessingImages(true);
     lastActivityTimeRef.current = Date.now();
 
-    console.log(
+    imgDebug(
       `\n🚀 [ImageGenContext] Starting image generation from localStorage state...`,
     );
-    console.log(`📊 Session: ${state.sessionId}`);
-    console.log(
+    imgDebug(`📊 Session: ${state.sessionId}`);
+    imgDebug(
       `📋 Days to process: ${state.dayOrder.filter((d) => !state.completedDays.includes(d)).join(" → ")}`,
     );
-    console.log(
+    imgDebug(
       `📊 Stats: ${state.stats.pending} pending, ${state.stats.uploaded} uploaded, ${state.stats.failed} failed`,
     );
 
     try {
       let currentState = state;
       let quotaExceeded = false;
-      for (const dayName of currentState.dayOrder) {
+      const storageExistenceCache = new Map<string, boolean>();
+      for (let dayIndex = 0; dayIndex < currentState.dayOrder.length; ) {
+        const dayName = currentState.dayOrder[dayIndex];
+        if (!dayName) {
+          dayIndex += 1;
+          continue;
+        }
         if (processingAbortedRef.current) {
-          console.log("[ImageGenContext] ⏹️ Processing aborted");
+          imgDebug("[ImageGenContext] ⏹️ Processing aborted");
           break;
         }
 
         if (currentState.completedDays.includes(dayName)) {
+          dayIndex += 1;
           continue;
         }
 
-        console.log(`\n${"═".repeat(65)}`);
-        console.log(
+        imgDebug(`\n${"═".repeat(65)}`);
+        imgDebug(
           `🎯 [ImageGenContext] PROCESSING: ${dayName.toUpperCase()}`,
         );
-        console.log(`${"═".repeat(65)}`);
+        imgDebug(`${"═".repeat(65)}`);
 
         setCurrentImageGenDay(dayName);
         currentState = { ...currentState, currentDay: dayName };
-        saveImageGenState(currentState);
+        saveImageGenState(currentState, storageKey);
 
         let exercise = getNextPendingExercise(currentState, dayName);
         let dayProcessed = 0;
@@ -601,7 +1614,7 @@ export function ImageGenerationProvider({
         let consecutiveErrors = 0;
         const MAX_CONSECUTIVE_ERRORS = 5;
 
-        console.log(
+        imgDebug(
           `📋 Found ${currentState.exercises.filter((e) => e.dayName === dayName && e.status === "pending").length} pending exercises for ${dayName}`,
         );
 
@@ -613,34 +1626,52 @@ export function ImageGenerationProvider({
           dayProcessed++;
           const progress = `[${dayProcessed}]`;
           const imageKey = `${exercise.dayName}-${exercise.section}-${exercise.index}`;
-          const storageUrl = `https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts/exercises/${currentState.gender}/${exercise.imageSlug}.png`;
+          const storageUrl = buildExerciseStorageUrl(
+            currentState.gender,
+            exercise.imageSlug,
+          );
 
           lastActivityTimeRef.current = Date.now();
 
-          console.log(`\n${progress} 🔍 ${exercise.exerciseName}`);
-          console.log(`    📂 ${exercise.section} | 🏷️ ${exercise.imageSlug}`);
+          imgDebug(`\n${progress} 🔍 ${exercise.exerciseName}`);
+          imgDebug(`    📂 ${exercise.section} | 🏷️ ${exercise.imageSlug}`);
 
           try {
             const planStatus = await fetchPlanExerciseImageStatus(storageUrl);
             if (planStatus.hasRecords && !planStatus.shouldProcess) {
-              currentState = updateExerciseStatus(
-                currentState,
-                exercise.dayName,
-                exercise.section,
-                exercise.index,
-                "uploaded",
-                { uploadedUrl: storageUrl },
+              // DB says already generated; verify object exists in storage before skipping.
+              const hasStorageObject = await checkStorageObjectExists(
+                storageUrl,
+                storageExistenceCache,
               );
-              saveImageGenState(currentState);
-              setImageGenStats(currentState.stats);
-              setExerciseImages((prev) => ({
-                ...prev,
-                [imageKey]: storageUrl,
-              }));
-              dayUploaded++;
-              consecutiveErrors = 0;
-              exercise = getNextPendingExercise(currentState, dayName);
-              continue;
+
+              if (hasStorageObject) {
+                imgDebug(
+                  `${progress} ⏭️ Skipping generation (already generated in DB + storage exists)`,
+                );
+                currentState = updateExerciseStatus(
+                  currentState,
+                  exercise.dayName,
+                  exercise.section,
+                  exercise.index,
+                  "uploaded",
+                  { uploadedUrl: storageUrl },
+                );
+                saveImageGenState(currentState, storageKey);
+                setImageGenStats(currentState.stats);
+                setExerciseImages((prev) => ({
+                  ...prev,
+                  [imageKey]: storageUrl,
+                }));
+                dayUploaded++;
+                consecutiveErrors = 0;
+                exercise = getNextPendingExercise(currentState, dayName);
+                continue;
+              }
+
+              imgDebug(
+                `${progress} DB marked generated but storage object missing. Regenerating...`,
+              );
             }
 
             if (!exercise) {
@@ -653,28 +1684,18 @@ export function ImageGenerationProvider({
               exercise.index,
               "generating",
             );
-            saveImageGenState(currentState);
+            saveImageGenState(currentState, storageKey);
             setGeneratingImages((prev) => new Set(prev).add(imageKey));
 
             // Check if already exists in storage
-            let imageExists = false;
-            try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 5000);
-              const response = await fetch(storageUrl, {
-                method: "GET",
-                headers: { Range: "bytes=0-0" },
-                signal: controller.signal,
-              });
-              clearTimeout(timeoutId);
-              imageExists = response.ok || response.status === 206;
-            } catch {
-              imageExists = false;
-            }
+            const imageExists = await checkStorageObjectExists(
+              storageUrl,
+              storageExistenceCache,
+            );
 
             if (imageExists) {
               await markPlanExercisesImageGenerated(storageUrl);
-              console.log(`${progress} ✅ EXISTS in storage`);
+              imgDebug(`${progress} ✅ EXISTS in storage`);
               currentState = updateExerciseStatus(
                 currentState,
                 exercise.dayName,
@@ -691,11 +1712,13 @@ export function ImageGenerationProvider({
               consecutiveErrors = 0;
             } else {
               // Generate image
-              console.log(`${progress} 🎨 Generating (timeout: 60s)...`);
+              imgDebug(`${progress} 🎨 Generating (timeout: 60s)...`);
               const description =
-                (await fetchPlanExerciseDescription(storageUrl)) ?? "";
+                exercise.exerciseDescription?.trim() ||
+                (await fetchPlanExerciseDescription(storageUrl)) ||
+                "";
               if (!description) {
-                console.warn(
+                imgDebug(
                   `${progress} ⚠️ Missing description in user_workout_plan_exercises.description`,
                 );
                 currentState = updateExerciseStatus(
@@ -722,7 +1745,7 @@ export function ImageGenerationProvider({
                 60000,
               );
               const generateDuration = Date.now() - generateStartTime;
-              console.log(
+              imgDebug(
                 `${progress} ⏱️ Generation took ${(generateDuration / 1000).toFixed(1)}s`,
               );
 
@@ -731,10 +1754,10 @@ export function ImageGenerationProvider({
                   ...prev,
                   [imageKey]: result.image!,
                 }));
-                console.log(`${progress} ✅ Generated`);
+                imgDebug(`${progress} ✅ Generated`);
 
                 // Upload to storage
-                console.log(`${progress} 📤 Uploading...`);
+                imgDebug(`${progress} 📤 Uploading...`);
                 const uploadResult = await uploadImageToStorage(
                   result.image,
                   currentState.gender,
@@ -743,7 +1766,8 @@ export function ImageGenerationProvider({
 
                 if (uploadResult.success) {
                   await markPlanExercisesImageGenerated(storageUrl);
-                  console.log(`${progress} ✅ Uploaded: ${uploadResult.url}`);
+                  storageExistenceCache.set(storageUrl, true);
+                  imgDebug(`${progress} ✅ Uploaded: ${uploadResult.url}`);
                   currentState = updateExerciseStatus(
                     currentState,
                     exercise.dayName,
@@ -760,7 +1784,7 @@ export function ImageGenerationProvider({
                   dayUploaded++;
                   consecutiveErrors = 0;
                 } else {
-                  console.warn(
+                  imgDebug(
                     `${progress} ⚠️ Upload failed: ${uploadResult.error}`,
                   );
                   currentState = updateExerciseStatus(
@@ -778,7 +1802,7 @@ export function ImageGenerationProvider({
                   consecutiveErrors++;
                 }
               } else {
-                console.warn(
+                imgDebug(
                   `${progress} ❌ Generation failed: ${result.error}`,
                 );
                 currentState = updateExerciseStatus(
@@ -793,33 +1817,35 @@ export function ImageGenerationProvider({
                 dayFailed++;
                 if (isImageQuotaExceededError(result.error)) {
                   quotaExceeded = true;
-                  processingAbortedRef.current = true;
+                  quotaPauseUntilRef.current = Date.now() + QUOTA_PAUSE_MS;
                   console.warn(
-                    "[ImageGenContext] Quota reached. Pausing image generation.",
+                    `[ImageGenContext] Quota reached. Pausing image generation for ${Math.ceil(QUOTA_PAUSE_MS / 1000)}s.`,
                   );
                 }
               }
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             console.error(`${progress} ❌ Error:`, err);
             if (!exercise) {
               continue;
             }
+            const errorMessage =
+              err instanceof Error ? err.message : "Image generation failed";
             currentState = updateExerciseStatus(
               currentState,
               exercise.dayName,
               exercise.section,
               exercise.index,
               "failed",
-              { error: err?.message, retryCount: exercise.retryCount + 1 },
+              { error: errorMessage, retryCount: exercise.retryCount + 1 },
             );
             dayFailed++;
             consecutiveErrors++;
-            if (isImageQuotaExceededError(err?.message)) {
+            if (isImageQuotaExceededError(errorMessage)) {
               quotaExceeded = true;
-              processingAbortedRef.current = true;
+              quotaPauseUntilRef.current = Date.now() + QUOTA_PAUSE_MS;
               console.warn(
-                "[ImageGenContext] Quota reached. Pausing image generation.",
+                `[ImageGenContext] Quota reached. Pausing image generation for ${Math.ceil(QUOTA_PAUSE_MS / 1000)}s.`,
               );
             }
           } finally {
@@ -830,7 +1856,7 @@ export function ImageGenerationProvider({
             });
           }
 
-          saveImageGenState(currentState);
+          saveImageGenState(currentState, storageKey);
           setImageGenStats(currentState.stats);
           setImageGenState(currentState);
 
@@ -838,8 +1864,8 @@ export function ImageGenerationProvider({
             break;
           }
 
-          // Delay between exercises
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Delay between exercises to avoid quota spikes.
+          await wait(randomBetween(EXERCISE_DELAY_MIN_MS, EXERCISE_DELAY_MAX_MS));
 
           exercise = getNextPendingExercise(currentState, dayName);
         }
@@ -857,18 +1883,229 @@ export function ImageGenerationProvider({
           );
         }
 
+        // Re-check DB before moving to next day. If any rows for this day are
+        // still NULL/FALSE, keep processing this same day first.
+        const activePlanIdForDay = getQueuedDayPlanId(dayName, currentState.planId);
+        const pendingDbExercises = await fetchPendingDayExercisesFromDatabase(
+          activePlanIdForDay,
+          dayName,
+          currentState.gender,
+        );
+        if (pendingDbExercises.length > 0) {
+          const keyFor = (exerciseEntry: {
+            section: string;
+            imageSlug: string;
+          }): string => `${exerciseEntry.section}|${exerciseEntry.imageSlug}`;
+
+          const pendingByKey = new Map<string, ImageGenExercise>();
+          pendingDbExercises.forEach((pendingExercise) => {
+            pendingByKey.set(keyFor(pendingExercise), pendingExercise);
+          });
+
+          let requeuedCount = 0;
+          const reconciledExercises = currentState.exercises.map((existing) => {
+            if (existing.dayName !== dayName) return existing;
+            const pendingMatch = pendingByKey.get(keyFor(existing));
+            if (!pendingMatch) return existing;
+
+            if (existing.status === "pending" || existing.status === "generating") {
+              return existing;
+            }
+
+            if (existing.status === "uploaded" || existing.retryCount < 3) {
+              requeuedCount += 1;
+              return {
+                ...existing,
+                status: "pending" as const,
+                error: undefined,
+              };
+            }
+
+            return existing;
+          });
+
+          const existingDayKeys = new Set(
+            reconciledExercises
+              .filter((exerciseRow) => exerciseRow.dayName === dayName)
+              .map((exerciseRow) => keyFor(exerciseRow)),
+          );
+          const missingExercises = pendingDbExercises.filter(
+            (pendingExercise) => !existingDayKeys.has(keyFor(pendingExercise)),
+          );
+
+          const recoverableCount = requeuedCount + missingExercises.length;
+          if (recoverableCount > 0) {
+            currentState = {
+              ...currentState,
+              completedDays: currentState.completedDays.filter((d) => d !== dayName),
+              exercises: [...reconciledExercises, ...missingExercises],
+            };
+            saveImageGenState(currentState, storageKey);
+            setImageGenState(currentState);
+            setImageGenStats(currentState.stats);
+            setCompletedImageDays((prev) => {
+              const next = new Set(prev);
+              next.delete(dayName);
+              return next;
+            });
+
+            imgDebug(
+              `[ImageGenContext] Day re-check found ${pendingDbExercises.length} DB-pending rows; re-queued ${recoverableCount} for ${dayName} before next day.`,
+            );
+            continue;
+          }
+
+          console.warn(
+            `[ImageGenContext] Day re-check still has ${pendingDbExercises.length} DB-pending rows with no recoverable local entries; continuing queue progression.`,
+          );
+        }
+
         // Check if day is complete
         if (isDayComplete(currentState, dayName)) {
           currentState = markDayCompleted(currentState, dayName);
-          saveImageGenState(currentState);
+          saveImageGenState(currentState, storageKey);
           setCompletedImageDays((prev) => new Set(prev).add(dayName));
-          console.log(
+          imgDebug(
             `\n✅ ${dayName.toUpperCase()} COMPLETE! (${dayUploaded} uploaded, ${dayFailed} failed)`,
           );
         } else {
-          console.log(
+          imgDebug(
             `\n⚠️ ${dayName.toUpperCase()} has ${dayFailed} failed exercises`,
           );
+        }
+
+        const nextQueuedDay = currentState.dayOrder
+          .slice(dayIndex + 1)
+          .find((queuedDay) => !currentState.completedDays.includes(queuedDay));
+        const currentQueuedPlanId = getQueuedDayPlanId(dayName, currentState.planId);
+        const nextQueuedPlanId = nextQueuedDay
+          ? getQueuedDayPlanId(nextQueuedDay, currentState.planId)
+          : null;
+        const isCrossingToAnotherPlan =
+          Boolean(nextQueuedDay) &&
+          Boolean(currentQueuedPlanId) &&
+          Boolean(nextQueuedPlanId) &&
+          currentQueuedPlanId !== nextQueuedPlanId;
+
+        if (isCrossingToAnotherPlan && currentQueuedPlanId) {
+          const pendingCurrentPlanExercises =
+            await fetchPendingPlanExercisesFromDatabase(
+              currentQueuedPlanId,
+              currentState.gender,
+            );
+
+          if (pendingCurrentPlanExercises.length > 0) {
+            const queueKeyFor = (exerciseEntry: {
+              dayName: string;
+              section: string;
+              imageSlug: string;
+            }): string =>
+              `${exerciseEntry.dayName}|${exerciseEntry.section}|${exerciseEntry.imageSlug}`;
+
+            const pendingByKey = new Map<string, ImageGenExercise>();
+            pendingCurrentPlanExercises.forEach((exerciseEntry) => {
+              pendingByKey.set(queueKeyFor(exerciseEntry), exerciseEntry);
+            });
+
+            let requeuedCount = 0;
+            const reconciledExercises = currentState.exercises.map((existing) => {
+              const existingPlanId = getQueuedDayPlanId(
+                existing.dayName,
+                currentState.planId,
+              );
+              if (existingPlanId !== currentQueuedPlanId) return existing;
+
+              const pendingMatch = pendingByKey.get(queueKeyFor(existing));
+              if (!pendingMatch) return existing;
+
+              if (existing.status === "pending" || existing.status === "generating") {
+                return existing;
+              }
+
+              if (existing.status === "uploaded" || existing.retryCount < 3) {
+                requeuedCount += 1;
+                return {
+                  ...existing,
+                  status: "pending" as const,
+                  error: undefined,
+                };
+              }
+
+              return existing;
+            });
+
+            const existingKeys = new Set(
+              reconciledExercises.map((exerciseEntry) => queueKeyFor(exerciseEntry)),
+            );
+            const missingExercises = pendingCurrentPlanExercises.filter(
+              (exerciseEntry) => !existingKeys.has(queueKeyFor(exerciseEntry)),
+            );
+            const recoverableCount = requeuedCount + missingExercises.length;
+            const hasRunnablePending = reconciledExercises.some((existing) => {
+              const existingPlanId = getQueuedDayPlanId(
+                existing.dayName,
+                currentState.planId,
+              );
+              if (existingPlanId !== currentQueuedPlanId) return false;
+              if (!pendingByKey.has(queueKeyFor(existing))) return false;
+              return (
+                existing.status === "pending" || existing.status === "generating"
+              );
+            });
+
+            if (recoverableCount > 0 || hasRunnablePending) {
+              const currentPlanDaysFromQueue = Array.from(
+                new Set(
+                  currentState.dayOrder.filter(
+                    (queuedDay) =>
+                      getQueuedDayPlanId(queuedDay, currentState.planId) ===
+                      currentQueuedPlanId,
+                  ),
+                ),
+              );
+              const currentPlanDaysFromDb = Array.from(
+                new Set(
+                  pendingCurrentPlanExercises.map((exerciseEntry) => exerciseEntry.dayName),
+                ),
+              );
+              const mergedCurrentPlanDays = Array.from(
+                new Set([...currentPlanDaysFromQueue, ...currentPlanDaysFromDb]),
+              );
+              const remainingPlanDays = currentState.dayOrder.filter(
+                (queuedDay) =>
+                  getQueuedDayPlanId(queuedDay, currentState.planId) !==
+                  currentQueuedPlanId,
+              );
+
+              currentState = {
+                ...currentState,
+                planId: currentQueuedPlanId,
+                dayOrder: [...mergedCurrentPlanDays, ...remainingPlanDays],
+                completedDays: currentState.completedDays.filter(
+                  (queuedDay) =>
+                    !mergedCurrentPlanDays.includes(queuedDay),
+                ),
+                exercises: [...reconciledExercises, ...missingExercises],
+              };
+              saveImageGenState(currentState, storageKey);
+              setImageGenState(currentState);
+              setImageGenStats(currentState.stats);
+              setCompletedImageDays((prev) => {
+                const next = new Set(prev);
+                mergedCurrentPlanDays.forEach((queuedDay) => next.delete(queuedDay));
+                return next;
+              });
+
+              imgDebug(
+                `[ImageGenContext] Plan switch blocked: ${pendingCurrentPlanExercises.length} DB-pending row(s) found for plan ${currentQueuedPlanId}; recovered ${recoverableCount}, pending-in-queue=${hasRunnablePending}.`,
+              );
+              continue;
+            }
+
+            console.warn(
+              `[ImageGenContext] Plan switch found unresolved pending rows for plan ${currentQueuedPlanId} with no recoverable local entries; continuing with remaining queued work.`,
+            );
+          }
         }
 
         // Delay before next day
@@ -876,26 +2113,30 @@ export function ImageGenerationProvider({
           (d) => !currentState.completedDays.includes(d),
         );
         if (remainingDays.length > 0) {
-          console.log(`\n⏳ Moving to next day...`);
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          imgDebug(
+            `\n[ImageGenContext] Day complete. Waiting ${Math.ceil(DAY_PAUSE_MS / 1000)}s before next day...`,
+          );
+          await wait(DAY_PAUSE_MS);
         }
+
+        dayIndex += 1;
       }
 
       // Final summary
-      const finalState = getImageGenState();
-      console.log(`\n${"═".repeat(65)}`);
-      console.log(`🎉 [ImageGenContext] IMAGE GENERATION COMPLETE!`);
-      console.log(`${"─".repeat(65)}`);
+      const finalState = getImageGenState(storageKey);
+      imgDebug(`\n${"═".repeat(65)}`);
+      imgDebug(`🎉 [ImageGenContext] IMAGE GENERATION COMPLETE!`);
+      imgDebug(`${"─".repeat(65)}`);
       if (finalState) {
-        console.log(`📊 Final Stats:`);
-        console.log(`   Total: ${finalState.stats.total}`);
-        console.log(`   ✅ Uploaded: ${finalState.stats.uploaded}`);
-        console.log(`   ❌ Failed: ${finalState.stats.failed}`);
-        console.log(
+        imgDebug(`📊 Final Stats:`);
+        imgDebug(`   Total: ${finalState.stats.total}`);
+        imgDebug(`   ✅ Uploaded: ${finalState.stats.uploaded}`);
+        imgDebug(`   ❌ Failed: ${finalState.stats.failed}`);
+        imgDebug(
           `   📁 Completed Days: ${finalState.completedDays.join(", ")}`,
         );
       }
-      console.log(`${"═".repeat(65)}\n`);
+      imgDebug(`${"═".repeat(65)}\n`);
     } catch (error) {
       console.error(
         "[ImageGenContext] ❌ Image generation error (will auto-restart):",
@@ -906,15 +2147,17 @@ export function ImageGenerationProvider({
       setIsProcessingImages(false);
       setCurrentImageGenDay(null);
     }
-  }, []);
+  }, [getStorageKey]);
 
   // Auto-restart processing if interrupted
   useEffect(() => {
     const checkAndRestartProcessing = () => {
       if (isProcessingImagesRef.current) return;
       if (processingAbortedRef.current) return;
+      if (quotaPauseUntilRef.current > Date.now()) return;
 
-      const state = getImageGenState();
+      const storageKey = getStorageKey();
+      const state = getImageGenState(storageKey);
       if (!state) return;
 
       // Check for stale processing
@@ -945,7 +2188,7 @@ export function ImageGenerationProvider({
                   : ex,
               ),
             };
-            saveImageGenState(updatedState);
+            saveImageGenState(updatedState, storageKey);
           }
         }
       }
@@ -957,7 +2200,7 @@ export function ImageGenerationProvider({
       );
 
       if (hasPendingWork || hasStuckGenerating) {
-        console.log(
+        imgDebug(
           `🔄 [ImageGenContext] Auto-restarting image processing... (pending: ${state.stats.pending})`,
         );
         if (hasStuckGenerating) {
@@ -969,7 +2212,7 @@ export function ImageGenerationProvider({
                 : ex,
             ),
           };
-          saveImageGenState(updatedState);
+          saveImageGenState(updatedState, storageKey);
         }
         setTimeout(() => {
           if (!isProcessingImagesRef.current) {
@@ -986,7 +2229,67 @@ export function ImageGenerationProvider({
     setTimeout(checkAndRestartProcessing, 1000);
 
     return () => clearInterval(intervalId);
-  }, [processImageGenerationQueue]);
+  }, [getStorageKey, processImageGenerationQueue]);
+
+  // Resume processing promptly on tab/window lifecycle events and cross-tab
+  // state updates so queue work keeps moving when users navigate around.
+  useEffect(() => {
+    const resumeIfNeeded = (reason: string) => {
+      if (processingAbortedRef.current) return;
+      if (quotaPauseUntilRef.current > Date.now()) return;
+
+      const storageKey = getStorageKey();
+      const state = getImageGenState(storageKey);
+      if (!state) return;
+
+      const hasWork =
+        state.stats.pending > 0 ||
+        state.exercises.some(
+          (ex) =>
+            ex.status === "pending" ||
+            ex.status === "generating",
+        );
+      if (!hasWork) return;
+
+      imgDebug(
+        `[ImageGenContext] Resume trigger: ${reason} (session=${state.sessionId}, pending=${state.stats.pending})`,
+      );
+      if (!isProcessingImagesRef.current) {
+        setTimeout(() => {
+          if (!isProcessingImagesRef.current) {
+            processImageGenerationQueue();
+          }
+        }, 100);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      resumeIfNeeded(`visibility:${document.visibilityState}`);
+    };
+    const handleFocus = () => resumeIfNeeded("window:focus");
+    const handlePageShow = () => resumeIfNeeded("window:pageshow");
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || !event.key.startsWith(IMAGE_GEN_STORAGE_KEY_PREFIX)) {
+        return;
+      }
+      resumeIfNeeded("storage:update");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("storage", handleStorage);
+
+    // Run once on mount to recover any existing pending queue immediately.
+    resumeIfNeeded("mount");
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [getStorageKey, processImageGenerationQueue]);
 
   // Queue day for image generation
   const queueDayForImageGeneration = useCallback(
@@ -995,22 +2298,81 @@ export function ImageGenerationProvider({
       dayResult: DayWorkoutResponse,
       gender: "male" | "female",
       dayOrder?: string[],
+      planId?: string | null,
     ) => {
-      let state = getImageGenState();
+      processingAbortedRef.current = false;
+      const storageKey = getStorageKey();
+      let state = getImageGenState(storageKey);
+      const incomingPlanId = planId ?? null;
+      const parsedIncomingDay = parseQueuedDayMetadata(dayName);
+      const canonicalDayName = incomingPlanId
+        ? buildQueuedDayName(
+            parsedIncomingDay.dayLabel || dayName,
+            parsedIncomingDay.weekNumber ?? 1,
+            incomingPlanId,
+            parsedIncomingDay.dayPlanId,
+          )
+        : dayName;
+      const canonicalIncomingDayOrder = Array.from(
+        new Set(
+          (dayOrder || [dayName]).map((candidate) => {
+            if (!incomingPlanId) return candidate;
+            const parsedCandidate = parseQueuedDayMetadata(candidate);
+            return buildQueuedDayName(
+              parsedCandidate.dayLabel || candidate,
+              parsedCandidate.weekNumber ?? parsedIncomingDay.weekNumber ?? 1,
+              incomingPlanId,
+              parsedCandidate.dayPlanId,
+            );
+          }),
+        ),
+      );
+
       if (!state) {
-        state = createImageGenSession(gender, dayOrder || [dayName]);
-        console.log(
+        state = createImageGenSession(
+          gender,
+          canonicalIncomingDayOrder,
+          incomingPlanId,
+        );
+        imgDebug(
           `📋 [ImageGenContext] Created new image generation session: ${state.sessionId}`,
         );
+      } else if (
+        incomingPlanId &&
+        state.planId &&
+        state.planId !== incomingPlanId
+      ) {
+        if (isDraftPlanId(state.planId)) {
+          state = { ...state, planId: incomingPlanId };
+          imgDebug(
+            `[ImageGenContext] Bound draft queue ${state.sessionId} to saved plan ${incomingPlanId}.`,
+          );
+        } else {
+          // Keep current queue and append newly saved plan after existing work.
+          state = { ...state, planId: null };
+          imgDebug(
+            `[ImageGenContext] Appending plan ${incomingPlanId} behind existing queued plan(s).`,
+          );
+        }
+      } else if (incomingPlanId && state.planId !== incomingPlanId) {
+        state =
+          state.exercises.length === 0
+            ? { ...state, planId: incomingPlanId }
+            : { ...state, planId: null };
       }
 
-      if (state.completedDays.includes(dayName)) {
-        console.log(`✅ [ImageGenContext] ${dayName} images already completed`);
+      canonicalIncomingDayOrder.forEach((queuedDay) => {
+        if (!state!.dayOrder.includes(queuedDay)) {
+          state!.dayOrder.push(queuedDay);
+        }
+      });
+
+      if (state.completedDays.includes(canonicalDayName)) {
+        imgDebug(
+          `[ImageGenContext] ${canonicalDayName} already completed; skipping enqueue.`,
+          { planId: state.planId, sessionId: state.sessionId },
+        );
         return;
-      }
-
-      if (!state.dayOrder.includes(dayName)) {
-        state.dayOrder.push(dayName);
       }
 
       const sections = [
@@ -1040,27 +2402,36 @@ export function ImageGenerationProvider({
         });
       });
 
-      state = addExercisesToState(state, dayName, exercisesToAdd);
-      saveImageGenState(state);
+      state = addExercisesToState(state, canonicalDayName, exercisesToAdd);
+      saveImageGenState(state, storageKey);
       setImageGenState(state);
       setImageGenStats(state.stats);
 
-      console.log(
-        `📋 [ImageGenContext] Added ${exercisesToAdd.length} exercises for ${dayName}`,
+      imgDebug("[ImageGenContext] Day queued for image generation.", {
+        sessionId: state.sessionId,
+        planId: state.planId,
+        dayName: canonicalDayName,
+        addedExercises: exercisesToAdd.length,
+        pending: state.stats.pending,
+        total: state.stats.total,
+      });
+      imgDebug(
+        `📋 [ImageGenContext] Added ${exercisesToAdd.length} exercises for ${canonicalDayName}`,
       );
-      console.log(
+      imgDebug(
         `📊 Total state: ${state.stats.total} exercises, ${state.stats.pending} pending`,
       );
 
       processImageGenerationQueue();
     },
-    [processImageGenerationQueue],
+    [getStorageKey, processImageGenerationQueue],
   );
 
   // Clear all image generation
   const clearImageGeneration = useCallback(() => {
     processingAbortedRef.current = true;
-    clearStoredImageGenState();
+    const storageKey = getStorageKey();
+    clearStoredImageGenState(storageKey);
     setImageGenState(null);
     setImageGenStats({ total: 0, pending: 0, uploaded: 0, failed: 0 });
     setExerciseImages({});
@@ -1069,52 +2440,53 @@ export function ImageGenerationProvider({
     isProcessingImagesRef.current = false;
     setIsProcessingImages(false);
     setCurrentImageGenDay(null);
-    console.log("🗑️ [ImageGenContext] Cleared all image generation state");
-  }, []);
+    imgDebug("🗑️ [ImageGenContext] Cleared all image generation state");
+  }, [getStorageKey]);
 
   // Retry failed images
   const retryFailedImages = useCallback(() => {
-    const state = getImageGenState();
+    processingAbortedRef.current = false;
+    const storageKey = getStorageKey();
+    const state = getImageGenState(storageKey);
     if (!state) return;
 
-    const failed = state.exercises.filter(
-      (ex) => ex.status === "failed" && ex.retryCount < 3,
-    );
+    const failed = state.exercises.filter((ex) => ex.status === "failed");
     if (failed.length === 0) {
-      console.log("[ImageGenContext] ✅ No failed images to retry");
+      imgDebug("[ImageGenContext] ✅ No failed images to retry");
       return;
     }
 
-    console.log(`🔄 [ImageGenContext] Retrying ${failed.length} failed images`);
+    imgDebug(`🔄 [ImageGenContext] Retrying ${failed.length} failed images`);
 
     let updatedState = state;
     failed.forEach((ex) => {
-      updatedState = updateExerciseStatus(
-        updatedState,
-        ex.dayName,
-        ex.section,
-        ex.index,
-        "pending",
-      );
-    });
-    saveImageGenState(updatedState);
+        updatedState = updateExerciseStatus(
+          updatedState,
+          ex.dayName,
+          ex.section,
+          ex.index,
+          "pending",
+          { error: undefined, retryCount: 0 },
+        );
+      });
+    saveImageGenState(updatedState, storageKey);
     setImageGenState(updatedState);
     setImageGenStats(updatedState.stats);
 
     processImageGenerationQueue();
-  }, [processImageGenerationQueue]);
+  }, [getStorageKey, processImageGenerationQueue]);
 
   // Pause image generation
   const pauseImageGeneration = useCallback(() => {
     processingAbortedRef.current = true;
-    console.log("[ImageGenContext] ⏸️ Image generation paused");
+    imgDebug("[ImageGenContext] ⏸️ Image generation paused");
   }, []);
 
   // Resume image generation
   const resumeImageGeneration = useCallback(() => {
     processingAbortedRef.current = false;
     processImageGenerationQueue();
-    console.log("[ImageGenContext] ▶️ Image generation resumed");
+    imgDebug("[ImageGenContext] ▶️ Image generation resumed");
   }, [processImageGenerationQueue]);
 
   // Restart image generation for a specific day
@@ -1124,7 +2496,9 @@ export function ImageGenerationProvider({
       dayResult: DayWorkoutResponse,
       gender: "male" | "female",
     ) => {
-      console.log(
+      let planIdForRetry: string | null = null;
+      let dayOrderForRetry: string[] | undefined;
+      imgDebug(
         `🔄 [ImageGenContext] Restarting image generation for ${dayName}`,
       );
 
@@ -1140,8 +2514,11 @@ export function ImageGenerationProvider({
       });
 
       // Update localStorage state
-      const state = getImageGenState();
+      const storageKey = getStorageKey();
+      const state = getImageGenState(storageKey);
       if (state) {
+        planIdForRetry = state.planId ?? null;
+        dayOrderForRetry = state.dayOrder;
         const updatedCompletedDays = state.completedDays.filter(
           (d) => d !== dayName,
         );
@@ -1169,7 +2546,7 @@ export function ImageGenerationProvider({
           },
         };
 
-        saveImageGenState(updatedState);
+        saveImageGenState(updatedState, storageKey);
         setImageGenState(updatedState);
         setImageGenStats(updatedState.stats);
       }
@@ -1182,10 +2559,16 @@ export function ImageGenerationProvider({
 
       // Re-queue the day
       setTimeout(() => {
-        queueDayForImageGeneration(dayName, dayResult, gender);
+        queueDayForImageGeneration(
+          dayName,
+          dayResult,
+          gender,
+          dayOrderForRetry,
+          planIdForRetry,
+        );
       }, 500);
     },
-    [queueDayForImageGeneration],
+    [getStorageKey, queueDayForImageGeneration],
   );
 
   // Set exercise image
@@ -1196,19 +2579,19 @@ export function ImageGenerationProvider({
   // Check if day images are complete
   const isDayImagesComplete = useCallback(
     (dayName: string): boolean => {
-      const state = getImageGenState();
+      const state = getImageGenState(getStorageKey());
       if (!state) return false;
       return (
         completedImageDays.has(dayName) || state.completedDays.includes(dayName)
       );
     },
-    [completedImageDays],
+    [completedImageDays, getStorageKey],
   );
 
   // Get day image counts
   const getDayImageCounts = useCallback(
     (dayName: string): { total: number; ready: number; generating: number } => {
-      const state = getImageGenState();
+      const state = getImageGenState(getStorageKey());
       if (!state) return { total: 0, ready: 0, generating: 0 };
 
       const dayExercises = state.exercises.filter(
@@ -1235,7 +2618,7 @@ export function ImageGenerationProvider({
         generating,
       };
     },
-    [exerciseImages],
+    [exerciseImages, getStorageKey],
   );
 
   // Check if exercise is generating
@@ -1300,3 +2683,6 @@ export function useImageGeneration(): ImageGenerationContextType {
   }
   return context;
 }
+
+
+
