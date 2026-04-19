@@ -76,12 +76,19 @@ interface ToastState extends Omit<ToastProps, "onDismiss"> {
 
 type VoiceGender = "male" | "female";
 type PreRecordedCueKind = "ready" | "countdown" | "rest-countdown";
+type TtsResponseFormat = "mp3" | "wav" | "opus" | "aac" | "flac" | "pcm";
 type CountdownCueOptions = {
   interrupt?: boolean;
   maxWaitMs?: number;
   audioContent?: string;
   rate?: number;
   onPlaybackStart?: (playbackInfo?: { durationMs: number | null }) => void;
+};
+type OpenAiTtsResponse = {
+  audioContent?: string;
+  format?: TtsResponseFormat;
+  voiceName?: string;
+  error?: string;
 };
 const MALE_VOICE_PRIORITY = ["cedar", "ash"] as const;
 const FEMALE_VOICE_PRIORITY = ["marin", "sage"] as const;
@@ -248,8 +255,12 @@ export default function ExerciseSessionPage() {
   const allowFullscreenExitRef = useRef<boolean>(false);
   const isIntroVoicePlayingRef = useRef<boolean>(false);
   const preloadedImageUrlsRef = useRef<Set<string>>(new Set());
+  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const preferredVoiceGenderRef = useRef<VoiceGender | null>(null);
   const nextExerciseAnnouncementKeyRef = useRef<string | null>(null);
   const lastRestEntranceCueKeyRef = useRef<string | null>(null);
+  const safetyCueTargetSetByExerciseRef = useRef<Map<string, number>>(new Map());
+  const playedSafetyCueExerciseKeysRef = useRef<Set<string>>(new Set());
 
   const stopBackgroundMusic = useCallback((resetTrack: boolean = false) => {
     const audio = backgroundMusicAudioRef.current;
@@ -324,6 +335,8 @@ export default function ExerciseSessionPage() {
     }
     lastRestEntranceTrackRef.current = null;
     lastRestEntranceCueKeyRef.current = null;
+    safetyCueTargetSetByExerciseRef.current.clear();
+    playedSafetyCueExerciseKeysRef.current.clear();
     stopBackgroundMusic(true);
   }, [stopBackgroundMusic]);
 
@@ -522,6 +535,22 @@ export default function ExerciseSessionPage() {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length === 0) return null;
 
+      // Reuse previously selected voice for stable gender-specific playback.
+      if (
+        preferredVoiceRef.current &&
+        preferredVoiceGenderRef.current === targetGender
+      ) {
+        const cachedVoice = preferredVoiceRef.current;
+        const stillAvailable = voices.find(
+          (voice) =>
+            voice.voiceURI === cachedVoice.voiceURI &&
+            voice.name === cachedVoice.name,
+        );
+        if (stillAvailable) {
+          return stillAvailable;
+        }
+      }
+
       const englishVoices = voices.filter((voice) =>
         (voice.lang || "").toLowerCase().startsWith("en"),
       );
@@ -535,6 +564,8 @@ export default function ExerciseSessionPage() {
           getVoiceIdentity(voice).includes(preferredName),
         );
         if (matchedVoice) {
+          preferredVoiceRef.current = matchedVoice;
+          preferredVoiceGenderRef.current = targetGender;
           return matchedVoice;
         }
       }
@@ -553,6 +584,8 @@ export default function ExerciseSessionPage() {
         return hasTarget && !hasOpposite;
       });
       if (explicitGenderMatch) {
+        preferredVoiceRef.current = explicitGenderMatch;
+        preferredVoiceGenderRef.current = targetGender;
         return explicitGenderMatch;
       }
 
@@ -561,10 +594,17 @@ export default function ExerciseSessionPage() {
         return targetHints.some((hint) => identity.includes(hint));
       });
       if (looseGenderMatch) {
+        preferredVoiceRef.current = looseGenderMatch;
+        preferredVoiceGenderRef.current = targetGender;
         return looseGenderMatch;
       }
 
-      return pool[0] ?? null;
+      const fallbackVoice = pool[0] ?? null;
+      if (fallbackVoice) {
+        preferredVoiceRef.current = fallbackVoice;
+        preferredVoiceGenderRef.current = targetGender;
+      }
+      return fallbackVoice;
     },
     [getVoiceIdentity],
   );
@@ -576,21 +616,182 @@ export default function ExerciseSessionPage() {
     if (synth.getVoices().length > 0) return;
 
     await new Promise<void>((resolve) => {
+      const maxWaitMs = 2500;
+      const pollEveryMs = 150;
+      const startedAt = Date.now();
+
       const onVoicesChanged = () => {
-        clearTimeout(timeoutId);
-        synth.removeEventListener?.("voiceschanged", onVoicesChanged);
-        resolve();
+        if (synth.getVoices().length > 0) {
+          window.clearInterval(pollId);
+          window.clearTimeout(timeoutId);
+          synth.removeEventListener?.("voiceschanged", onVoicesChanged);
+          resolve();
+        }
       };
 
       const timeoutId = window.setTimeout(() => {
+        window.clearInterval(pollId);
         synth.removeEventListener?.("voiceschanged", onVoicesChanged);
         resolve();
-      }, 1000);
+      }, maxWaitMs);
+
+      const pollId = window.setInterval(() => {
+        if (
+          synth.getVoices().length > 0 ||
+          Date.now() - startedAt >= maxWaitMs
+        ) {
+          window.clearInterval(pollId);
+          window.clearTimeout(timeoutId);
+          synth.removeEventListener?.("voiceschanged", onVoicesChanged);
+          resolve();
+        }
+      }, pollEveryMs);
 
       synth.addEventListener?.("voiceschanged", onVoicesChanged);
       synth.getVoices();
     });
   }, []);
+
+  const getAudioMimeType = useCallback((format?: TtsResponseFormat): string => {
+    switch (format) {
+      case "wav":
+        return "audio/wav";
+      case "opus":
+        return "audio/opus";
+      case "aac":
+        return "audio/aac";
+      case "flac":
+        return "audio/flac";
+      case "pcm":
+        return "audio/pcm";
+      case "mp3":
+      default:
+        return "audio/mpeg";
+    }
+  }, []);
+
+  const fetchOpenAiCueAudio = useCallback(
+    async (
+      text: string,
+      targetGender: VoiceGender,
+    ): Promise<OpenAiTtsResponse | null> => {
+      try {
+        const response = await fetch("/api/openai-tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            gender: targetGender,
+            responseFormat: "mp3",
+            instructions:
+              "Speak like a concise workout coach with clean pacing, brief pauses, and no trailing silence.",
+          }),
+        });
+
+        const payload = (await response.json()) as OpenAiTtsResponse;
+        if (!response.ok || !payload.audioContent) {
+          return null;
+        }
+
+        return payload;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const playGeneratedCueAudioAndWait = useCallback(
+    async (
+      audioContent: string,
+      format: TtsResponseFormat | undefined,
+      options?: CountdownCueOptions,
+    ): Promise<void> => {
+      if (options?.interrupt) {
+        stopCountdownAudio();
+      }
+
+      const audio = new Audio(
+        `data:${getAudioMimeType(format)};base64,${audioContent}`,
+      );
+      audio.preload = "auto";
+      audio.volume = 1;
+
+      await new Promise<void>((resolve) => {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          resolve();
+          return;
+        }
+
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          audio.removeEventListener("loadedmetadata", finish);
+          audio.removeEventListener("error", finish);
+          resolve();
+        };
+
+        const timeoutId = window.setTimeout(finish, 1500);
+        audio.addEventListener("loadedmetadata", finish);
+        audio.addEventListener("error", finish);
+        audio.load();
+      });
+
+      countdownAudioRef.current = audio;
+      audio.onended = () => {
+        if (countdownAudioRef.current === audio) {
+          countdownAudioRef.current = null;
+        }
+      };
+      audio.onerror = () => {
+        if (countdownAudioRef.current === audio) {
+          countdownAudioRef.current = null;
+        }
+      };
+
+      const playPromise = audio.play();
+      if (playPromise) {
+        await playPromise;
+      }
+
+      const durationMs =
+        Number.isFinite(audio.duration) && audio.duration > 0
+          ? Math.ceil(audio.duration * 1000)
+          : null;
+      options?.onPlaybackStart?.({ durationMs });
+
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          audio.onended = null;
+          audio.onerror = null;
+          resolve();
+        };
+
+        const audioDurationMs =
+          Number.isFinite(audio.duration) && audio.duration > 0
+            ? Math.ceil(audio.duration * 1000) + 1200
+            : 10000;
+        const timeoutId = window.setTimeout(
+          finish,
+          options?.maxWaitMs
+            ? Math.max(options.maxWaitMs, audioDurationMs)
+            : audioDurationMs,
+        );
+
+        audio.onended = finish;
+        audio.onerror = finish;
+      });
+    },
+    [getAudioMimeType, stopCountdownAudio],
+  );
 
   const speakCountdownCueAndWaitFallback = useCallback(
     async (text: string, options?: CountdownCueOptions): Promise<void> => {
@@ -602,6 +803,8 @@ export default function ExerciseSessionPage() {
       if (options?.interrupt) {
         synth.cancel();
       }
+
+      await ensureSpeechVoicesLoaded();
 
       const utterance = new SpeechSynthesisUtterance(text);
       const targetGender = getCurrentVoiceGender();
@@ -644,7 +847,7 @@ export default function ExerciseSessionPage() {
         synth.speak(utterance);
       });
     },
-    [getCurrentVoiceGender, getVoiceForGender],
+    [ensureSpeechVoicesLoaded, getCurrentVoiceGender, getVoiceForGender],
   );
 
   const playPreRecordedCueAndWait = useCallback(
@@ -743,9 +946,85 @@ export default function ExerciseSessionPage() {
 
   const speakCountdownCueAndWait = useCallback(
     async (text: string, options?: CountdownCueOptions): Promise<void> => {
+      const targetGender = getCurrentVoiceGender();
+      const generatedCue = await fetchOpenAiCueAudio(text, targetGender);
+
+      if (generatedCue?.audioContent) {
+        await playGeneratedCueAudioAndWait(
+          generatedCue.audioContent,
+          generatedCue.format,
+          options,
+        );
+        return;
+      }
+
       await speakCountdownCueAndWaitFallback(text, options);
     },
-    [speakCountdownCueAndWaitFallback],
+    [
+      fetchOpenAiCueAudio,
+      getCurrentVoiceGender,
+      playGeneratedCueAudioAndWait,
+      speakCountdownCueAndWaitFallback,
+    ],
+  );
+
+  const getExerciseAnnouncementSuffix = useCallback(
+    (item: WorkoutFlowItem | undefined): string => {
+      if (!item?.exercise?.per_side) return "";
+      if (item.side === "left") return " on the left side";
+      if (item.side === "right") return " on the right side";
+      return " on both sides";
+    },
+    [],
+  );
+
+  const getExerciseIdentityKey = useCallback(
+    (item: WorkoutFlowItem | undefined): string | null => {
+      if (!item) return null;
+      return `${item.exercise.exercise_id}:${item.exercise.position}:${item.exerciseOrder}`;
+    },
+    [],
+  );
+
+  const getExerciseSafetyCueText = useCallback(
+    (item: WorkoutFlowItem | undefined): string | null => {
+      const rawCue =
+        item?.exercise?.details?.safety_cue?.trim() ||
+        item?.exercise?.safety_tip?.trim() ||
+        "";
+      if (!rawCue) return null;
+      return `Remember to ${rawCue}`;
+    },
+    [],
+  );
+
+  const getSafetyCueTargetSet = useCallback(
+    (item: WorkoutFlowItem | undefined): number | null => {
+      const exerciseKey = getExerciseIdentityKey(item);
+      if (!exerciseKey || !item) return null;
+
+      const existingTarget =
+        safetyCueTargetSetByExerciseRef.current.get(exerciseKey);
+      if (existingTarget) {
+        return existingTarget;
+      }
+
+      const totalSets = Math.max(1, item.totalSets || item.exercise.sets || 1);
+      const minimumEligibleSet = Math.min(
+        totalSets,
+        Math.max(1, item.setNumber || 1),
+      );
+      const remainingSetCount = totalSets - minimumEligibleSet + 1;
+      const targetSet =
+        remainingSetCount > 1
+          ? minimumEligibleSet +
+            Math.floor(Math.random() * remainingSetCount)
+          : minimumEligibleSet;
+
+      safetyCueTargetSetByExerciseRef.current.set(exerciseKey, targetSet);
+      return targetSet;
+    },
+    [getExerciseIdentityKey],
   );
 
   const announceRestMidpointCueIfNeeded =
@@ -756,7 +1035,7 @@ export default function ExerciseSessionPage() {
 
       const restSeconds = currentItem.exercise.rest_seconds || 0;
       if (restSeconds <= 0) return;
-      const halfRestRemaining = Math.ceil(restSeconds / 2);
+      const halfRestRemaining = Math.ceil(restSeconds / 1.5);
       if (timer !== halfRestRemaining) {
         return;
       }
@@ -768,15 +1047,19 @@ export default function ExerciseSessionPage() {
 
       if (currentItem.setNumber < currentItem.totalSets) {
         const upcomingSetNumber = currentItem.setNumber + 1;
-        announcementText = `Let's do set ${upcomingSetNumber} of ${currentExerciseName}`;
-        announcementVariant = `set-${upcomingSetNumber}`;
+        const nextItem = workoutFlow[currentFlowIndex + 1];
+        const upcomingSetSuffix = getExerciseAnnouncementSuffix(nextItem);
+        announcementText = `Let's do set ${upcomingSetNumber} of ${currentExerciseName}${upcomingSetSuffix}`;
+        announcementVariant = `set-${upcomingSetNumber}-${nextItem?.side ?? "both"}`;
       } else {
         const nextIndex = currentFlowIndex + 1;
         if (nextIndex >= workoutFlow.length) return;
+        const nextItem = workoutFlow[nextIndex];
         const nextExerciseName =
-          workoutFlow[nextIndex]?.exercise?.details?.name?.trim() ?? "";
+          nextItem?.exercise?.details?.name?.trim() ?? "";
         if (!nextExerciseName) return;
-        announcementText = `Next up, ${nextExerciseName}`;
+        const nextExerciseSuffix = getExerciseAnnouncementSuffix(nextItem);
+        announcementText = `Next up, ${nextExerciseName}${nextExerciseSuffix}`;
         announcementVariant = `next-${nextIndex}`;
       }
 
@@ -797,6 +1080,7 @@ export default function ExerciseSessionPage() {
       workoutFlow,
       currentFlowIndex,
       timer,
+      getExerciseAnnouncementSuffix,
       ensureSpeechVoicesLoaded,
       speakCountdownCueAndWait,
     ]);
@@ -2364,6 +2648,54 @@ export default function ExerciseSessionPage() {
   ]);
 
   useEffect(() => {
+    if (isStartingWorkout || isIntroVoicePlayingRef.current) return;
+    if (!activeSessionId || isPaused || isResting) return;
+
+    const currentItem = workoutFlow[currentFlowIndex];
+    if (!currentItem) return;
+
+    const durationSeconds = currentItem.exercise.duration_seconds || 0;
+    if (durationSeconds <= 0) return;
+
+    const midpointRemaining = Math.ceil(durationSeconds / 2);
+    if (timer !== midpointRemaining) return;
+
+    const exerciseKey = getExerciseIdentityKey(currentItem);
+    if (!exerciseKey) return;
+
+    const targetSet = getSafetyCueTargetSet(currentItem);
+    if (targetSet == null || currentItem.setNumber !== targetSet) return;
+
+    const playedKey = `${activeSessionId}:${exerciseKey}`;
+    if (playedSafetyCueExerciseKeysRef.current.has(playedKey)) {
+      return;
+    }
+
+    const safetyCueText = getExerciseSafetyCueText(currentItem);
+    if (!safetyCueText) return;
+
+    playedSafetyCueExerciseKeysRef.current.add(playedKey);
+
+    void speakCountdownCueAndWait(safetyCueText, {
+      interrupt: true,
+      rate: 0.92,
+      maxWaitMs: Math.max(2600, safetyCueText.length * 130),
+    });
+  }, [
+    timer,
+    isPaused,
+    isResting,
+    isStartingWorkout,
+    activeSessionId,
+    workoutFlow,
+    currentFlowIndex,
+    getExerciseIdentityKey,
+    getExerciseSafetyCueText,
+    getSafetyCueTargetSet,
+    speakCountdownCueAndWait,
+  ]);
+
+  useEffect(() => {
     if (!isResting) {
       stopRestEntranceAudio();
     }
@@ -3514,6 +3846,8 @@ export default function ExerciseSessionPage() {
       // Clear local state immediately
       setActiveSessionId(null);
       exercisesAddedRef.current.clear();
+      safetyCueTargetSetByExerciseRef.current.clear();
+      playedSafetyCueExerciseKeysRef.current.clear();
       setSessionExercises(new Map());
       setSessionSets(new Map());
       sessionInitializedRef.current = false;
@@ -4130,6 +4464,8 @@ export default function ExerciseSessionPage() {
       // Clear session state
       setActiveSessionId(null);
       exercisesAddedRef.current.clear();
+      safetyCueTargetSetByExerciseRef.current.clear();
+      playedSafetyCueExerciseKeysRef.current.clear();
       setSessionExercises(new Map());
       setSessionSets(new Map());
       sessionInitializedRef.current = false;

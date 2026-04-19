@@ -16,8 +16,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useUserData } from "@/hooks/useUserData";
 import { useUserWorkoutData } from "@/hooks/useUserWorkoutData";
 import { useMeals } from "@/contexts/MealsContext";
+import { supabase } from "@/lib/api/supabase";
 import type { UserProfile } from "@/types/UserProfile";
-import type { UserMealPlan } from "@/types/UserMeals";
+import type {
+  UserMeal,
+  UserMealPlan,
+  UserMealWeeklyDayPlan,
+  UserMealWeeklyPlan,
+} from "@/types/UserMeals";
 import type { UserWorkoutPlan } from "@/types/UserWorkout";
 import {
   generateMealPlanOverviewWithPrompt,
@@ -44,12 +50,42 @@ function getGenerationStageDurationMs(dayCount: number): number {
   return 9000; // 7+ days
 }
 
+/** Minutes since midnight for sorting meals; unparsable values sort last. */
+function toSortableMealTime(value?: string | null): number {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const input = value.trim().toLowerCase();
+  const twelveMatch = input.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  if (twelveMatch) {
+    let hour = parseInt(twelveMatch[1], 10);
+    const minute = parseInt(twelveMatch[2] || "0", 10);
+    const period = twelveMatch[3];
+    if (period === "pm" && hour !== 12) hour += 12;
+    if (period === "am" && hour === 12) hour = 0;
+    return hour * 60 + minute;
+  }
+
+  const twentyFourMatch = input.match(/^([01]?\d|2[0-3])(?::([0-5]\d))?$/);
+  if (twentyFourMatch) {
+    const hour = parseInt(twentyFourMatch[1], 10);
+    const minute = parseInt(twentyFourMatch[2] || "0", 10);
+    return hour * 60 + minute;
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
 interface WorkoutMealPlanPageProps {
   workoutPlanIdOverride?: string | null;
   dayGenerationConcurrency?: number;
   showBackToMealsButton?: boolean;
   showRefreshButton?: boolean;
 }
+
+type TodayMealPreview = {
+  mealPlan: UserMealPlan;
+  dayPlan: UserMealWeeklyDayPlan;
+  meals: UserMeal[];
+};
 
 export default function WorkoutMealPlanPage({
   workoutPlanIdOverride = null,
@@ -70,6 +106,8 @@ export default function WorkoutMealPlanPage({
   const { fetchUserProfile } = useUserData();
   const { fetchUserWorkoutPlans } = useUserWorkoutData();
   const {
+    userMealPlans,
+    loadingState,
     refreshUserMealPlans,
     saveMealPlanWithWorkoutLink,
     getLinkedMealPlansForWorkout,
@@ -86,6 +124,10 @@ export default function WorkoutMealPlanPage({
   const [userWorkoutPlans, setUserWorkoutPlans] = useState<UserWorkoutPlan[]>(
     [],
   );
+  const [todayMealPreview, setTodayMealPreview] =
+    useState<TodayMealPreview | null>(null);
+  const [isLoadingTodayMealPreview, setIsLoadingTodayMealPreview] =
+    useState(false);
   const [isLoadingWorkoutPlans, setIsLoadingWorkoutPlans] = useState(false);
   const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
 
@@ -119,10 +161,17 @@ export default function WorkoutMealPlanPage({
     url: string;
     label: string | null;
   } | null>(null);
+  const mealPlanImagePromiseRef = useRef<Promise<void> | null>(null);
+  const mealPlanImageRequestIdRef = useRef(0);
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [showAllergyDialog, setShowAllergyDialog] = useState(false);
   const [allergyInput, setAllergyInput] = useState("");
   const [userAllergies, setUserAllergies] = useState<string | null>(null);
+  const [isGeneratingMealPlanImage, setIsGeneratingMealPlanImage] =
+    useState(false);
+  const [mealPlanImageError, setMealPlanImageError] = useState<string | null>(
+    null,
+  );
   const myWorkoutPlansCacheKey = user?.id
     ? `my_workout_plans_cache_${user.id}`
     : null;
@@ -286,7 +335,11 @@ export default function WorkoutMealPlanPage({
       setSaveError(null);
       setSaveSuccess(null);
       setPrioritizeMealPlans(false);
+      mealPlanImageRequestIdRef.current += 1;
       mealPlanImageRef.current = null;
+      mealPlanImagePromiseRef.current = null;
+      setMealPlanImageError(null);
+      setIsGeneratingMealPlanImage(false);
       setIsGeneratingOverview(true);
       setMealPlanOverview(null);
       setMealPlanDayResults({});
@@ -297,15 +350,23 @@ export default function WorkoutMealPlanPage({
           setGenerationStepIndex(2); // Planning
           setGenerationProgress((prev) => Math.max(prev, 40));
           setMealPlanOverview(result.response);
-          void generateAndUploadMealPlanImage(userData.dietary_preference)
+          setIsGeneratingMealPlanImage(true);
+          const imageRequestId = mealPlanImageRequestIdRef.current + 1;
+          mealPlanImageRequestIdRef.current = imageRequestId;
+          const mealPlanImagePromise = generateAndUploadMealPlanImage(
+            userData.dietary_preference,
+          )
             .then((imageResult) => {
+              if (mealPlanImageRequestIdRef.current !== imageRequestId) return;
               if (imageResult.success && imageResult.url) {
-                // TODO: persist image URL later if/when saving generated plans.
                 mealPlanImageRef.current = {
                   url: imageResult.url,
                   label: imageResult.food ?? "Meal plan image",
                 };
+                setMealPlanImageError(null);
               } else if (imageResult.error) {
+                mealPlanImageRef.current = null;
+                setMealPlanImageError(imageResult.error);
                 console.warn(
                   "Meal plan image generation failed:",
                   imageResult.error,
@@ -313,13 +374,21 @@ export default function WorkoutMealPlanPage({
               }
             })
             .catch((err: unknown) => {
-              console.warn(
-                "Meal plan image generation failed:",
+              if (mealPlanImageRequestIdRef.current !== imageRequestId) return;
+              mealPlanImageRef.current = null;
+              const message =
                 err instanceof Error
                   ? err.message
-                  : "Failed to generate meal image",
-              );
+                  : "Failed to generate meal image";
+              setMealPlanImageError(message);
+              console.warn("Meal plan image generation failed:", message);
+            })
+            .finally(() => {
+              if (mealPlanImageRequestIdRef.current !== imageRequestId) return;
+              mealPlanImagePromiseRef.current = null;
+              setIsGeneratingMealPlanImage(false);
             });
+          mealPlanImagePromiseRef.current = mealPlanImagePromise;
           const days = result.response.days;
           const weekOrder = [
             "monday",
@@ -476,42 +545,50 @@ export default function WorkoutMealPlanPage({
     setSaveError(null);
     setSaveSuccess(null);
     setIsSavingPlan(true);
-    const dietaryPreference =
-      userProfile?.dietary_preference?.trim() || "not specified";
-    const durationDays = mealPlanOverview.days
-      ? Object.keys(mealPlanOverview.days).length
-      : 0;
-    const imagePath = mealPlanImageRef.current?.url ?? null;
-    const imageAlt = mealPlanImageRef.current?.label ?? null;
-    const result = await saveMealPlanWithWorkoutLink({
-      userId: user.id,
-      workoutPlanId,
-      dietaryPreference,
-      durationDays,
-      imagePath,
-      imageAlt,
-      mealPlanOverview,
-      mealPlanDayResults,
-    });
-    if (result.success) {
-      setSaveSuccess("Meal plan saved.");
-      setMealPlanOverview(null);
-      setMealPlanDayResults({});
-      setActiveDay(null);
-      setGeneratingDayKeys([]);
-      setPrioritizeMealPlans(true);
-      allowBeforeUnloadRef.current = true;
-      window.setTimeout(() => {
-        window.location.reload();
-      }, 250);
-    } else {
-      setSaveError(result.error ?? "Failed to save meal plan");
+    try {
+      if (mealPlanImagePromiseRef.current) {
+        await mealPlanImagePromiseRef.current;
+      }
+
+      const dietaryPreference =
+        userProfile?.dietary_preference?.trim() || "not specified";
+      const durationDays = mealPlanOverview.days
+        ? Object.keys(mealPlanOverview.days).length
+        : 0;
+      const imagePath = mealPlanImageRef.current?.url ?? null;
+      const imageAlt = mealPlanImageRef.current?.label ?? null;
+      const result = await saveMealPlanWithWorkoutLink({
+        userId: user.id,
+        workoutPlanId,
+        dietaryPreference,
+        durationDays,
+        imagePath,
+        imageAlt,
+        mealPlanOverview,
+        mealPlanDayResults,
+      });
+      if (result.success) {
+        setSaveSuccess("Meal plan saved.");
+        setMealPlanOverview(null);
+        setMealPlanDayResults({});
+        setActiveDay(null);
+        setGeneratingDayKeys([]);
+        setPrioritizeMealPlans(true);
+        allowBeforeUnloadRef.current = true;
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 250);
+      } else {
+        setSaveError(result.error ?? "Failed to save meal plan");
+      }
+    } finally {
+      setIsSavingPlan(false);
     }
-    setIsSavingPlan(false);
   }, [
     mealPlanOverview,
     mealPlanDayResults,
     mealPlanImageRef,
+    mealPlanImagePromiseRef,
     isGeneratingDays,
     saveMealPlanWithWorkoutLink,
     user?.id,
@@ -573,7 +650,7 @@ export default function WorkoutMealPlanPage({
     return Number.MAX_SAFE_INTEGER;
   }, []);
 
-  const formatMealTime = useCallback((value?: string) => {
+  const formatMealTime = useCallback((value?: string | null) => {
     if (!value) return "";
     const trimmed = value.trim();
     const twelveMatch = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
@@ -731,7 +808,9 @@ export default function WorkoutMealPlanPage({
                 {hasInstructions ? (
                   <ol className="space-y-1 text-xs text-slate-600 dark:text-slate-300 list-decimal list-inside">
                     {instructions.map((step, stepIndex) => (
-                      <li key={`${mealKey}-step-${stepIndex}`}>{String(step)}</li>
+                      <li key={`${mealKey}-step-${stepIndex}`}>
+                        {String(step)}
+                      </li>
                     ))}
                   </ol>
                 ) : (
@@ -752,6 +831,182 @@ export default function WorkoutMealPlanPage({
     if (!user?.id) return;
     refreshUserMealPlans(user.id);
   }, [user?.id, refreshUserMealPlans]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTodayMealPreview = async () => {
+      if (workoutPlanId || !user?.id) {
+        if (!cancelled) {
+          setTodayMealPreview(null);
+          setIsLoadingTodayMealPreview(false);
+        }
+        return;
+      }
+
+      if (loadingState.isLoading && userMealPlans.length === 0) {
+        if (!cancelled) {
+          setIsLoadingTodayMealPreview(true);
+        }
+        return;
+      }
+
+      if (userMealPlans.length === 0) {
+        if (!cancelled) {
+          setTodayMealPreview(null);
+          setIsLoadingTodayMealPreview(false);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setIsLoadingTodayMealPreview(true);
+      }
+
+      try {
+        const candidatePlans = userMealPlans.slice(0, 8);
+        const candidatePlanIds = candidatePlans.map((plan) => plan.id);
+        if (candidatePlanIds.length === 0) {
+          if (!cancelled) {
+            setTodayMealPreview(null);
+            setIsLoadingTodayMealPreview(false);
+          }
+          return;
+        }
+
+        const todayDayName = new Intl.DateTimeFormat("en-US", {
+          weekday: "long",
+        })
+          .format(new Date())
+          .toLowerCase();
+
+        const planOrder = new Map(
+          candidatePlans.map((plan, index) => [plan.id, index]),
+        );
+
+        const { data: weeklyPlansData, error: weeklyPlansError } =
+          await supabase
+            .from("user_meal_weekly_plan")
+            .select("*")
+            .in("plan_id", candidatePlanIds);
+
+        if (weeklyPlansError) {
+          throw weeklyPlansError;
+        }
+
+        const weeklyPlans = (weeklyPlansData ?? []) as UserMealWeeklyPlan[];
+        const weekPlanIds = weeklyPlans
+          .map((weeklyPlan) => weeklyPlan.id)
+          .filter((id): id is string => Boolean(id));
+
+        if (weekPlanIds.length === 0) {
+          if (!cancelled) {
+            setTodayMealPreview(null);
+            setIsLoadingTodayMealPreview(false);
+          }
+          return;
+        }
+
+        const weeklyPlanById = new Map(
+          weeklyPlans.map((weeklyPlan) => [weeklyPlan.id, weeklyPlan]),
+        );
+
+        const { data: dayPlansData, error: dayPlansError } = await supabase
+          .from("user_meal_weekly_day_plan")
+          .select("*")
+          .in("week_plan_id", weekPlanIds);
+
+        if (dayPlansError) {
+          throw dayPlansError;
+        }
+
+        const todaysDayPlans = ((dayPlansData ?? []) as UserMealWeeklyDayPlan[])
+          .filter(
+            (dayPlan) =>
+              dayPlan.day_name?.trim().toLowerCase() === todayDayName,
+          )
+          .sort((dayPlanA, dayPlanB) => {
+            const planA = weeklyPlanById.get(dayPlanA.week_plan_id || "");
+            const planB = weeklyPlanById.get(dayPlanB.week_plan_id || "");
+            const indexA = planA?.plan_id
+              ? (planOrder.get(planA.plan_id) ?? 999)
+              : 999;
+            const indexB = planB?.plan_id
+              ? (planOrder.get(planB.plan_id) ?? 999)
+              : 999;
+            if (indexA !== indexB) return indexA - indexB;
+            return (dayPlanB.created_at ?? "").localeCompare(
+              dayPlanA.created_at ?? "",
+            );
+          });
+
+        const selectedDayPlan = todaysDayPlans[0] ?? null;
+        if (!selectedDayPlan) {
+          if (!cancelled) {
+            setTodayMealPreview(null);
+            setIsLoadingTodayMealPreview(false);
+          }
+          return;
+        }
+
+        const selectedWeeklyPlan = weeklyPlanById.get(
+          selectedDayPlan.week_plan_id || "",
+        );
+        const selectedMealPlan =
+          candidatePlans.find(
+            (plan) => plan.id === selectedWeeklyPlan?.plan_id,
+          ) ?? null;
+
+        if (!selectedMealPlan) {
+          if (!cancelled) {
+            setTodayMealPreview(null);
+            setIsLoadingTodayMealPreview(false);
+          }
+          return;
+        }
+
+        const { data: mealsData, error: mealsError } = await supabase
+          .from("user_meals")
+          .select("*")
+          .eq("meal_day_plan_id", selectedDayPlan.id);
+
+        if (mealsError) {
+          throw mealsError;
+        }
+
+        const meals = ((mealsData ?? []) as UserMeal[]).sort((mealA, mealB) => {
+          const timeA = toSortableMealTime(mealA.best_time_to_eat);
+          const timeB = toSortableMealTime(mealB.best_time_to_eat);
+          if (timeA !== timeB) return timeA - timeB;
+          return (mealA.meal_name || "").localeCompare(mealB.meal_name || "");
+        });
+
+        if (!cancelled) {
+          setTodayMealPreview(
+            meals.length > 0
+              ? {
+                  mealPlan: selectedMealPlan,
+                  dayPlan: selectedDayPlan,
+                  meals,
+                }
+              : null,
+          );
+          setIsLoadingTodayMealPreview(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setTodayMealPreview(null);
+          setIsLoadingTodayMealPreview(false);
+        }
+      }
+    };
+
+    void loadTodayMealPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadingState.isLoading, user?.id, userMealPlans, workoutPlanId]);
 
   const readWorkoutPlansCache = useCallback((): UserWorkoutPlan[] | null => {
     if (typeof window === "undefined" || !myWorkoutPlansCacheKey) return null;
@@ -885,6 +1140,9 @@ export default function WorkoutMealPlanPage({
     isGeneratingOverview || isGeneratingDays || !!mealPlanOverview;
   const hasGeneratedPreview = !!mealPlanOverview;
   const showMealPlansFirst = prioritizeMealPlans && !hasGeneratedPreview;
+  const todayLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+  }).format(new Date());
   const generateCtaLabel = isLoadingProfile
     ? "Loading profile..."
     : !userProfile
@@ -947,7 +1205,8 @@ export default function WorkoutMealPlanPage({
                   Profile-aware
                 </div>
                 <div>
-                  Respects your diet preferences, restrictions, and budget goals.
+                  Respects your diet preferences, restrictions, and budget
+                  goals.
                 </div>
               </div>
               <div className="rounded-xl border border-teal-100 dark:border-teal-800 bg-white/85 dark:bg-slate-800/80 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200">
@@ -955,7 +1214,9 @@ export default function WorkoutMealPlanPage({
                   <MdRestaurant className="h-3.5 w-3.5" />
                   Day-by-day
                 </div>
-                <div>Generates meals for each day with clear macro targets.</div>
+                <div>
+                  Generates meals for each day with clear macro targets.
+                </div>
               </div>
             </div>
           </>
@@ -1136,7 +1397,8 @@ export default function WorkoutMealPlanPage({
               ) : (
                 <>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                    No meal plan linked to this workout yet. Attach by Generating Meal Plan.
+                    No meal plan linked to this workout yet. Attach by
+                    Generating Meal Plan.
                   </p>
                   {generateMealPlanCard()}
                 </>
@@ -1147,6 +1409,125 @@ export default function WorkoutMealPlanPage({
           {/* Workout plans list for /meals */}
           {!workoutPlanId && (
             <div className={`mb-6 ${standAloneCardOrderClass}`}>
+              <div className="mb-4">
+                {isLoadingTodayMealPreview ? (
+                  <div className="relative overflow-hidden rounded-[28px] border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/85 p-5 shadow-sm">
+                    <div className="animate-pulse space-y-3">
+                      <div className="h-5 w-32 rounded-full bg-slate-200 dark:bg-slate-700" />
+                      <div className="h-8 w-64 rounded-2xl bg-slate-200 dark:bg-slate-700" />
+                      <div className="h-4 w-full rounded-full bg-slate-100 dark:bg-slate-700/70" />
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div
+                            key={`today-meal-loading-${index}`}
+                            className="h-20 rounded-2xl bg-slate-100 dark:bg-slate-700/70"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : todayMealPreview ? (
+                  <div className="relative overflow-hidden rounded-[28px] border border-amber-100 dark:border-amber-700/60 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(20,184,166,0.18),_transparent_28%),linear-gradient(135deg,_#fff7ed_0%,_#ffffff_44%,_#ecfeff_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.16),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(20,184,166,0.12),_transparent_26%),linear-gradient(135deg,_rgba(30,41,59,0.98)_0%,_rgba(15,23,42,0.96)_52%,_rgba(8,47,73,0.94)_100%)] shadow-sm">
+                    <div className="pointer-events-none absolute -right-12 -top-10 h-36 w-36 rounded-full bg-amber-300/20 blur-3xl dark:bg-amber-300/10" />
+                    <div className="pointer-events-none absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-teal-300/20 blur-3xl dark:bg-teal-300/10" />
+                    <div className="relative p-5 sm:p-6">
+                      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                        <div className="max-w-xl">
+                          <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/80 dark:border-amber-500/40 bg-white/80 dark:bg-slate-800/75 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
+                            <MdRestaurant className="h-3.5 w-3.5" />
+                            {todayLabel}
+                            {" menu"}
+                          </div>
+                          <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-50">
+                            Your meals for {todayLabel} are ready.
+                          </h3>
+                          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                            {todayMealPreview.mealPlan.plan_name || "Meal Plan"}{" "}
+                            {todayMealPreview.dayPlan.day_theme
+                              ? `- ${todayMealPreview.dayPlan.day_theme}`
+                              : "- Built to keep your energy steady through today's training."}
+                          </p>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-amber-200 dark:border-amber-500/40 bg-white/80 dark:bg-slate-800/70 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                              {todayMealPreview.meals.length} meals lined up
+                            </span>
+                            {todayMealPreview.dayPlan.calorie_target ? (
+                              <span className="rounded-full border border-teal-200 dark:border-teal-500/40 bg-white/80 dark:bg-slate-800/70 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                {todayMealPreview.dayPlan.calorie_target} kcal
+                                target
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/personal")}
+                          className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-slate-900 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                        >
+                          <MdFitnessCenter className="h-3.5 w-3.5" />
+                          View Exercise
+                          <MdChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {todayMealPreview.meals.map((meal) => (
+                          <div
+                            key={meal.id}
+                            className="rounded-2xl border border-white/70 dark:border-slate-700/80 bg-white/85 dark:bg-slate-900/65 px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-300">
+                                {meal.meal_time || "Meal"}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                {formatMealTime(meal.best_time_to_eat) ||
+                                  "Anytime"}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm font-semibold leading-5 text-slate-800 dark:text-slate-100">
+                              {meal.meal_name || "Unnamed Meal"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative overflow-hidden rounded-[28px] border border-fuchsia-100 dark:border-fuchsia-700/50 bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.18),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(251,191,36,0.20),_transparent_28%),linear-gradient(135deg,_#fff1f2_0%,_#fff7ed_48%,_#ffffff_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.14),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(251,191,36,0.12),_transparent_28%),linear-gradient(135deg,_rgba(51,16,33,0.96)_0%,_rgba(30,27,75,0.96)_52%,_rgba(17,24,39,0.96)_100%)] shadow-sm">
+                    <div className="pointer-events-none absolute -right-16 -top-10 h-40 w-40 rounded-full bg-pink-300/25 blur-3xl dark:bg-pink-300/10" />
+                    <div className="pointer-events-none absolute -left-10 bottom-0 h-32 w-32 rounded-full bg-amber-300/20 blur-3xl dark:bg-amber-300/10" />
+                    <div className="relative p-5 sm:p-6">
+                      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                        <div className="max-w-xl">
+                          <div className="inline-flex items-center gap-2 rounded-full border border-pink-200/80 dark:border-pink-500/40 bg-white/80 dark:bg-slate-800/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-pink-700 dark:text-pink-300">
+                            <MdRestaurant className="h-3.5 w-3.5" />
+                            Free plate mode
+                          </div>
+                          <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-50">
+                            Today is your cheat day.
+                          </h3>
+                          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                            No saved meals are queued for {todayLabel}. Keep it
+                            fun, stay hydrated, and pick a workout when you are
+                            ready to earn the next plate.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => router.push("/personal")}
+                          className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-slate-900 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                        >
+                          <MdFitnessCenter className="h-3.5 w-3.5" />
+                          View Exercise
+                          <MdChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-1">
                 Select a workout plan
               </h3>
@@ -1372,15 +1753,34 @@ export default function WorkoutMealPlanPage({
                       {saveError}
                     </p>
                   )}
+                  {mealPlanImageError && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      Meal image failed, but you can still save without it.
+                    </p>
+                  )}
+                  {isGeneratingMealPlanImage && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Finishing meal image generation...
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleSavePlan}
-                    disabled={!user?.id || isSavingPlan || isGeneratingDays}
+                    disabled={
+                      !user?.id ||
+                      isSavingPlan ||
+                      isGeneratingDays ||
+                      isGeneratingMealPlanImage
+                    }
                     className="px-3 py-1.5 rounded-lg bg-teal-600 dark:bg-teal-500 text-white text-sm font-semibold hover:bg-teal-700 dark:hover:bg-teal-400 disabled:opacity-60"
                   >
-                    {isSavingPlan ? "Saving" : "Save plan"}
+                    {isSavingPlan
+                      ? "Saving"
+                      : isGeneratingMealPlanImage
+                        ? "Preparing image..."
+                        : "Save plan"}
                   </button>
                 </div>
               </div>

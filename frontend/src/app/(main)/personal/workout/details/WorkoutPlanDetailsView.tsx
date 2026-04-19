@@ -5,6 +5,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserContext } from "@/contexts/UserContext";
+import { useImageGeneration } from "@/contexts/ImageGenerationContext";
 import { supabase } from "@/lib/api/supabase";
 import { useUserWorkoutData } from "@/hooks/useUserWorkoutData";
 import { useCoachWorkoutData } from "@/hooks/useCoachWorkoutData";
@@ -360,8 +361,11 @@ export function WorkoutPlanDetailsView({
   embedded = false,
 }: WorkoutPlanDetailsViewProps) {
   const router = useRouter();
+  const routeLoadRequestRef = useRef(0);
+  const autoReloadKeyRef = useRef<string | null>(null);
+  const ROUTE_LOAD_TIMEOUT_MS = 10000;
 
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { userProfile } = useUserContext();
   const {
     fetchUserWorkoutPlanById,
@@ -376,13 +380,17 @@ export function WorkoutPlanDetailsView({
   } = useUserWorkoutData();
   const { fetchCoachWorkoutPlanById } = useCoachWorkoutData();
   const { getLinkedMealPlanForWorkout } = useMeals();
+  const { syncPendingImagesFromDatabase } = useImageGeneration();
 
   const [workoutPlan, setWorkoutPlan] = useState<UserWorkoutPlan | null>(null);
-  const [linkedMealPlan, setLinkedMealPlan] = useState<UserMealPlan | null>(null);
+  const [linkedMealPlan, setLinkedMealPlan] = useState<UserMealPlan | null>(
+    null,
+  );
   const [mealPlanDialogOpen, setMealPlanDialogOpen] = useState(false);
   const [checkingMealLink, setCheckingMealLink] = useState(false);
   const [weeksData, setWeeksData] = useState<Map<number, WeekData>>(new Map());
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<{
     week: number;
     day: string;
@@ -417,21 +425,25 @@ export function WorkoutPlanDetailsView({
   >({});
   const [dayRegenerationDialogTarget, setDayRegenerationDialogTarget] =
     useState<DayRegenerationDialogTarget | null>(null);
-  const [showDayRegenerationConfirmDialog, setShowDayRegenerationConfirmDialog] =
-    useState(false);
+  const [
+    showDayRegenerationConfirmDialog,
+    setShowDayRegenerationConfirmDialog,
+  ] = useState(false);
   const [isGeneratingDayRegeneration, setIsGeneratingDayRegeneration] =
     useState(false);
   const [dayRegenerationProgress, setDayRegenerationProgress] =
     useState<number>(0);
   const [dayRegenerationPreview, setDayRegenerationPreview] =
     useState<PendingDayRegeneration | null>(null);
-  const [showDayRegenerationImageProcessingDialog, setShowDayRegenerationImageProcessingDialog] =
-    useState(false);
+  const [
+    showDayRegenerationImageProcessingDialog,
+    setShowDayRegenerationImageProcessingDialog,
+  ] = useState(false);
   const [savedDayRegenerationContext, setSavedDayRegenerationContext] =
     useState<SavedDayRegenerationContext | null>(null);
-  const [dayRegenerationError, setDayRegenerationError] = useState<string | null>(
-    null,
-  );
+  const [dayRegenerationError, setDayRegenerationError] = useState<
+    string | null
+  >(null);
   const [nextWeekPreview, setNextWeekPreview] =
     useState<NextWeekPreviewData | null>(null);
   const [pendingNextWeekGeneration, setPendingNextWeekGeneration] =
@@ -458,6 +470,39 @@ export function WorkoutPlanDetailsView({
     setIsRefreshingPage(true);
     window.location.reload();
   }, []);
+
+  const clearAutoReloadFlag = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const key = autoReloadKeyRef.current;
+    if (!key) return;
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // Ignore storage access issues.
+    }
+  }, []);
+
+  const tryAutoHardReload = useCallback((): boolean => {
+    if (typeof window === "undefined") return false;
+    const key = planId
+      ? `vs:auto-hard-reload:workout-details:${planId}:${embedded ? "embedded" : "full"}`
+      : null;
+    autoReloadKeyRef.current = key;
+    if (!key) return false;
+
+    try {
+      if (window.sessionStorage.getItem(key) === "1") {
+        return false;
+      }
+      window.sessionStorage.setItem(key, "1");
+    } catch {
+      // If storage is unavailable, still attempt one hard reload.
+    }
+
+    setIsRefreshingPage(true);
+    window.location.reload();
+    return true;
+  }, [embedded, planId]);
 
   const getResolvedExerciseImageUrl = useCallback(
     (exercise: UserWorkoutPlanExerciseWithDetails): string => {
@@ -557,12 +602,30 @@ export function WorkoutPlanDetailsView({
 
   const loadWorkoutPlanDetails = useCallback(
     async (targetPlanId: string): Promise<void> => {
+      const requestId = routeLoadRequestRef.current + 1;
+      routeLoadRequestRef.current = requestId;
+      let loadCompleted = false;
+      const timeoutId = window.setTimeout(() => {
+        if (routeLoadRequestRef.current !== requestId) return;
+        if (tryAutoHardReload()) {
+          return;
+        }
+        setLoadError(
+          "Loading workout details took too long. Please try opening the plan again.",
+        );
+        setIsLoading(false);
+      }, ROUTE_LOAD_TIMEOUT_MS);
+
+      setLoadError(null);
       setIsLoading(true);
       try {
         const planResult = await fetchUserWorkoutPlanById(targetPlanId);
         if (planResult.success && planResult.data) {
+          if (routeLoadRequestRef.current !== requestId) return;
           setWorkoutPlan(planResult.data);
           const weeksMap = await fetchWeeksDataForPlan(targetPlanId);
+          if (routeLoadRequestRef.current !== requestId) return;
+          loadCompleted = true;
           setWeeksData(weeksMap);
           return;
         }
@@ -573,8 +636,19 @@ export function WorkoutPlanDetailsView({
         }
       } catch (error) {
         console.error("Error fetching workout data:", error);
+        if (routeLoadRequestRef.current === requestId) {
+          setLoadError(
+            "We couldn't load this workout plan right now. Please try again.",
+          );
+        }
       } finally {
-        setIsLoading(false);
+        window.clearTimeout(timeoutId);
+        if (loadCompleted) {
+          clearAutoReloadFlag();
+        }
+        if (routeLoadRequestRef.current === requestId) {
+          setIsLoading(false);
+        }
       }
     },
     [
@@ -582,10 +656,23 @@ export function WorkoutPlanDetailsView({
       fetchWeeksDataForPlan,
       fetchCoachWorkoutPlanById,
       router,
+      ROUTE_LOAD_TIMEOUT_MS,
+      clearAutoReloadFlag,
+      tryAutoHardReload,
     ],
   );
 
   useEffect(() => {
+    if (isAuthLoading || !user?.id || !planId || source === "coach") return;
+    void syncPendingImagesFromDatabase(`workout-details:${planId}`);
+  }, [isAuthLoading, planId, source, syncPendingImagesFromDatabase, user?.id]);
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      setIsLoading(true);
+      return;
+    }
+
     if (!planId) {
       if (!embedded) {
         router.push("/personal");
@@ -595,13 +682,26 @@ export function WorkoutPlanDetailsView({
       return;
     }
 
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     if (source === "coach") {
       router.replace(`/personal/coach/workout/details?id=${planId}`);
       return;
     }
 
     void loadWorkoutPlanDetails(planId);
-  }, [embedded, planId, source, loadWorkoutPlanDetails, router]);
+  }, [
+    embedded,
+    isAuthLoading,
+    loadWorkoutPlanDetails,
+    planId,
+    router,
+    source,
+    user?.id,
+  ]);
 
   const loadLinkedMealPlan = useCallback(async (): Promise<void> => {
     if (!planId) {
@@ -1286,7 +1386,10 @@ export function WorkoutPlanDetailsView({
   }, [selectedDay, weeksData]);
 
   const hasPendingSelectedDayImages = useMemo(
-    () => selectedDayExercises.some((exercise) => exercise.is_image_generated !== true),
+    () =>
+      selectedDayExercises.some(
+        (exercise) => exercise.is_image_generated !== true,
+      ),
     [selectedDayExercises],
   );
 
@@ -1362,7 +1465,9 @@ export function WorkoutPlanDetailsView({
       }
 
       const firstSessionStart = firstSessionResult.data?.[0]?.started_at;
-      setProgramStartDate(firstSessionStart ? new Date(firstSessionStart) : null);
+      setProgramStartDate(
+        firstSessionStart ? new Date(firstSessionStart) : null,
+      );
     };
 
     fetchSessionProgress();
@@ -1455,14 +1560,18 @@ export function WorkoutPlanDetailsView({
       return { dayName: null as string | null, isCompleted: false };
     }
 
-    const firstDayPlan = firstWeekData.dayPlans.find((dayPlan) => !!dayPlan.day);
+    const firstDayPlan = firstWeekData.dayPlans.find(
+      (dayPlan) => !!dayPlan.day,
+    );
     if (!firstDayPlan?.day) {
       return { dayName: null as string | null, isCompleted: false };
     }
 
     return {
       dayName: firstDayPlan.day,
-      isCompleted: Boolean(firstDayPlan.isCompleted ?? firstDayPlan.is_completed),
+      isCompleted: Boolean(
+        firstDayPlan.isCompleted ?? firstDayPlan.is_completed,
+      ),
     };
   }, [weeksData]);
 
@@ -1484,7 +1593,8 @@ export function WorkoutPlanDetailsView({
     const firstDayIndex = firstWeekFirstDayInfo.dayName
       ? baseDays.findIndex(
           (dayName) =>
-            dayName.toLowerCase() === firstWeekFirstDayInfo.dayName!.toLowerCase(),
+            dayName.toLowerCase() ===
+            firstWeekFirstDayInfo.dayName!.toLowerCase(),
         )
       : -1;
 
@@ -1744,7 +1854,9 @@ export function WorkoutPlanDetailsView({
         return { week: weekNumber, day: nextUnlockedWorkoutDay.day };
       }
 
-      const firstWorkoutDay = weekDays.find((day) => !day.isRestDay && !!day.data?.id);
+      const firstWorkoutDay = weekDays.find(
+        (day) => !day.isRestDay && !!day.data?.id,
+      );
       if (firstWorkoutDay) {
         return { week: weekNumber, day: firstWorkoutDay.dayName };
       }
@@ -1925,7 +2037,8 @@ export function WorkoutPlanDetailsView({
   }, [latestGeneratedWeekNumber]);
 
   const activeWeekDays = useMemo(
-    () => (weekHasData(activeWeekTab) ? getWeekCalendarData(activeWeekTab) : []),
+    () =>
+      weekHasData(activeWeekTab) ? getWeekCalendarData(activeWeekTab) : [],
     [activeWeekTab, weekHasData, getWeekCalendarData],
   );
 
@@ -2699,7 +2812,9 @@ export function WorkoutPlanDetailsView({
     setIsGeneratingDayRegeneration(true);
 
     try {
-      const previewPayload = await handleRegenerateDay(dayRegenerationDialogTarget);
+      const previewPayload = await handleRegenerateDay(
+        dayRegenerationDialogTarget,
+      );
       if (!previewPayload) {
         setDayRegenerationError(
           "Unable to regenerate this workout day right now. Please try again.",
@@ -2722,7 +2837,9 @@ export function WorkoutPlanDetailsView({
 
   const cancelDayRegenerationPreview = useCallback(() => {
     if (!dayRegenerationPreview) return;
-    if (savingRegeneratedDayPlanIds.includes(dayRegenerationPreview.dayPlanId)) {
+    if (
+      savingRegeneratedDayPlanIds.includes(dayRegenerationPreview.dayPlanId)
+    ) {
       return;
     }
 
@@ -2740,7 +2857,9 @@ export function WorkoutPlanDetailsView({
     if (!dayRegenerationPreview) return;
 
     setDayRegenerationError(null);
-    const saved = await handleSaveRegeneratedDay(dayRegenerationPreview.dayPlanId);
+    const saved = await handleSaveRegeneratedDay(
+      dayRegenerationPreview.dayPlanId,
+    );
     if (!saved) {
       setDayRegenerationError(
         "Unable to save the regenerated workout day. Please try again.",
@@ -2855,7 +2974,7 @@ export function WorkoutPlanDetailsView({
     () =>
       Boolean(
         dayRegenerationPreview &&
-          savingRegeneratedDayPlanIds.includes(dayRegenerationPreview.dayPlanId),
+        savingRegeneratedDayPlanIds.includes(dayRegenerationPreview.dayPlanId),
       ),
     [dayRegenerationPreview, savingRegeneratedDayPlanIds],
   );
@@ -2887,7 +3006,7 @@ export function WorkoutPlanDetailsView({
     [],
   );
 
-  if (isLoading) {
+  if (isAuthLoading || isLoading) {
     return (
       <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -2900,6 +3019,30 @@ export function WorkoutPlanDetailsView({
     );
   }
 
+  if (!user) {
+    return null;
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
+        <div className="text-center px-6">
+          <p className="text-sm font-semibold text-red-600 dark:text-red-300 mb-4">
+            {loadError}
+          </p>
+          {!embedded && (
+            <button
+              onClick={() => router.push("/personal")}
+              className="px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold hover:bg-teal-700 transition-colors"
+            >
+              Back to Personal
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!workoutPlan) {
     return (
       <div className="min-h-screen bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827] flex items-center justify-center">
@@ -2907,17 +3050,17 @@ export function WorkoutPlanDetailsView({
           <p className="text-sm font-semibold text-red-600 dark:text-red-300 mb-4">
             Workout plan not found
           </p>
-            {!embedded && (
-              <button
-                onClick={() => router.push("/personal")}
-                className="px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold hover:bg-teal-700 transition-colors"
-              >
-                Back to Personal
-              </button>
-            )}
-          </div>
+          {!embedded && (
+            <button
+              onClick={() => router.push("/personal")}
+              className="px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold hover:bg-teal-700 transition-colors"
+            >
+              Back to Personal
+            </button>
+          )}
         </div>
-      );
+      </div>
+    );
   }
 
   // Format tag as Title Case
@@ -3046,7 +3189,9 @@ export function WorkoutPlanDetailsView({
                       <span className="text-[11px] font-bold tabular-nums text-orange-600">
                         {calories || 0}
                       </span>
-                      <span className="text-[11px] text-slate-400 dark:text-slate-500">|</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                        |
+                      </span>
                       <span className="text-[11px] font-bold tabular-nums text-teal-600 dark:text-teal-300">
                         {minutes || 0}m
                       </span>
@@ -3118,7 +3263,9 @@ export function WorkoutPlanDetailsView({
           {selectedPreviewDay.isRestDay ? (
             <div className="text-center py-8 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
               <HiMoon className="w-7 h-7 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Rest Day</p>
+              <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                Rest Day
+              </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 No exercises scheduled for this day.
               </p>
@@ -3387,7 +3534,11 @@ export function WorkoutPlanDetailsView({
                   {linkedMealPlan.image_path ? (
                     <Image
                       src={linkedMealPlan.image_path}
-                      alt={linkedMealPlan.image_alt || linkedMealPlan.plan_name || "Meal plan"}
+                      alt={
+                        linkedMealPlan.image_alt ||
+                        linkedMealPlan.plan_name ||
+                        "Meal plan"
+                      }
                       fill
                       className="object-cover"
                       unoptimized
@@ -3486,7 +3637,9 @@ export function WorkoutPlanDetailsView({
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-extrabold">Week {weekNumber}</span>
+                      <span className="text-sm font-extrabold">
+                        Week {weekNumber}
+                      </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                           isActiveTab
@@ -3494,16 +3647,22 @@ export function WorkoutPlanDetailsView({
                             : hasData
                               ? "bg-[#e7f6f1] text-[#0f766e] dark:bg-emerald-900/30 dark:text-emerald-300"
                               : isPreviewTab
-                              ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                                 : "bg-[#e9eef2] text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                         }`}
                       >
-                        {hasData ? "Ready" : isPreviewTab ? "Preview" : "Locked"}
+                        {hasData
+                          ? "Ready"
+                          : isPreviewTab
+                            ? "Preview"
+                            : "Locked"}
                       </span>
                     </div>
                     <p
                       className={`mt-2 text-[11px] ${
-                        isActiveTab ? "text-white/80" : "text-slate-500 dark:text-slate-400"
+                        isActiveTab
+                          ? "text-white/80"
+                          : "text-slate-500 dark:text-slate-400"
                       }`}
                     >
                       {hasData
@@ -3682,15 +3841,17 @@ export function WorkoutPlanDetailsView({
                                       selectedDay.day,
                                     );
                                   }}
-                                   disabled={selectedDayState.isRegenerating}
-                                   className={`rounded-2xl px-3 py-2 text-sm font-bold transition-colors ${
-                                     selectedDayState.isRegenerating
-                                       ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-                                        : "border border-[#b9ddd2] bg-white text-teal-700 hover:bg-teal-50 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
-                                   }`}
-                                 >
-                                   {selectedDayState.isRegenerating ? "Regenerating..." : "Regenerate"}
-                                 </button>
+                                  disabled={selectedDayState.isRegenerating}
+                                  className={`rounded-2xl px-3 py-2 text-sm font-bold transition-colors ${
+                                    selectedDayState.isRegenerating
+                                      ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                      : "border border-[#b9ddd2] bg-white text-teal-700 hover:bg-teal-50 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+                                  }`}
+                                >
+                                  {selectedDayState.isRegenerating
+                                    ? "Regenerating..."
+                                    : "Regenerate"}
+                                </button>
                                 {selectedDayState.pendingRegeneration && (
                                   <button
                                     type="button"
@@ -3701,33 +3862,38 @@ export function WorkoutPlanDetailsView({
                                         dayName: selectedDay.day,
                                       });
                                     }}
-                                     disabled={selectedDayState.isSaving}
-                                     className={`rounded-2xl px-3 py-2 text-sm font-bold transition-colors ${
-                                       selectedDayState.isSaving
-                                         ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                    disabled={selectedDayState.isSaving}
+                                    className={`rounded-2xl px-3 py-2 text-sm font-bold transition-colors ${
+                                      selectedDayState.isSaving
+                                        ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
                                         : "bg-[#0f766e] text-white hover:bg-[#0b5f58] dark:bg-teal-500 dark:hover:bg-teal-400"
-                                     }`}
-                                   >
-                                     {selectedDayState.isSaving ? "Saving..." : "Save"}
-                                   </button>
+                                    }`}
+                                  >
+                                    {selectedDayState.isSaving
+                                      ? "Saving..."
+                                      : "Save"}
+                                  </button>
                                 )}
                               </>
                             )}
                         </div>
                       </div>
 
-                      {selectedDayData?.focus && selectedDayData.focus.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {selectedDayData.focus.slice(0, 5).map((focus, index) => (
-                            <span
-                              key={`${selectedDay.day}-focus-${index}`}
-                              className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-teal-700 shadow-sm dark:bg-slate-800 dark:text-teal-300"
-                            >
-                              {formatTagTitleCase(focus)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {selectedDayData?.focus &&
+                        selectedDayData.focus.length > 0 && (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {selectedDayData.focus
+                              .slice(0, 5)
+                              .map((focus, index) => (
+                                <span
+                                  key={`${selectedDay.day}-focus-${index}`}
+                                  className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-teal-700 shadow-sm dark:bg-slate-800 dark:text-teal-300"
+                                >
+                                  {formatTagTitleCase(focus)}
+                                </span>
+                              ))}
+                          </div>
+                        )}
 
                       {selectedDayData?.motivation && (
                         <p className="mt-4 border-t border-teal-100 pt-4 text-sm italic text-slate-500 dark:border-teal-900/50 dark:text-slate-400">
@@ -3736,8 +3902,8 @@ export function WorkoutPlanDetailsView({
                       )}
                       {selectedDayState.pendingRegeneration && (
                         <p className="mt-4 border-t border-amber-100 pt-4 text-sm font-semibold text-amber-700 dark:border-amber-900/50 dark:text-amber-300">
-                          A regenerated preview is ready. Review it in the dialog
-                          to save or discard the changes.
+                          A regenerated preview is ready. Review it in the
+                          dialog to save or discard the changes.
                         </p>
                       )}
                     </div>
@@ -3745,25 +3911,29 @@ export function WorkoutPlanDetailsView({
                     <div>
                       {selectedDayState.pendingRegeneration ? (
                         <div className="space-y-5">
-                          {selectedDayState.pendingWarmupExercises.length > 0 && (
+                          {selectedDayState.pendingWarmupExercises.length >
+                            0 && (
                             <div>
                               <div className="mb-3 flex items-center gap-2">
                                 <HiFire className="h-4 w-4 text-orange-500" />
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-orange-600">
                                   {getSectionTitle(
                                     "warmup",
-                                    selectedDayState.pendingWarmupExercises.length,
+                                    selectedDayState.pendingWarmupExercises
+                                      .length,
                                   )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
-                                {selectedDayState.pendingWarmupExercises.map((exercise, index) => (
-                                  <PreviewExerciseRow
-                                    key={`selected-pending-warmup-${selectedDay.day}-${index}`}
-                                    exercise={exercise}
-                                    formatDuration={formatDuration}
-                                  />
-                                ))}
+                                {selectedDayState.pendingWarmupExercises.map(
+                                  (exercise, index) => (
+                                    <PreviewExerciseRow
+                                      key={`selected-pending-warmup-${selectedDay.day}-${index}`}
+                                      exercise={exercise}
+                                      formatDuration={formatDuration}
+                                    />
+                                  ),
+                                )}
                               </div>
                             </div>
                           )}
@@ -3775,41 +3945,48 @@ export function WorkoutPlanDetailsView({
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-teal-600">
                                   {getSectionTitle(
                                     "main",
-                                    selectedDayState.pendingMainExercises.length,
+                                    selectedDayState.pendingMainExercises
+                                      .length,
                                   )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
-                                {selectedDayState.pendingMainExercises.map((exercise, index) => (
-                                  <PreviewExerciseRow
-                                    key={`selected-pending-main-${selectedDay.day}-${index}`}
-                                    exercise={exercise}
-                                    formatDuration={formatDuration}
-                                  />
-                                ))}
+                                {selectedDayState.pendingMainExercises.map(
+                                  (exercise, index) => (
+                                    <PreviewExerciseRow
+                                      key={`selected-pending-main-${selectedDay.day}-${index}`}
+                                      exercise={exercise}
+                                      formatDuration={formatDuration}
+                                    />
+                                  ),
+                                )}
                               </div>
                             </div>
                           )}
 
-                          {selectedDayState.pendingCooldownExercises.length > 0 && (
+                          {selectedDayState.pendingCooldownExercises.length >
+                            0 && (
                             <div>
                               <div className="mb-3 flex items-center gap-2">
                                 <HiMoon className="h-4 w-4 text-teal-500" />
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-teal-600">
                                   {getSectionTitle(
                                     "cooldown",
-                                    selectedDayState.pendingCooldownExercises.length,
+                                    selectedDayState.pendingCooldownExercises
+                                      .length,
                                   )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
-                                {selectedDayState.pendingCooldownExercises.map((exercise, index) => (
-                                  <PreviewExerciseRow
-                                    key={`selected-pending-cooldown-${selectedDay.day}-${index}`}
-                                    exercise={exercise}
-                                    formatDuration={formatDuration}
-                                  />
-                                ))}
+                                {selectedDayState.pendingCooldownExercises.map(
+                                  (exercise, index) => (
+                                    <PreviewExerciseRow
+                                      key={`selected-pending-cooldown-${selectedDay.day}-${index}`}
+                                      exercise={exercise}
+                                      formatDuration={formatDuration}
+                                    />
+                                  ),
+                                )}
                               </div>
                             </div>
                           )}
@@ -3825,7 +4002,10 @@ export function WorkoutPlanDetailsView({
                               <div className="mb-3 flex items-center gap-2">
                                 <HiFire className="h-4 w-4 text-orange-500" />
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-orange-600">
-                                  {getSectionTitle("warmup", warmupExercises.length)}
+                                  {getSectionTitle(
+                                    "warmup",
+                                    warmupExercises.length,
+                                  )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
@@ -3846,7 +4026,10 @@ export function WorkoutPlanDetailsView({
                               <div className="mb-3 flex items-center gap-2">
                                 <HiBolt className="h-4 w-4 text-teal-600" />
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-teal-600">
-                                  {getSectionTitle("main", mainExercises.length)}
+                                  {getSectionTitle(
+                                    "main",
+                                    mainExercises.length,
+                                  )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
@@ -3867,7 +4050,10 @@ export function WorkoutPlanDetailsView({
                               <div className="mb-3 flex items-center gap-2">
                                 <HiMoon className="h-4 w-4 text-teal-500" />
                                 <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-teal-600">
-                                  {getSectionTitle("cooldown", cooldownExercises.length)}
+                                  {getSectionTitle(
+                                    "cooldown",
+                                    cooldownExercises.length,
+                                  )}
                                 </h4>
                               </div>
                               <div className="space-y-3">
@@ -3990,7 +4176,9 @@ export function WorkoutPlanDetailsView({
                             : "bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-500 dark:hover:bg-teal-400"
                         }`}
                       >
-                        {isGeneratingNextWeek ? "Generating..." : "Generate Now"}
+                        {isGeneratingNextWeek
+                          ? "Generating..."
+                          : "Generate Now"}
                       </button>
                       <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
                         Preview will appear here after generation.
@@ -4008,100 +4196,101 @@ export function WorkoutPlanDetailsView({
         </section>
 
         <div className="hidden">
-        {/* Weekly Calendar Section Header */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center">
-            <HiCalendar className="w-4 h-4 text-white" />
+          {/* Weekly Calendar Section Header */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center">
+              <HiCalendar className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+              Weekly Schedule
+            </h2>
           </div>
-          <h2 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
-            Weekly Schedule
-          </h2>
-        </div>
 
-        {/* Weekly Calendar */}
-        <div className="space-y-5">
-          {Array.from({ length: totalWeeks }, (_, weekIndex) => {
-            const weekNumber = weekIndex + 1;
-            const hasData = weekHasData(weekNumber);
-            const weekDays = hasData ? getWeekCalendarData(weekNumber) : [];
-            const hasInlinePreview =
-              !hasData && nextWeekPreview?.weekNumber === weekNumber;
+          {/* Weekly Calendar */}
+          <div className="space-y-5">
+            {Array.from({ length: totalWeeks }, (_, weekIndex) => {
+              const weekNumber = weekIndex + 1;
+              const hasData = weekHasData(weekNumber);
+              const weekDays = hasData ? getWeekCalendarData(weekNumber) : [];
+              const hasInlinePreview =
+                !hasData && nextWeekPreview?.weekNumber === weekNumber;
 
-            return (
-              <div
-                key={weekNumber}
-                className="bg-white dark:bg-slate-800/80 rounded-2xl p-4 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700"
-              >
-                {/* Week Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-sm">
-                      <span className="text-base font-bold text-white">
-                        {weekNumber}
-                      </span>
+              return (
+                <div
+                  key={weekNumber}
+                  className="bg-white dark:bg-slate-800/80 rounded-2xl p-4 shadow-sm dark:shadow-black/30 border border-slate-100 dark:border-slate-700"
+                >
+                  {/* Week Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-sm">
+                        <span className="text-base font-bold text-white">
+                          {weekNumber}
+                        </span>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          Week {weekNumber}
+                        </h3>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                        Week {weekNumber}
-                      </h3>
-                    </div>
+                    {hasData && (
+                      <div className="flex items-center gap-1.5 bg-teal-50 dark:bg-teal-900/40 px-2.5 py-1 rounded-full">
+                        <div className="w-2 h-2 rounded-full bg-teal-500"></div>
+                        <span className="text-[11px] font-semibold text-teal-700 dark:text-teal-300">
+                          Active
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  {hasData && (
-                    <div className="flex items-center gap-1.5 bg-teal-50 dark:bg-teal-900/40 px-2.5 py-1 rounded-full">
-                      <div className="w-2 h-2 rounded-full bg-teal-500"></div>
-                      <span className="text-[11px] font-semibold text-teal-700 dark:text-teal-300">
-                        Active
-                      </span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Week has data - show day cards */}
-                {hasData ? (
-                  <>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                      {weekDays.map((day) => {
-                        const isSelected =
-                          selectedDay?.week === weekNumber &&
-                          selectedDay?.day === day.dayName;
-                        const isCompletedDay = Boolean(
-                          day.data?.isCompleted ?? day.data?.is_completed,
-                        );
-                        const dayProgressIndex = workoutDayOrderByKey.get(
-                          `${weekNumber}|${day.dayName.toLowerCase()}`,
-                        );
-                        const isLockedByProgress =
-                          !day.isRestDay &&
-                          typeof dayProgressIndex === "number" &&
-                          dayProgressIndex > completedSessionsCount;
-                        const calories = day.data
-                          ? parseCalories(day.data.total_calories)
-                          : 0;
-                        const dayPlanId = day.data?.id || null;
-                        const pendingRegeneratedDay = dayPlanId
-                          ? pendingDayRegenerations[dayPlanId]
-                          : null;
-                        const isPendingRegeneratedDay = !!pendingRegeneratedDay;
-                        const displayedCalories = isPendingRegeneratedDay
-                          ? parseCalories(pendingRegeneratedDay.totalCalories)
-                          : calories;
-                        const canRegenerateDay =
-                          !day.isRestDay && !!day.data?.id && !isCompletedDay;
-                        const isRegeneratingDay =
-                          !!day.data?.id &&
-                          regeneratingDayPlanIds.includes(day.data.id);
-                        return (
-                          <div key={day.dayNumber} className="relative group">
-                            <button
-                              onClick={() =>
-                                !day.isRestDay &&
-                                setSelectedDay({
-                                  week: weekNumber,
-                                  day: day.dayName,
-                                })
-                              }
-                              disabled={day.isRestDay}
-                              className={`
+                  {/* Week has data - show day cards */}
+                  {hasData ? (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                        {weekDays.map((day) => {
+                          const isSelected =
+                            selectedDay?.week === weekNumber &&
+                            selectedDay?.day === day.dayName;
+                          const isCompletedDay = Boolean(
+                            day.data?.isCompleted ?? day.data?.is_completed,
+                          );
+                          const dayProgressIndex = workoutDayOrderByKey.get(
+                            `${weekNumber}|${day.dayName.toLowerCase()}`,
+                          );
+                          const isLockedByProgress =
+                            !day.isRestDay &&
+                            typeof dayProgressIndex === "number" &&
+                            dayProgressIndex > completedSessionsCount;
+                          const calories = day.data
+                            ? parseCalories(day.data.total_calories)
+                            : 0;
+                          const dayPlanId = day.data?.id || null;
+                          const pendingRegeneratedDay = dayPlanId
+                            ? pendingDayRegenerations[dayPlanId]
+                            : null;
+                          const isPendingRegeneratedDay =
+                            !!pendingRegeneratedDay;
+                          const displayedCalories = isPendingRegeneratedDay
+                            ? parseCalories(pendingRegeneratedDay.totalCalories)
+                            : calories;
+                          const canRegenerateDay =
+                            !day.isRestDay && !!day.data?.id && !isCompletedDay;
+                          const isRegeneratingDay =
+                            !!day.data?.id &&
+                            regeneratingDayPlanIds.includes(day.data.id);
+                          return (
+                            <div key={day.dayNumber} className="relative group">
+                              <button
+                                onClick={() =>
+                                  !day.isRestDay &&
+                                  setSelectedDay({
+                                    week: weekNumber,
+                                    day: day.dayName,
+                                  })
+                                }
+                                disabled={day.isRestDay}
+                                className={`
                               relative rounded-xl overflow-hidden transition-all flex flex-col outline-none focus:outline-none active:outline-none
                               w-full h-full
                               ${
@@ -4116,496 +4305,505 @@ export function WorkoutPlanDetailsView({
                                         : "hover:shadow-md hover:scale-[1.01] border border-slate-200 dark:border-slate-700"
                               }
                             `}
-                            >
-                              {/* REST DAY - Subtle Design */}
-                              {day.isRestDay ? (
-                                <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-800">
-                                  {/* Top - Day Name */}
-                                  <div className="bg-slate-200/70 dark:bg-slate-700 py-2 px-3">
-                                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-300 text-center block">
-                                      {day.dayName}
-                                    </span>
-                                  </div>
-
-                                  {/* Middle - Day Number with Rest Icon */}
-                                  <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
-                                    <div className="absolute inset-0 flex items-center justify-center opacity-5">
-                                      <HiMoon className="w-16 h-16 text-slate-500 dark:text-slate-300" />
-                                    </div>
-                                    <span className="text-2xl font-black text-slate-300 dark:text-slate-500 relative z-10">
-                                      {day.dayNumber}
-                                    </span>
-                                  </div>
-
-                                  {/* Bottom - Rest Day Label */}
-                                  <div className="bg-slate-200/50 dark:bg-slate-700 py-2.5 px-2">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <HiMoon className="w-4 h-4 text-slate-400 dark:text-slate-300" />
-                                      <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-300">
-                                        Rest
+                              >
+                                {/* REST DAY - Subtle Design */}
+                                {day.isRestDay ? (
+                                  <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-800">
+                                    {/* Top - Day Name */}
+                                    <div className="bg-slate-200/70 dark:bg-slate-700 py-2 px-3">
+                                      <span className="text-[11px] font-bold text-slate-400 dark:text-slate-300 text-center block">
+                                        {day.dayName}
                                       </span>
                                     </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                /* WORKOUT DAY - 3 Horizontal Divisions */
-                                <div
-                                  className={`flex flex-col h-full ${isCompletedDay ? "bg-emerald-50/40 dark:bg-emerald-900/20" : "bg-white dark:bg-slate-800"}`}
-                                >
-                                  {/* TOP - Day Name with Amber Background */}
-                                  <div
-                                    className={`py-2 px-3 ${isCompletedDay ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-amber-50 dark:bg-amber-900/30"}`}
-                                  >
-                                    <span
-                                      className={`text-[11px] font-bold text-center block ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-amber-600 dark:text-amber-300"}`}
-                                    >
-                                      {day.dayName}
-                                    </span>
-                                  </div>
 
-                                  {/* MIDDLE - Day Number Centered */}
-                                  <div className="flex-1 flex items-center justify-center py-4">
-                                    <span
-                                      className={`text-3xl font-black ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-slate-100"}`}
-                                    >
-                                      {day.dayNumber}
-                                    </span>
-                                  </div>
-
-                                  {/* BOTTOM - Calories & Minutes (### | ##m format) */}
-                                  <div
-                                    className={`py-2 px-1.5 ${isCompletedDay ? "bg-emerald-100/80 dark:bg-emerald-900/35" : "bg-slate-50 dark:bg-slate-700"}`}
-                                  >
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <HiFire
-                                        className={`w-3.5 h-3.5 shrink-0 ${isCompletedDay ? "text-emerald-600 dark:text-emerald-300" : "text-orange-500"}`}
-                                      />
-                                      <span
-                                        className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-orange-600 dark:text-orange-300"}`}
-                                      >
-                                        {displayedCalories || 0}
+                                    {/* Middle - Day Number with Rest Icon */}
+                                    <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
+                                      <div className="absolute inset-0 flex items-center justify-center opacity-5">
+                                        <HiMoon className="w-16 h-16 text-slate-500 dark:text-slate-300" />
+                                      </div>
+                                      <span className="text-2xl font-black text-slate-300 dark:text-slate-500 relative z-10">
+                                        {day.dayNumber}
                                       </span>
                                     </div>
-                                  </div>
-                                </div>
-                              )}
-                            </button>
 
-                            {canRegenerateDay && (
-                              <div className="absolute top-2 right-2 z-20 flex flex-col gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedDay({
-                                      week: weekNumber,
-                                      day: day.dayName,
-                                    });
-                                    openDayRegenerationConfirmDialog(
-                                      weekNumber,
-                                      day.dayName,
-                                    );
-                                  }}
-                                  disabled={isRegeneratingDay}
-                                  aria-label="Regenerate day"
-                                  className={`rounded-full p-1.5 shadow-sm transition-all opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto ${
-                                    isRegeneratingDay
-                                      ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
-                                      : "bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
-                                  }`}
-                                >
-                                  <HiArrowPath
-                                    className={`w-4 h-4 ${
-                                      isRegeneratingDay ? "animate-spin" : ""
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Exercises for selected day in this week */}
-                    {selectedDay?.week === weekNumber &&
-                      (() => {
-                        const dayDataMap = getDayDataMapForWeek(weekNumber);
-                        const dayData = dayDataMap.get(
-                          selectedDay.day.toLowerCase(),
-                        );
-                        const totalCalories = dayData
-                          ? parseCalories(dayData.total_calories)
-                          : 0;
-                        const totalMinutes = dayData?.total_minutes ?? 0;
-                        const dayPlanId = dayData?.id || null;
-                        const isSelectedDayCompleted = Boolean(
-                          dayData?.isCompleted ?? dayData?.is_completed,
-                        );
-                        const pendingSelectedRegeneration = dayPlanId
-                          ? pendingDayRegenerations[dayPlanId]
-                          : null;
-                        const isSelectedDayRegenerating = dayPlanId
-                          ? regeneratingDayPlanIds.includes(dayPlanId)
-                          : false;
-                        const isSelectedDaySaving = dayPlanId
-                          ? savingRegeneratedDayPlanIds.includes(dayPlanId)
-                          : false;
-                        const displayedTotalCalories =
-                          pendingSelectedRegeneration
-                            ? parseCalories(
-                                pendingSelectedRegeneration.totalCalories,
-                              )
-                            : totalCalories;
-                        const displayedTotalMinutes =
-                          pendingSelectedRegeneration
-                            ? (pendingSelectedRegeneration.totalMinutes ?? 0)
-                            : totalMinutes;
-                        const selectedPendingWarmupExercises =
-                          pendingSelectedRegeneration?.dayResult.warm_up || [];
-                        const selectedPendingMainExercises =
-                          pendingSelectedRegeneration?.dayResult.main_workout ||
-                          [];
-                        const selectedPendingCooldownExercises =
-                          pendingSelectedRegeneration?.dayResult.cooldown || [];
-
-                        return (
-                          <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
-                            {/* Day Header - Enhanced */}
-                            <div className="bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-900/30 dark:to-emerald-900/30 rounded-xl p-4 mb-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center">
-                                    <span className="text-base font-extrabold text-teal-600 dark:text-teal-300">
-                                      {selectedDay.day.slice(0, 3)}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                                      {selectedDay.day}
-                                    </h4>
-                                    {dayData?.title && (
-                                      <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                                        {dayData.title}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Stats + Actions */}
-                                <div className="flex items-start gap-2">
-                                  <div className="flex items-center gap-3">
-                                    {displayedTotalMinutes > 0 && (
-                                      <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
-                                        <HiClock className="w-4 h-4 text-teal-600" />
-                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                          {displayedTotalMinutes}m
+                                    {/* Bottom - Rest Day Label */}
+                                    <div className="bg-slate-200/50 dark:bg-slate-700 py-2.5 px-2">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <HiMoon className="w-4 h-4 text-slate-400 dark:text-slate-300" />
+                                        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-300">
+                                          Rest
                                         </span>
                                       </div>
-                                    )}
-                                    {displayedTotalCalories &&
-                                      displayedTotalCalories > 0 && (
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* WORKOUT DAY - 3 Horizontal Divisions */
+                                  <div
+                                    className={`flex flex-col h-full ${isCompletedDay ? "bg-emerald-50/40 dark:bg-emerald-900/20" : "bg-white dark:bg-slate-800"}`}
+                                  >
+                                    {/* TOP - Day Name with Amber Background */}
+                                    <div
+                                      className={`py-2 px-3 ${isCompletedDay ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-amber-50 dark:bg-amber-900/30"}`}
+                                    >
+                                      <span
+                                        className={`text-[11px] font-bold text-center block ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-amber-600 dark:text-amber-300"}`}
+                                      >
+                                        {day.dayName}
+                                      </span>
+                                    </div>
+
+                                    {/* MIDDLE - Day Number Centered */}
+                                    <div className="flex-1 flex items-center justify-center py-4">
+                                      <span
+                                        className={`text-3xl font-black ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-slate-800 dark:text-slate-100"}`}
+                                      >
+                                        {day.dayNumber}
+                                      </span>
+                                    </div>
+
+                                    {/* BOTTOM - Calories & Minutes (### | ##m format) */}
+                                    <div
+                                      className={`py-2 px-1.5 ${isCompletedDay ? "bg-emerald-100/80 dark:bg-emerald-900/35" : "bg-slate-50 dark:bg-slate-700"}`}
+                                    >
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        <HiFire
+                                          className={`w-3.5 h-3.5 shrink-0 ${isCompletedDay ? "text-emerald-600 dark:text-emerald-300" : "text-orange-500"}`}
+                                        />
+                                        <span
+                                          className={`text-[11px] font-bold tabular-nums ${isCompletedDay ? "text-emerald-700 dark:text-emerald-300" : "text-orange-600 dark:text-orange-300"}`}
+                                        >
+                                          {displayedCalories || 0}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </button>
+
+                              {canRegenerateDay && (
+                                <div className="absolute top-2 right-2 z-20 flex flex-col gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedDay({
+                                        week: weekNumber,
+                                        day: day.dayName,
+                                      });
+                                      openDayRegenerationConfirmDialog(
+                                        weekNumber,
+                                        day.dayName,
+                                      );
+                                    }}
+                                    disabled={isRegeneratingDay}
+                                    aria-label="Regenerate day"
+                                    className={`rounded-full p-1.5 shadow-sm transition-all opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto ${
+                                      isRegeneratingDay
+                                        ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                                        : "bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
+                                    }`}
+                                  >
+                                    <HiArrowPath
+                                      className={`w-4 h-4 ${
+                                        isRegeneratingDay ? "animate-spin" : ""
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Exercises for selected day in this week */}
+                      {selectedDay?.week === weekNumber &&
+                        (() => {
+                          const dayDataMap = getDayDataMapForWeek(weekNumber);
+                          const dayData = dayDataMap.get(
+                            selectedDay.day.toLowerCase(),
+                          );
+                          const totalCalories = dayData
+                            ? parseCalories(dayData.total_calories)
+                            : 0;
+                          const totalMinutes = dayData?.total_minutes ?? 0;
+                          const dayPlanId = dayData?.id || null;
+                          const isSelectedDayCompleted = Boolean(
+                            dayData?.isCompleted ?? dayData?.is_completed,
+                          );
+                          const pendingSelectedRegeneration = dayPlanId
+                            ? pendingDayRegenerations[dayPlanId]
+                            : null;
+                          const isSelectedDayRegenerating = dayPlanId
+                            ? regeneratingDayPlanIds.includes(dayPlanId)
+                            : false;
+                          const isSelectedDaySaving = dayPlanId
+                            ? savingRegeneratedDayPlanIds.includes(dayPlanId)
+                            : false;
+                          const displayedTotalCalories =
+                            pendingSelectedRegeneration
+                              ? parseCalories(
+                                  pendingSelectedRegeneration.totalCalories,
+                                )
+                              : totalCalories;
+                          const displayedTotalMinutes =
+                            pendingSelectedRegeneration
+                              ? (pendingSelectedRegeneration.totalMinutes ?? 0)
+                              : totalMinutes;
+                          const selectedPendingWarmupExercises =
+                            pendingSelectedRegeneration?.dayResult.warm_up ||
+                            [];
+                          const selectedPendingMainExercises =
+                            pendingSelectedRegeneration?.dayResult
+                              .main_workout || [];
+                          const selectedPendingCooldownExercises =
+                            pendingSelectedRegeneration?.dayResult.cooldown ||
+                            [];
+
+                          return (
+                            <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-700">
+                              {/* Day Header - Enhanced */}
+                              <div className="bg-gradient-to-r from-teal-50 to-emerald-50 dark:from-teal-900/30 dark:to-emerald-900/30 rounded-xl p-4 mb-4">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center">
+                                      <span className="text-base font-extrabold text-teal-600 dark:text-teal-300">
+                                        {selectedDay.day.slice(0, 3)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                                        {selectedDay.day}
+                                      </h4>
+                                      {dayData?.title && (
+                                        <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                                          {dayData.title}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Stats + Actions */}
+                                  <div className="flex items-start gap-2">
+                                    <div className="flex items-center gap-3">
+                                      {displayedTotalMinutes > 0 && (
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
-                                          <HiFire className="w-4 h-4 text-orange-500" />
+                                          <HiClock className="w-4 h-4 text-teal-600" />
                                           <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                            {displayedTotalCalories} cal
+                                            {displayedTotalMinutes}m
                                           </span>
                                         </div>
                                       )}
-                                  </div>
-                                  {!!dayPlanId && !isSelectedDayCompleted && (
-                                    <div className="flex flex-col gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          openDayRegenerationConfirmDialog(
-                                            weekNumber,
-                                            selectedDay.day,
-                                          );
-                                        }}
-                                        disabled={isSelectedDayRegenerating}
-                                        className={`rounded-md px-2 py-1 text-[12px] font-bold shadow-sm transition-colors ${
-                                          isSelectedDayRegenerating
-                                            ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
-                                            : "bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
-                                        }`}
-                                      >
-                                        {isSelectedDayRegenerating
-                                          ? "Regenerating..."
-                                          : "Regenerate"}
-                                      </button>
-                                      {pendingSelectedRegeneration && (
+                                      {displayedTotalCalories &&
+                                        displayedTotalCalories > 0 && (
+                                          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-lg shadow-sm">
+                                            <HiFire className="w-4 h-4 text-orange-500" />
+                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                              {displayedTotalCalories} cal
+                                            </span>
+                                          </div>
+                                        )}
+                                    </div>
+                                    {!!dayPlanId && !isSelectedDayCompleted && (
+                                      <div className="flex flex-col gap-1">
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            if (!dayPlanId) return;
-                                            void savePendingRegeneratedDay({
-                                              dayPlanId,
-                                              dayName: selectedDay.day,
-                                            });
+                                            openDayRegenerationConfirmDialog(
+                                              weekNumber,
+                                              selectedDay.day,
+                                            );
                                           }}
-                                          disabled={isSelectedDaySaving}
-                                          className={`rounded-md px-2 py-1 text-[10px] font-bold shadow-sm transition-colors ${
-                                            isSelectedDaySaving
+                                          disabled={isSelectedDayRegenerating}
+                                          className={`rounded-md px-2 py-1 text-[12px] font-bold shadow-sm transition-colors ${
+                                            isSelectedDayRegenerating
                                               ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
-                                              : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
+                                              : "bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 border border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30"
                                           }`}
                                         >
-                                          {isSelectedDaySaving
-                                            ? "Saving..."
-                                            : "Save"}
+                                          {isSelectedDayRegenerating
+                                            ? "Regenerating..."
+                                            : "Regenerate"}
                                         </button>
-                                      )}
+                                        {pendingSelectedRegeneration && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (!dayPlanId) return;
+                                              void savePendingRegeneratedDay({
+                                                dayPlanId,
+                                                dayName: selectedDay.day,
+                                              });
+                                            }}
+                                            disabled={isSelectedDaySaving}
+                                            className={`rounded-md px-2 py-1 text-[10px] font-bold shadow-sm transition-colors ${
+                                              isSelectedDaySaving
+                                                ? "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                                                : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
+                                            }`}
+                                          >
+                                            {isSelectedDaySaving
+                                              ? "Saving..."
+                                              : "Save"}
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Focus Areas */}
+                                {dayData?.focus && dayData.focus.length > 0 && (
+                                  <div className="flex flex-wrap gap-2 mt-3">
+                                    {dayData.focus.slice(0, 4).map((f, i) => (
+                                      <span
+                                        key={i}
+                                        className="text-[11px] bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full font-semibold shadow-sm"
+                                      >
+                                        {formatTagTitleCase(f)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Motivation Quote */}
+                                {dayData?.motivation && (
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-3 pt-3 border-t border-teal-100 dark:border-teal-800">
+                                    &ldquo;{dayData.motivation}&rdquo;
+                                  </p>
+                                )}
+                                {pendingSelectedRegeneration && (
+                                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-3 pt-3 border-t border-amber-100 dark:border-amber-800 font-semibold">
+                                    A regenerated preview is ready. Review it in
+                                    the dialog to save or discard the changes.
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Exercises */}
+                              {pendingSelectedRegeneration ? (
+                                <div className="space-y-4">
+                                  {selectedPendingWarmupExercises.length >
+                                    0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiFire className="w-4 h-4 text-orange-500" />
+                                        <h5 className="text-xs font-bold text-orange-600">
+                                          {getSectionTitle(
+                                            "warmup",
+                                            selectedPendingWarmupExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {selectedPendingWarmupExercises.map(
+                                          (exercise, index) => (
+                                            <PreviewExerciseRow
+                                              key={`selected-pending-warmup-${selectedDay.day}-${index}`}
+                                              exercise={exercise}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {selectedPendingMainExercises.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiBolt className="w-4 h-4 text-teal-600" />
+                                        <h5 className="text-xs font-bold text-teal-600">
+                                          {getSectionTitle(
+                                            "main",
+                                            selectedPendingMainExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {selectedPendingMainExercises.map(
+                                          (exercise, index) => (
+                                            <PreviewExerciseRow
+                                              key={`selected-pending-main-${selectedDay.day}-${index}`}
+                                              exercise={exercise}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {selectedPendingCooldownExercises.length >
+                                    0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiMoon className="w-4 h-4 text-teal-500" />
+                                        <h5 className="text-xs font-bold text-teal-600">
+                                          {getSectionTitle(
+                                            "cooldown",
+                                            selectedPendingCooldownExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {selectedPendingCooldownExercises.map(
+                                          (exercise, index) => (
+                                            <PreviewExerciseRow
+                                              key={`selected-pending-cooldown-${selectedDay.day}-${index}`}
+                                              exercise={exercise}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
-                              </div>
+                              ) : isLoadingExercises ? (
+                                <div className="flex items-center justify-center py-8">
+                                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+                                </div>
+                              ) : selectedDayExercises.length > 0 ? (
+                                <div className="space-y-4">
+                                  {/* Warm Up */}
+                                  {warmupExercises.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiFire className="w-4 h-4 text-orange-500" />
+                                        <h5 className="text-xs font-bold text-orange-600">
+                                          {getSectionTitle(
+                                            "warmup",
+                                            warmupExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {warmupExercises.map(
+                                          (exercise, index) => (
+                                            <ExerciseRow
+                                              key={`warmup-${exercise.id}-${index}`}
+                                              exercise={exercise}
+                                              eager={index < 3}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
 
-                              {/* Focus Areas */}
-                              {dayData?.focus && dayData.focus.length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-3">
-                                  {dayData.focus.slice(0, 4).map((f, i) => (
-                                    <span
-                                      key={i}
-                                      className="text-[11px] bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-full font-semibold shadow-sm"
-                                    >
-                                      {formatTagTitleCase(f)}
-                                    </span>
-                                  ))}
+                                  {/* Main Exercises */}
+                                  {mainExercises.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiBolt className="w-4 h-4 text-teal-600" />
+                                        <h5 className="text-xs font-bold text-teal-600">
+                                          {getSectionTitle(
+                                            "main",
+                                            mainExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {mainExercises.map(
+                                          (exercise, index) => (
+                                            <ExerciseRow
+                                              key={`main-${exercise.id}-${index}`}
+                                              exercise={exercise}
+                                              eager={index < 3}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Cool Down */}
+                                  {cooldownExercises.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-3">
+                                        <HiMoon className="w-4 h-4 text-teal-500" />
+                                        <h5 className="text-xs font-bold text-teal-600">
+                                          {getSectionTitle(
+                                            "cooldown",
+                                            cooldownExercises.length,
+                                          )}
+                                        </h5>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {cooldownExercises.map(
+                                          (exercise, index) => (
+                                            <ExerciseRow
+                                              key={`cooldown-${exercise.id}-${index}`}
+                                              exercise={exercise}
+                                              eager={index < 3}
+                                              formatDuration={formatDuration}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-500">
+                                  No exercises found for this day.
                                 </div>
                               )}
-
-                              {/* Motivation Quote */}
-                              {dayData?.motivation && (
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-3 pt-3 border-t border-teal-100 dark:border-teal-800">
-                                  &ldquo;{dayData.motivation}&rdquo;
+                            </div>
+                          );
+                        })()}
+                    </>
+                  ) : hasInlinePreview ? (
+                    nextWeekPreviewContent
+                  ) : (
+                    /* Week has no data - show placeholder message */
+                    <div className="flex flex-col items-center justify-center py-8 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                      <HiSparkles className="w-10 h-10 text-slate-300 dark:text-slate-500 mb-3" />
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 text-center">
+                        Week {weekNumber} is not generated yet.
+                      </p>
+                      {weekNumber === nextWeekToGenerate &&
+                      latestGeneratedWeekNumber > 0 ? (
+                        isGeneratingNextWeek ? (
+                          <div className="mt-3 w-full max-w-xl">
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div>
+                                <h4 className="text-sm font-extrabold text-teal-800 dark:text-teal-300">
+                                  Generating Your Workout
+                                </h4>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  This might take a while, please wait.
                                 </p>
-                              )}
-                              {pendingSelectedRegeneration && (
-                                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-3 pt-3 border-t border-amber-100 dark:border-amber-800 font-semibold">
-                                  A regenerated preview is ready. Review it in
-                                  the dialog to save or discard the changes.
-                                </p>
-                              )}
+                              </div>
+                              <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
+                                {generationProgressPercent}%
+                              </div>
                             </div>
 
-                            {/* Exercises */}
-                            {pendingSelectedRegeneration ? (
-                              <div className="space-y-4">
-                                {selectedPendingWarmupExercises.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiFire className="w-4 h-4 text-orange-500" />
-                                      <h5 className="text-xs font-bold text-orange-600">
-                                        {getSectionTitle(
-                                          "warmup",
-                                          selectedPendingWarmupExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {selectedPendingWarmupExercises.map(
-                                        (exercise, index) => (
-                                          <PreviewExerciseRow
-                                            key={`selected-pending-warmup-${selectedDay.day}-${index}`}
-                                            exercise={exercise}
-                                            formatDuration={formatDuration}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {selectedPendingMainExercises.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiBolt className="w-4 h-4 text-teal-600" />
-                                      <h5 className="text-xs font-bold text-teal-600">
-                                        {getSectionTitle(
-                                          "main",
-                                          selectedPendingMainExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {selectedPendingMainExercises.map(
-                                        (exercise, index) => (
-                                          <PreviewExerciseRow
-                                            key={`selected-pending-main-${selectedDay.day}-${index}`}
-                                            exercise={exercise}
-                                            formatDuration={formatDuration}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {selectedPendingCooldownExercises.length >
-                                  0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiMoon className="w-4 h-4 text-teal-500" />
-                                      <h5 className="text-xs font-bold text-teal-600">
-                                        {getSectionTitle(
-                                          "cooldown",
-                                          selectedPendingCooldownExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {selectedPendingCooldownExercises.map(
-                                        (exercise, index) => (
-                                          <PreviewExerciseRow
-                                            key={`selected-pending-cooldown-${selectedDay.day}-${index}`}
-                                            exercise={exercise}
-                                            formatDuration={formatDuration}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : isLoadingExercises ? (
-                              <div className="flex items-center justify-center py-8">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
-                              </div>
-                            ) : selectedDayExercises.length > 0 ? (
-                              <div className="space-y-4">
-                                {/* Warm Up */}
-                                {warmupExercises.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiFire className="w-4 h-4 text-orange-500" />
-                                      <h5 className="text-xs font-bold text-orange-600">
-                                        {getSectionTitle(
-                                          "warmup",
-                                          warmupExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {warmupExercises.map(
-                                        (exercise, index) => (
-                                          <ExerciseRow
-                                            key={`warmup-${exercise.id}-${index}`}
-                                            exercise={exercise}
-                                            eager={index < 3}
-                                            formatDuration={formatDuration}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Main Exercises */}
-                                {mainExercises.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiBolt className="w-4 h-4 text-teal-600" />
-                                      <h5 className="text-xs font-bold text-teal-600">
-                                        {getSectionTitle(
-                                          "main",
-                                          mainExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {mainExercises.map((exercise, index) => (
-                                        <ExerciseRow
-                                          key={`main-${exercise.id}-${index}`}
-                                          exercise={exercise}
-                                          eager={index < 3}
-                                          formatDuration={formatDuration}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Cool Down */}
-                                {cooldownExercises.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <HiMoon className="w-4 h-4 text-teal-500" />
-                                      <h5 className="text-xs font-bold text-teal-600">
-                                        {getSectionTitle(
-                                          "cooldown",
-                                          cooldownExercises.length,
-                                        )}
-                                      </h5>
-                                    </div>
-                                    <div className="space-y-2">
-                                      {cooldownExercises.map(
-                                        (exercise, index) => (
-                                          <ExerciseRow
-                                            key={`cooldown-${exercise.id}-${index}`}
-                                            exercise={exercise}
-                                            eager={index < 3}
-                                            formatDuration={formatDuration}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-500">
-                                No exercises found for this day.
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </>
-                ) : hasInlinePreview ? (
-                  nextWeekPreviewContent
-                ) : (
-                  /* Week has no data - show placeholder message */
-                  <div className="flex flex-col items-center justify-center py-8 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-                    <HiSparkles className="w-10 h-10 text-slate-300 dark:text-slate-500 mb-3" />
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 text-center">
-                      Week {weekNumber} is not generated yet.
-                    </p>
-                    {weekNumber === nextWeekToGenerate &&
-                    latestGeneratedWeekNumber > 0 ? (
-                      isGeneratingNextWeek ? (
-                        <div className="mt-3 w-full max-w-xl">
-                          <div className="flex items-start justify-between gap-3 mb-2">
-                            <div>
-                              <h4 className="text-sm font-extrabold text-teal-800 dark:text-teal-300">
-                                Generating Your Workout
-                              </h4>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                This might take a while, please wait.
-                              </p>
+                            <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-teal-500 to-amber-400 transition-all duration-700"
+                                style={{
+                                  width: `${generationProgressPercent}%`,
+                                }}
+                              />
                             </div>
-                            <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
-                              {generationProgressPercent}%
+                            <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 text-right">
+                              ~{GENERATION_DURATION_SECONDS}s
                             </div>
-                          </div>
 
-                          <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-teal-500 to-amber-400 transition-all duration-700"
-                              style={{ width: `${generationProgressPercent}%` }}
-                            />
-                          </div>
-                          <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 text-right">
-                            ~{GENERATION_DURATION_SECONDS}s
-                          </div>
+                            <div className="mt-3 space-y-2">
+                              {GENERATION_STEPS.map((step, index) => {
+                                const isComplete =
+                                  index < currentGenerationStep;
+                                const isActive =
+                                  index === currentGenerationStep;
 
-                          <div className="mt-3 space-y-2">
-                            {GENERATION_STEPS.map((step, index) => {
-                              const isComplete = index < currentGenerationStep;
-                              const isActive = index === currentGenerationStep;
-
-                              return (
-                                <div
-                                  key={step.title}
+                                return (
+                                  <div
+                                    key={step.title}
                                     className={`flex items-start gap-2 rounded-xl border px-3 py-2 transition-all ${
                                       isActive
                                         ? "border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30"
@@ -4614,75 +4812,74 @@ export function WorkoutPlanDetailsView({
                                           : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                                     }`}
                                   >
-                                  <div
-                                    className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
-                                      isComplete
-                                        ? "bg-amber-500 text-white"
-                                        : isActive
-                                          ? "bg-teal-600 text-white"
-                                          : "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500"
-                                    }`}
-                                  >
-                                    {isComplete ? "\u2713" : index + 1}
-                                  </div>
-                                  <div className="flex-1">
-                                    <p
-                                      className={`text-[11px] font-bold ${
-                                        isActive
-                                          ? "text-teal-800 dark:text-teal-300"
-                                          : isComplete
-                                            ? "text-amber-700 dark:text-amber-300"
-                                            : "text-slate-700 dark:text-slate-200"
+                                    <div
+                                      className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
+                                        isComplete
+                                          ? "bg-amber-500 text-white"
+                                          : isActive
+                                            ? "bg-teal-600 text-white"
+                                            : "bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500"
                                       }`}
                                     >
-                                      {step.title}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                      {step.detail}
-                                    </p>
+                                      {isComplete ? "\u2713" : index + 1}
+                                    </div>
+                                    <div className="flex-1">
+                                      <p
+                                        className={`text-[11px] font-bold ${
+                                          isActive
+                                            ? "text-teal-800 dark:text-teal-300"
+                                            : isComplete
+                                              ? "text-amber-700 dark:text-amber-300"
+                                              : "text-slate-700 dark:text-slate-200"
+                                        }`}
+                                      >
+                                        {step.title}
+                                      </p>
+                                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        {step.detail}
+                                      </p>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowIntensityDialog(true);
+                              }}
+                              disabled={isGeneratingNextWeek}
+                              className={`mt-3 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                                isGeneratingNextWeek
+                                  ? "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                  : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
+                              }`}
+                            >
+                              {isGeneratingNextWeek
+                                ? "Generating..."
+                                : "Generate Now"}
+                            </button>
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2 text-center">
+                              Preview will appear here after generation.
+                            </p>
+                          </>
+                        )
                       ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowIntensityDialog(true);
-                            }}
-                            disabled={isGeneratingNextWeek}
-                            className={`mt-3 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
-                              isGeneratingNextWeek
-                                ? "bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
-                                : "bg-teal-600 dark:bg-teal-500 text-white hover:bg-teal-700 dark:hover:bg-teal-400"
-                            }`}
-                          >
-                            {isGeneratingNextWeek
-                              ? "Generating..."
-                              : "Generate Now"}
-                          </button>
-                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2 text-center">
-                            Preview will appear here after generation.
-                          </p>
-                        </>
-                      )
-                    ) : (
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                        Keep going!
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                          Keep going!
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-
-        </div>
 
       <Dialog
         visible={showIntensityDialog}
@@ -4736,7 +4933,9 @@ export function WorkoutPlanDetailsView({
       </Dialog>
 
       <Dialog
-        visible={showDayRegenerationConfirmDialog && !!dayRegenerationDialogTarget}
+        visible={
+          showDayRegenerationConfirmDialog && !!dayRegenerationDialogTarget
+        }
         onDismiss={dismissDayRegenerationConfirmDialog}
         dismissible={!isGeneratingDayRegeneration}
         maxWidth={520}
@@ -4749,9 +4948,9 @@ export function WorkoutPlanDetailsView({
             Regenerate this workout day?
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-            {dayRegenerationDialogTarget?.dayName} will generate a fresh exercise
-            preview. Your current saved workout will stay unchanged until you
-            review the result and click Save.
+            {dayRegenerationDialogTarget?.dayName} will generate a fresh
+            exercise preview. Your current saved workout will stay unchanged
+            until you review the result and click Save.
           </p>
           {dayRegenerationDialogTarget?.title && (
             <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50/70 px-4 py-3 text-sm text-teal-800 dark:border-teal-900/50 dark:bg-teal-900/20 dark:text-teal-200">
@@ -4921,14 +5120,16 @@ export function WorkoutPlanDetailsView({
             {dayRegenerationPreview.focus &&
               dayRegenerationPreview.focus.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {dayRegenerationPreview.focus.slice(0, 5).map((focus, index) => (
-                    <span
-                      key={`${dayRegenerationPreview.dayPlanId}-focus-${index}`}
-                      className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-teal-700 shadow-sm dark:bg-slate-800 dark:text-teal-300"
-                    >
-                      {formatTagTitleCase(focus)}
-                    </span>
-                  ))}
+                  {dayRegenerationPreview.focus
+                    .slice(0, 5)
+                    .map((focus, index) => (
+                      <span
+                        key={`${dayRegenerationPreview.dayPlanId}-focus-${index}`}
+                        className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-teal-700 shadow-sm dark:bg-slate-800 dark:text-teal-300"
+                      >
+                        {formatTagTitleCase(focus)}
+                      </span>
+                    ))}
                 </div>
               )}
 
@@ -4956,13 +5157,15 @@ export function WorkoutPlanDetailsView({
                     </h5>
                   </div>
                   <div className="space-y-2">
-                    {dayRegenerationPreviewWarmupExercises.map((exercise, index) => (
-                      <PreviewExerciseRow
-                        key={`day-regeneration-warmup-${dayRegenerationPreview.dayPlanId}-${index}`}
-                        exercise={exercise}
-                        formatDuration={formatDuration}
-                      />
-                    ))}
+                    {dayRegenerationPreviewWarmupExercises.map(
+                      (exercise, index) => (
+                        <PreviewExerciseRow
+                          key={`day-regeneration-warmup-${dayRegenerationPreview.dayPlanId}-${index}`}
+                          exercise={exercise}
+                          formatDuration={formatDuration}
+                        />
+                      ),
+                    )}
                   </div>
                 </div>
               )}
@@ -4979,13 +5182,15 @@ export function WorkoutPlanDetailsView({
                     </h5>
                   </div>
                   <div className="space-y-2">
-                    {dayRegenerationPreviewMainExercises.map((exercise, index) => (
-                      <PreviewExerciseRow
-                        key={`day-regeneration-main-${dayRegenerationPreview.dayPlanId}-${index}`}
-                        exercise={exercise}
-                        formatDuration={formatDuration}
-                      />
-                    ))}
+                    {dayRegenerationPreviewMainExercises.map(
+                      (exercise, index) => (
+                        <PreviewExerciseRow
+                          key={`day-regeneration-main-${dayRegenerationPreview.dayPlanId}-${index}`}
+                          exercise={exercise}
+                          formatDuration={formatDuration}
+                        />
+                      ),
+                    )}
                   </div>
                 </div>
               )}
@@ -5002,13 +5207,15 @@ export function WorkoutPlanDetailsView({
                     </h5>
                   </div>
                   <div className="space-y-2">
-                    {dayRegenerationPreviewCooldownExercises.map((exercise, index) => (
-                      <PreviewExerciseRow
-                        key={`day-regeneration-cooldown-${dayRegenerationPreview.dayPlanId}-${index}`}
-                        exercise={exercise}
-                        formatDuration={formatDuration}
-                      />
-                    ))}
+                    {dayRegenerationPreviewCooldownExercises.map(
+                      (exercise, index) => (
+                        <PreviewExerciseRow
+                          key={`day-regeneration-cooldown-${dayRegenerationPreview.dayPlanId}-${index}`}
+                          exercise={exercise}
+                          formatDuration={formatDuration}
+                        />
+                      ),
+                    )}
                   </div>
                 </div>
               )}

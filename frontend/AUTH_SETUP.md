@@ -1,108 +1,87 @@
-# Authentication Setup - Frontend
+# Authentication Setup (Frontend)
 
-This document describes the authentication setup for the VitalSpark frontend application.
+This document describes how authentication works in the **frontend** app (`frontend/`) using Supabase Auth + React context.
 
-## Structure
+## Auth Architecture
 
-### API Configuration
-- **Location**: `src/lib/api/supabase.ts`
-- **Description**: Simplified Supabase client for web-only (no React Native dependencies)
-- **Environment Variables Required**:
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `src/lib/api/supabase.ts`
+  - Creates the Supabase browser client.
+  - Handles auth session storage and token refresh behavior.
+  - Provides `getRedirectUri()` used by sign-up/password reset flows.
+  - Includes recovery helpers like `clearAuthStorage()`.
+- `src/contexts/AuthContext.tsx`
+  - Source of truth for auth state in UI (`session`, `user`, `isLoading`, `isAuthenticated`).
+  - Initializes session on app load and subscribes to `onAuthStateChange`.
+  - Handles inactivity auto sign-out (1 hour idle) and timeout fallbacks.
+- `src/hooks/useAuth.ts`
+  - Wraps auth operations (`signIn`, `signUp`, reset password, update password, signOut).
+  - Returns user-friendly error messages for common Supabase auth failures.
 
-### Types
-- **Location**: `src/types/`
-- **Files**:
-  - `auth.ts` - Authentication-related types
-  - `UserProfile.ts` - User profile types
+## Providers and Route Guards
 
-### Contexts
-- **Location**: `src/contexts/AuthContext.tsx`
-- **Description**: React context for managing authentication state
-- **Usage**: Wrap your app with `<AuthProvider>` in the root layout
+- `src/app/layout.tsx`
+  - Wraps app with `<AuthProvider>` globally.
+- `src/app/(main)/layout.tsx`
+  - Redirects unauthenticated users to `/auth/login`.
+  - Checks onboarding status and routes users to the correct onboarding step.
+  - Redirects onboarding-complete users without a saved plan to `/onboarding/generate-workout`.
 
-### Hooks
-- **Location**: `src/hooks/useAuth.ts`
-- **Description**: Authentication methods (sign in, sign up, password reset, etc.)
-- **Exports**: 
-  - `auth` - Singleton instance with authentication methods
-  - Also available as React hook: `useAuth()` from `@/contexts/AuthContext`
+## Auth Pages
 
-### Components
-- **Location**: `src/components/`
-- **Files**:
-  - `Toast.tsx` - Toast notification component
-  - `Dialog.tsx` - Modal dialog component
+Under `src/app/auth/`:
 
-### Auth Pages
-- **Location**: `src/app/auth/`
-- **Pages**:
-  - `/auth/login` - Login page
-  - `/auth/signup` - Sign up page
-  - `/auth/forgot-password` - Password reset request page
-  - `/auth/reset-password` - Password reset page
-  - `/auth/callback` - OAuth/callback handler
-  - `/auth/email-verify` - Email verification status page
+- `/auth/login`
+- `/auth/signup`
+- `/auth/forgot-password`
+- `/auth/reset-password`
+- `/auth/callback`
+- `/auth/email-verify`
+- `/auth/logout`
 
-## Setup Instructions
+## Required Environment Variables
 
-1. **Install dependencies** (already done):
-   ```bash
-   npm install @supabase/supabase-js
-   ```
+Create `frontend/.env.local`:
 
-2. **Set up environment variables**:
-   Create a `.env.local` file in the `frontend` directory:
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-   ```
-
-3. **The AuthProvider is already configured** in `src/app/layout.tsx`
-
-## Usage
-
-### Using the auth hook in components:
-```typescript
-import { auth } from '@/hooks/useAuth';
-
-// Sign in
-const response = await auth.signIn({ email, password });
-
-// Sign up
-const response = await auth.signUp({ email, password });
-
-// Password reset
-const response = await auth.sendPasswordResetEmail(email);
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-### Using the Auth context:
-```typescript
-import { useAuth } from '@/contexts/AuthContext';
+### Additional Variable Used in Current Frontend
 
-function MyComponent() {
-  const { user, isAuthenticated, isLoading, signOut } = useAuth();
-  
-  if (isLoading) return <div>Loading...</div>;
-  if (!isAuthenticated) return <div>Please log in</div>;
-  
-  return <div>Welcome, {user?.email}</div>;
-}
+```env
+NEXT_PUBLIC_SUPABASE_SERVICE_KEY=your_supabase_service_key
 ```
 
-## Differences from Mobile App
+This key is used by frontend-side admin helper logic in the current implementation. Treat it as highly sensitive and avoid exposing it outside trusted environments.
 
-1. **No Platform checks** - Web-only, simplified code
-2. **Web-specific components** - Using HTML/CSS instead of React Native components
-3. **Next.js routing** - Using Next.js App Router instead of Expo Router
-4. **Tailwind CSS** - Using Tailwind for styling instead of React Native StyleSheet
-5. **Simplified storage** - Using `localStorage` directly instead of custom storage adapter
+## Auth Flow (Frontend)
 
-## Notes
+1. User opens app.
+2. `AuthProvider` restores session via Supabase.
+3. If not authenticated, `(main)` layout redirects to `/auth/login`.
+4. After sign-in:
+   - app reads `user_profile.is_onboarding_complete` and `current_step`
+   - incomplete users are redirected to onboarding step routes
+   - complete users continue to main pages (or workout generation if no plan yet)
+5. On inactivity timeout, user is signed out and redirected to login with reason flag.
 
-- All API calls are client-side (using Supabase JS client)
-- Authentication state is managed through React Context
-- Password validation rules: minimum 6 characters, at least one uppercase, lowercase, and number
-- Email validation uses standard regex pattern
+## Password and Validation Rules
 
+From `useAuth.ts`:
+
+- Minimum 6 characters
+- Must contain at least one number
+- Must contain at least one uppercase letter
+- Must contain at least one lowercase letter
+
+## Common Troubleshooting
+
+- **"Missing Supabase environment variables"**
+  - Confirm `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist in `.env.local`.
+- **Login succeeds but session looks broken**
+  - Clear local storage keys and retry; `clearAuthStorage()` logic exists for recovery.
+- **Redirect issues after sign-up/reset**
+  - Confirm site URL and redirect URLs in Supabase dashboard match your local/dev domain.
+- **Unexpected logout**
+  - Check inactivity timeout behavior (1 hour idle) and token refresh/network reliability.

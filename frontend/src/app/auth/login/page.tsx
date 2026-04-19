@@ -9,6 +9,7 @@ import { useScale } from "@/hooks/useScale";
 import { HiEnvelope, HiLockClosed } from "react-icons/hi2";
 import Loader from "@/components/Loader";
 import { getSavedPersonalizedWorkoutPlan } from "@/lib/user-workout-plan";
+import { clearLocalStoragePreserveTheme } from "@/utils/themeStorage";
 
 interface ToastState extends Omit<ToastProps, "onDismiss"> {
   id: number;
@@ -71,7 +72,7 @@ export default function LoginPage() {
 
     // Always clear browser storage on login route entry.
     try {
-      window.localStorage.clear();
+      clearLocalStoragePreserveTheme();
     } catch {}
     try {
       window.sessionStorage.clear();

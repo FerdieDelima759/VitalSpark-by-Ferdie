@@ -98,7 +98,7 @@ export default function MainLayout({
           ];
           const step = profile.current_step || 1;
           // If step is 9 or higher, go to finish
-          if (step >= 9) {
+          if (step >= 10) {
             router.push("/onboarding/finish");
           } else {
             router.push(routes[step - 1] || routes[0]);

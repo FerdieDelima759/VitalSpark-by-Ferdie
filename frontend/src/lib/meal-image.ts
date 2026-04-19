@@ -1,10 +1,4 @@
-import { supabase } from "@/lib/api/supabase";
 import { generateImage } from "@/lib/gemini";
-
-const MEAL_IMAGE_BUCKET = "workouts";
-const MEAL_IMAGE_FOLDER = "meals/plans";
-const MEAL_IMAGE_BASE_URL =
-  "https://fvlaenpwxjnkzpbjnhrl.supabase.co/storage/v1/object/public/workouts";
 
 const DIETARY_FOOD_OPTIONS: Record<string, string[]> = {
   vegan: [
@@ -83,7 +77,7 @@ const normalizePreference = (value?: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-const pickFoodForPreference = (dietaryPreference?: string): string => {
+export const pickFoodForPreference = (dietaryPreference?: string): string => {
   const normalized = normalizePreference(dietaryPreference);
 
   const matchedKey = Object.keys(DIETARY_FOOD_OPTIONS).find((key) =>
@@ -112,91 +106,6 @@ export const buildMealPlanImagePrompt = (
     "Environment: clean kitchen table, soft background bokeh, no people, no hands, no text.",
     "Camera: wide-angle, 16:9 framing, crisp detail, realistic colors.",
   ].join(" ");
-};
-
-const imageToBlob = async (image: string): Promise<Blob> => {
-  if (image.startsWith("data:image")) {
-    const base64Data = image.split(",")[1];
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i += 1) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: "image/png" });
-  }
-
-  if (image.startsWith("http")) {
-    const response = await fetch(image);
-    if (!response.ok) {
-      throw new Error("Failed to fetch generated image URL");
-    }
-    return await response.blob();
-  }
-
-  const byteCharacters = atob(image);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i += 1) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: "image/png" });
-};
-
-const listExistingMealImages = async (): Promise<number[] | null> => {
-  const { data, error } = await supabase.storage
-    .from(MEAL_IMAGE_BUCKET)
-    .list(MEAL_IMAGE_FOLDER, { limit: 1000, offset: 0 });
-
-  if (error) {
-    console.warn("Meal image list failed:", error.message);
-    return null;
-  }
-
-  const numbers = (data || [])
-    .map((item) => item.name)
-    .filter((name) => /^\d+\.png$/i.test(name))
-    .map((name) => parseInt(name.replace(/\.png$/i, ""), 10))
-    .filter((value) => Number.isFinite(value))
-    .sort((a, b) => a - b);
-
-  return numbers;
-};
-
-const checkMealImageExists = async (fileNumber: number): Promise<boolean> => {
-  const url = `${MEAL_IMAGE_BASE_URL}/${MEAL_IMAGE_FOLDER}/${fileNumber}.png`;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { Range: "bytes=0-0" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response.ok || response.status === 206;
-  } catch {
-    return false;
-  }
-};
-
-const findNextAvailableNumber = async (startAt: number): Promise<number> => {
-  let candidate = startAt;
-  for (let i = 0; i < 50; i += 1) {
-    const exists = await checkMealImageExists(candidate);
-    if (!exists) return candidate;
-    candidate += 1;
-  }
-  return candidate;
-};
-
-export const getNextMealPlanImageNumber = async (): Promise<number> => {
-  const existingNumbers = await listExistingMealImages();
-  if (existingNumbers && existingNumbers.length > 0) {
-    return existingNumbers[existingNumbers.length - 1] + 1;
-  }
-
-  return await findNextAvailableNumber(1);
 };
 
 export interface MealPlanImageResult {
@@ -228,54 +137,40 @@ export const generateAndUploadMealPlanImage = async (
       };
     }
 
-    const imageBlob = await imageToBlob(imageResult.images[0]);
-    const nextNumber = await getNextMealPlanImageNumber();
-    const fileName = `${nextNumber}.png`;
-    const storagePath = `${MEAL_IMAGE_FOLDER}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(MEAL_IMAGE_BUCKET)
-      .upload(storagePath, imageBlob, {
-        contentType: "image/png",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      const fallbackNumber = await findNextAvailableNumber(nextNumber + 1);
-      const fallbackFileName = `${fallbackNumber}.png`;
-      const fallbackPath = `${MEAL_IMAGE_FOLDER}/${fallbackFileName}`;
-
-      const { error: retryError } = await supabase.storage
-        .from(MEAL_IMAGE_BUCKET)
-        .upload(fallbackPath, imageBlob, {
-          contentType: "image/png",
-          upsert: false,
-        });
-
-      if (retryError) {
-        return { success: false, error: retryError.message };
-      }
-
-      return {
-        success: true,
-        url: `${MEAL_IMAGE_BASE_URL}/${fallbackPath}`,
-        fileName: fallbackFileName,
+    const response = await fetch("/api/upload-meal-plan-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image: imageResult.images[0],
         food,
         prompt,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as MealPlanImageResult;
+    if (!response.ok) {
+      return {
+        success: false,
+        error: payload.error || "Failed to upload meal plan image",
       };
     }
 
     return {
       success: true,
-      url: `${MEAL_IMAGE_BASE_URL}/${storagePath}`,
-      fileName,
-      food,
-      prompt,
+      url: payload.url,
+      fileName: payload.fileName,
+      food: payload.food ?? food,
+      prompt: payload.prompt ?? prompt,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error?.message || "Failed to generate meal plan image",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to generate meal plan image",
     };
   }
 };

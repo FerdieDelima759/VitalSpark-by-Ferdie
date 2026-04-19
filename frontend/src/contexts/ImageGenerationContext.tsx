@@ -80,6 +80,7 @@ interface ImageGenerationContextType {
   retryFailedImages: () => void;
   pauseImageGeneration: () => void;
   resumeImageGeneration: () => void;
+  syncPendingImagesFromDatabase: (reason?: string) => Promise<boolean>;
   restartDayImageGeneration: (
     dayName: string,
     dayResult: DayWorkoutResponse,
@@ -2489,6 +2490,39 @@ export function ImageGenerationProvider({
     imgDebug("[ImageGenContext] ▶️ Image generation resumed");
   }, [processImageGenerationQueue]);
 
+  const syncPendingImagesFromDatabase = useCallback(
+    async (reason = "manual-sync"): Promise<boolean> => {
+      processingAbortedRef.current = false;
+
+      const bootstrapped = await bootstrapPendingQueueFromDatabase(reason);
+      const storageKey = getStorageKey();
+      const state = getImageGenState(storageKey);
+      const hasWork = Boolean(
+        state &&
+          (state.stats.pending > 0 ||
+            state.exercises.some(
+              (ex) =>
+                ex.status === "pending" || ex.status === "generating",
+            )),
+      );
+
+      if (
+        hasWork &&
+        !isProcessingImagesRef.current &&
+        quotaPauseUntilRef.current <= Date.now()
+      ) {
+        setTimeout(() => {
+          if (!isProcessingImagesRef.current) {
+            processImageGenerationQueue();
+          }
+        }, 100);
+      }
+
+      return bootstrapped || hasWork;
+    },
+    [bootstrapPendingQueueFromDatabase, getStorageKey, processImageGenerationQueue],
+  );
+
   // Restart image generation for a specific day
   const restartDayImageGeneration = useCallback(
     (
@@ -2653,6 +2687,7 @@ export function ImageGenerationProvider({
     retryFailedImages,
     pauseImageGeneration,
     resumeImageGeneration,
+    syncPendingImagesFromDatabase,
     restartDayImageGeneration,
     setExerciseImage,
 

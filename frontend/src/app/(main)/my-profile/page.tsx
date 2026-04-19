@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserData } from "@/hooks/useUserData";
 import { UserProfile } from "@/types/UserProfile";
@@ -30,7 +30,7 @@ interface ToastState extends Omit<ToastProps, "onDismiss"> {
 
 export default function MyProfilePage() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isLoading: isAuthLoading } = useAuth();
   const { fetchUserProfile, updateUserProfile } = useUserData();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -66,26 +66,7 @@ export default function MyProfilePage() {
     root.classList.add(theme);
   };
 
-  useEffect(() => {
-    if (user?.id) {
-      loadUserProfile();
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    const initialTheme = resolveThemePreference();
-    applyThemePreference(initialTheme);
-    setDarkModeEnabled(initialTheme === "dark");
-  }, []);
-
-  const handleDarkModeToggle = (enabled: boolean): void => {
-    const nextTheme: "light" | "dark" = enabled ? "dark" : "light";
-    setDarkModeEnabled(enabled);
-    localStorage.setItem("theme", nextTheme);
-    applyThemePreference(nextTheme);
-  };
-
-  const loadUserProfile = async () => {
+  const loadUserProfile = useCallback(async () => {
     if (!user?.id) return;
     setIsLoading(true);
     try {
@@ -99,6 +80,34 @@ export default function MyProfilePage() {
     } finally {
       setIsLoading(false);
     }
+  }, [fetchUserProfile, user?.id]);
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      setIsLoading(true);
+      return;
+    }
+
+    if (!user?.id) {
+      setIsLoading(false);
+      setUserProfile(null);
+      return;
+    }
+
+    void loadUserProfile();
+  }, [isAuthLoading, loadUserProfile, user?.id]);
+
+  useEffect(() => {
+    const initialTheme = resolveThemePreference();
+    applyThemePreference(initialTheme);
+    setDarkModeEnabled(initialTheme === "dark");
+  }, []);
+
+  const handleDarkModeToggle = (enabled: boolean): void => {
+    const nextTheme: "light" | "dark" = enabled ? "dark" : "light";
+    setDarkModeEnabled(enabled);
+    localStorage.setItem("theme", nextTheme);
+    applyThemePreference(nextTheme);
   };
 
   const showToast = (
@@ -247,7 +256,7 @@ export default function MyProfilePage() {
         showToast("success", "Success", "Language preference saved.");
         setLanguageModalVisible(false);
       }
-    } catch (error) {
+    } catch {
       showToast("error", "Error", "Failed to update language preference.");
     } finally {
       setSavingLanguage(false);
@@ -266,7 +275,7 @@ export default function MyProfilePage() {
       setBusy(true);
       await signOut();
       router.push("/auth/login");
-    } catch (error) {
+    } catch {
       showToast("error", "Error", "Failed to sign out. Please try again.");
     } finally {
       setBusy(false);
@@ -274,12 +283,16 @@ export default function MyProfilePage() {
     }
   };
 
-  if (isLoading) {
+  if (isAuthLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] dark:bg-gradient-to-b dark:from-[#0b1020] dark:via-[#0f172a] dark:to-[#111827]">
         <Loader size="lg" text="Loading..." textColor="slate" />
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   const bmiValue = calculateBMI();
