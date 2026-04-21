@@ -6,6 +6,7 @@ export interface WorkoutSession {
     id: string;
     user_id: string;
     plan_id: string | null;
+    day_plan_id: string | null;
     started_at: string;
     ended_at: string | null;
     timezone: string | null;
@@ -83,6 +84,7 @@ export interface WorkoutSessionFull extends WorkoutSession {
 export interface WorkoutSessionCreatePayload {
     user_id: string;
     plan_id?: string | null;
+    day_plan_id?: string | null;
     started_at?: string;
     timezone?: string | null;
     notes?: string | null;

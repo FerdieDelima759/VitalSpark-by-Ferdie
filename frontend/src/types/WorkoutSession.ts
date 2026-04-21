@@ -167,11 +167,47 @@ export interface WorkoutSessionSetUpdatePayload {
 }
 
 // ===========================
-// Loading State Types
+// API Response Types
 // ===========================
+
+export interface WorkoutSessionDataResponse<T> {
+    success: boolean;
+    data?: T;
+    error?: string;
+}
 
 export interface WorkoutSessionLoadingState {
     isLoading: boolean;
+    isUpdating: boolean;
+    isSaving: boolean;
     error: string | null;
+}
+
+export interface WorkoutSessionApiError {
+    message: string;
+    code?: string;
+    statusCode?: number;
+}
+
+// ===========================
+// Query Filter Types
+// ===========================
+
+export interface WorkoutSessionFilters {
+    userId?: string;
+    planId?: string | null;
+    startDate?: string;
+    endDate?: string;
+    isCompleted?: boolean;
+}
+
+export interface WorkoutSessionStats {
+    total_sessions: number;
+    total_duration_seconds: number;
+    total_calories: number;
+    total_exercises: number;
+    total_sets: number;
+    total_reps: number;
+    average_session_duration: number;
 }
 
