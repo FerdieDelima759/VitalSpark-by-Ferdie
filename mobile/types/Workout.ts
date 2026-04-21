@@ -39,6 +39,7 @@ export interface WorkoutPlanExerciseDetails {
     image_alt: string | null;
     created_at: string;
     image_slug: string | null;
+    section: string | null;
 }
 
 export interface WorkoutPlanExercise {
