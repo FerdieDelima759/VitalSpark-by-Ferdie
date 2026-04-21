@@ -64,7 +64,7 @@ Create **`frontend/.env.local`**:
 # Supabase (required)
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_SUPABASE_SERVICE_KEY=your_supabase_service_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_key
 
 # OpenAI (required for AI workout/meal/tts features)
 OPENAI_API_KEY=your_openai_api_key

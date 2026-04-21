@@ -8,8 +8,8 @@ const MEAL_IMAGE_BUCKET = "workouts";
 const MEAL_IMAGE_FOLDER = "meals/plans";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY;
 
 const buildPublicUrl = (storagePath: string): string =>
   `${SUPABASE_URL}/storage/v1/object/public/${MEAL_IMAGE_BUCKET}/${storagePath}`;
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Supabase storage is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_SERVICE_KEY.",
+          "Supabase storage is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
       },
       { status: 500 },
     );

@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY as string | undefined;
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY) as string | undefined;
 
 if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
@@ -225,7 +225,7 @@ export const getAdminSupabaseClient = async (userId: string): Promise<SupabaseCl
     }
 
     if (!supabaseServiceKey) {
-        console.error('NEXT_PUBLIC_SUPABASE_SERVICE_KEY is not set. Admin operations will not work.');
+        console.error('SUPABASE_SERVICE_ROLE_KEY is not set. Admin operations will not work.');
         return null;
     }
 

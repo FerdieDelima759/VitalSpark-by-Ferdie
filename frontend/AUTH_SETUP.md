@@ -50,10 +50,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ### Additional Variable Used in Current Frontend
 
 ```env
-NEXT_PUBLIC_SUPABASE_SERVICE_KEY=your_supabase_service_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_key
 ```
 
-This key is used by frontend-side admin helper logic in the current implementation. Treat it as highly sensitive and avoid exposing it outside trusted environments.
+This key is used by backend-side admin helper logic in the current implementation. Treat it as highly sensitive and avoid exposing it outside trusted environments.
 
 ## Auth Flow (Frontend)
 
